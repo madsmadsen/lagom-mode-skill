@@ -39,13 +39,13 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 - CR-3: The port returns the same exit code as the original for the same input.
 - CR-4: The port writes `.metrics/crap.edn` in the same EDN shape and with the same keys as the original.
 - CR-5: The port detects the language of each file by its extension, the same as the original.
-- CR-6: The port skips the directories `test`, `spec`, `vendor`, `node_modules`, and `target`, the same as the original.
+- CR-6: The port skips the same directories as the original. The behavior of the original is normative. The list `test`, `spec`, `vendor`, `node_modules`, and `target` is informative.
 - CR-7: The port supports `--changed` with the same Git selection of files as the original.
 - CR-8: The port names functions and namespaces for each language with the table in the README of the original.
 - CR-9: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, and with an EDN-aware reader for Clojure. `[ASSUMPTION]` The original uses tree-sitter for the same grammars.
-- CR-10: The port computes `CRAP = CC² × (1 − coverage)³ + CC` for each function.
+- CR-10: The port computes `CRAP = CC² × (1 − coverage)³ + CC` for each function. Coverage is the fraction (0.0 to 1.0) of the lines of the function that are covered, as the original computes it. Coverage is 0.0 under `--no-coverage` and for a function with no data in the coverage report.
 - CR-11: The port counts decision points for each language with the rules in the README of the original, section "What each language counts".
-- CR-12: The port reads coverage in each format of the original: Cloverage form counts, LCOV, JaCoCo XML, and the Go coverage profile.
+- CR-12: The port reads coverage in each format of the original. At the pinned commit, the complete list is: Cloverage form counts, LCOV, JaCoCo XML, and the Go coverage profile. Cloverage form counts are the HTML files that Cloverage writes under `target/coverage/` (`target/coverage/**/*.html`). The original reads the per-line counts "N out of M forms covered" from these files.
 - CR-13: The port runs the default coverage command for each language from the README of the original, section "Coverage commands". It supports `--coverage-command`, `--use-existing-coverage`, and `--no-coverage`.
 - CR-14: If a coverage tool is missing, the port installs it the same way as the original. This covers `cargo-llvm-cov` for Rust, `@vitest/coverage-v8` in `node_modules` for Vitest with no edit to `package.json`, and `coverage` and `pytest` in the interpreter of the project for Python.
 - CR-15: The port prints each tool install on stderr before it starts the install.
@@ -55,7 +55,7 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 ## 6. Non-functional requirements
 
 - CR-NFR-1: Determinism. Two runs on the same files with the same coverage report write byte-identical snapshots.
-- CR-NFR-2: Speed. On each parity fixture, the port with `--use-existing-coverage` finishes in less time than the original. `[ASSUMPTION]`
+- CR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port with `--use-existing-coverage` on the CI host is lower than the median wall-clock time of 5 runs of the original. The time of the original includes Python start-up and excludes the clone and the install.
 - CR-NFR-3: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
 - CR-NFR-4: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
 - CR-NFR-5: License. The port uses the MIT License. Each file that derives from the original names its source.
@@ -66,9 +66,8 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 
 - CR-PB-1: `crapper/parity/upstream.toml` records the pinned commit of the original.
 - CR-PB-2: A change of the pinned commit needs a new parity run.
-- CR-PB-3: Each bug fix has an entry in `crapper/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
+- CR-PB-3: Each bug fix, and each other difference from the original, including a difference that comes from Python only, has an entry in `crapper/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
 - CR-PB-4: Each bug fix has a test that fails on the behavior of the original and passes on the port.
-- CR-PB-5: A bug that comes from Python only needs no entry if the port cannot have it.
 - CR-PB-6: Mads Madsen approves each entry in `crapper/parity/fixes.toml`.
 
 ## 8. Acceptance criteria
@@ -85,6 +84,11 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 10. AC-10 (CR-NFR-1): Two runs on each fixture with `--use-existing-coverage` write byte-identical snapshots.
 11. AC-11 (Goal 3): The fixtures for Clojure, Java, Go, TypeScript, and Rust pass with the port on a host that has no Python installed. The expected results come from an earlier parity run.
 12. AC-12 (CR-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
+13. AC-13 (CR-1): `cargo build --release` in `crapper/` produces a binary named `crapper`, and `crapper --help` exits `0`.
+14. AC-14 (CR-6): On a fixture with the directories `test/`, `src/test/`, `spec/`, `vendor/`, `node_modules/`, `target/`, and `testing/`, each with a source file, the original and the port select the same files.
+15. AC-15 (CR-10): The port gives these known values: CC=1 and coverage 0 give `2`; CC=5 and coverage 0.5 give `8.125`; CC=5 and coverage 1 give `5`.
+16. AC-16 (CR-12): For each of the four coverage formats, a stored coverage report read with `--use-existing-coverage` gives the same coverage for each function in the original and the port.
+17. AC-17 (CR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as CR-NFR-2 defines.
 
 ## 9. Risks
 
