@@ -44,7 +44,7 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 - CR-7: The port supports `--changed` with the same Git selection of files as the original.
 - CR-8: The port names functions and namespaces for each language with the table in the README of the original.
 - CR-9: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, and with an EDN-aware reader for Clojure. `[ASSUMPTION]` The original uses tree-sitter for the same grammars.
-- CR-10: The port computes `CRAP = CC² × (1 − coverage)³ + CC` for each function. Coverage is the fraction (0.0 to 1.0) of the lines of the function that are covered, as the original computes it. Coverage is 0.0 under `--no-coverage` and for a function with no data in the coverage report.
+- CR-10: The port computes `CRAP = CC² × (1 − coverage)³ + CC` for each function. Coverage is the value that the original computes for the function at the pinned commit: a percentage from 0 to 100, measured as LCOV branches when the function has BRDA records and LCOV lines otherwise, JaCoCo instructions, Go statements, and Cloverage forms. The formula uses coverage / 100. Under `--no-coverage` and for a function with no data in the coverage report, `:coverage` and `:crap` are nil, as in the original.
 - CR-11: The port counts decision points for each language with the rules in the README of the original, section "What each language counts".
 - CR-12: The port reads coverage in each format of the original. At the pinned commit, the complete list is: Cloverage form counts, LCOV, JaCoCo XML, and the Go coverage profile. Cloverage form counts are the HTML files that Cloverage writes under `target/coverage/` (`target/coverage/**/*.html`). The original reads the per-line counts "N out of M forms covered" from these files.
 - CR-13: The port runs the default coverage command for each language from the README of the original, section "Coverage commands". It supports `--coverage-command`, `--use-existing-coverage`, and `--no-coverage`.
@@ -56,10 +56,10 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 ## 6. Non-functional requirements
 
 - CR-NFR-1: Determinism. Two runs on the same files with the same coverage report write byte-identical snapshots.
-- CR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port with `--use-existing-coverage` on the CI host is lower than the median wall-clock time of 5 runs of the original. The time of the original includes Python start-up and excludes the clone and the install.
+- CR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port is lower than the median wall-clock time of 5 runs of the original. Both the original and the port run with `--use-existing-coverage` on the same stored coverage report, on one named CI runner: Linux x86_64, Ubuntu 22.04. The time of the original includes Python start-up and excludes the clone and the install.
 - CR-NFR-3: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux with glibc 2.35 or later (Ubuntu 22.04) (x86_64 and arm64).
 - CR-NFR-4: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
-- CR-NFR-5: License. The port uses the MIT License. Every source file in the crate counts as derived from the original. Each one starts with a header comment that names the upstream repository, the upstream file path, and the pinned commit.
+- CR-NFR-5: License. The port uses the MIT License. Each `.rs` file in `crapper/` starts with a header comment that names the upstream repository and the pinned commit. A file that ports an upstream file also names that upstream file path. A file with no upstream counterpart says `upstream-path: none`.
 
 ## 7. Parity and bug fixes
 
@@ -67,9 +67,9 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 
 - CR-PB-1: `crapper/parity/upstream.toml` records the pinned commit of the original and the exact versions of `tree-sitter`, `tree-sitter-language-pack`, and each other Python dependency of the original. The parity runner installs these versions.
 - CR-PB-2: A change of the pinned commit needs a passing parity run, as AC-1 defines a pass. The parity runner writes `crapper/parity/last-run.toml` with the commit and the result.
-- CR-PB-3: Each bug fix, and each other difference from the original, including a difference that comes from Python only, has an entry in `crapper/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
-- CR-PB-4: Each bug fix has a test that fails on the behavior of the original and passes on the port.
-- CR-PB-6: Mads Madsen approves each entry in `crapper/parity/fixes.toml`.
+- CR-PB-3: Each bug fix, and each other difference from the original, including a difference that comes from Python only, has an entry in `crapper/parity/fixes.toml`. The entry has an `issue` or a `description` field, a `behavior` field that states the changed behavior, and a `fixture` field that names the parity fixture that shows the difference.
+- CR-PB-4: Each entry in `crapper/parity/fixes.toml` has a test. The test asserts against the output of the original that the parity run recorded at the pinned commit. It fails on that recorded output and passes on the port.
+- CR-PB-6: Mads Madsen approves each entry in `crapper/parity/fixes.toml`. An approved entry has the field `approved_by = "Mads Madsen"`. An entry without this field does not exempt a difference under AC-1.
 
 ## 8. Acceptance criteria
 
@@ -84,17 +84,20 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 9. AC-9 (CR-2): A flag that the original rejects is also rejected by the port, with the same exit code.
 10. AC-10 (CR-NFR-1): Two runs on each fixture with `--use-existing-coverage` write byte-identical snapshots.
 11. AC-11 (Goal 3): The fixtures for Clojure, Java, Go, TypeScript, and Rust pass with the port on a host that has no Python installed. The expected results come from an earlier parity run.
-12. AC-12 (CR-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
+12. AC-12 (CR-PB-4): For each entry in `fixes.toml`, a test names the entry, fails on the recorded output of the original, and passes on the port. The test needs no live Python.
 13. AC-13 (CR-1): `cargo build --release` in `crapper/` produces a binary named `crapper`, and `crapper --help` exits `0`.
 14. AC-14 (CR-6): On a fixture with the directories `test/`, `src/test/`, `spec/`, `vendor/`, `node_modules/`, `target/`, and `testing/`, each with a source file, the original and the port select the same files.
-15. AC-15 (CR-10): The port gives these known values: CC=1 and coverage 0 give `2`; CC=5 and coverage 0.5 give `8.125`; CC=5 and coverage 1 give `5`.
+15. AC-15 (CR-10): The port gives these known values, with coverage stated as a fraction (coverage / 100): CC=1 and coverage 0 give `2`; CC=5 and coverage 0.5 give `8.125`; CC=5 and coverage 1 give `5`.
 16. AC-16 (CR-12): For each of the four coverage formats, a stored coverage report read with `--use-existing-coverage` gives the same coverage for each function in the original and the port.
 17. AC-17 (CR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as CR-NFR-2 defines.
 18. AC-18 (CR-NFR-3): A CI matrix of four targets (macOS 14 arm64, macOS 14 x86_64, Linux x86_64 with glibc 2.35 or later on Ubuntu 22.04, and Linux arm64 with glibc 2.35 or later on Ubuntu 22.04) builds the port and passes the parity fixtures with `--use-existing-coverage` on each target.
 19. AC-19 (CR-NFR-4): On a clean host with Rust stable and a C compiler, `cargo install --git <repo> crapper` succeeds, and `crapper --help` exits `0`.
-20. AC-20 (CR-NFR-5): `crapper/LICENSE` is the MIT License text, and a check finds the CR-NFR-5 header comment in every `.rs` file in `crapper/`.
+20. AC-20 (CR-NFR-5): `crapper/LICENSE` is the MIT License text. A check finds the CR-NFR-5 header comment in every `.rs` file in `crapper/`: each header names the upstream repository, the commit, and either an upstream file path or `upstream-path: none`. The commit in each header equals the commit in `crapper/parity/upstream.toml`.
 21. AC-21 (CR-PB-1): The parity runner fails when `upstream.toml` lacks the commit or a version. After the install, the Python dependency versions of the original match the versions in `upstream.toml`.
 22. AC-22 (CR-PB-2): CI fails when the commit in `crapper/parity/last-run.toml` differs from the commit in `crapper/parity/upstream.toml`, or when the result in `last-run.toml` is not a pass.
+23. AC-23 (CR-PB-3): A check confirms that each entry in `fixes.toml` has an `issue` or a `description` field, a `behavior` field, and a `fixture` field that names an existing parity fixture. Every difference that the parity run finds matches an entry.
+24. AC-24 (CR-PB-6): A check confirms that every entry in `fixes.toml` has `approved_by = "Mads Madsen"`. A difference whose only matching entry has no such field counts as a failure under AC-1.
+25. AC-25 (CR-10): On a fixture with a function that has no data in the coverage report, the original and the port write the same `:coverage` and `:crap` values for that function.
 
 ## 9. Risks
 
