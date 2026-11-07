@@ -22,15 +22,16 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 
 ## 3. Goals
 
-1. The port is a drop-in replacement for the original: same command name, same flags, same exit codes, same snapshot. The only differences are the bug fixes in `crapper/parity/fixes.toml` (section 7).
+1. The port is a drop-in replacement for the original: same command name, same flags, same exit codes, same snapshot. The only differences are the entries in `crapper/parity/fixes.toml` (section 7): bug fixes and the other differences that CR-PB-3 lists.
 2. The port supports the six languages of the original: Clojure, Java, Go, TypeScript (with JavaScript), Rust, and Python.
 3. The port needs no Python at run time. A Python project still needs Python to run its own tests.
 
 ## 4. Non-goals
 
 1. The port does not add languages, metrics, or flags that the original does not have.
-2. The port does not change the formula or the threshold logic of the original. A bug fix is not a change of formula.
+2. The port does not change the formula or the threshold logic of the original. A bug fix is not a change of formula. A fixes.toml entry is not a change of formula.
 3. The port is private. It is not published to crates.io.
+4. The port does not support Windows.
 
 ## 5. Functional requirements
 
@@ -56,16 +57,16 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 
 - CR-NFR-1: Determinism. Two runs on the same files with the same coverage report write byte-identical snapshots.
 - CR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port with `--use-existing-coverage` on the CI host is lower than the median wall-clock time of 5 runs of the original. The time of the original includes Python start-up and excludes the clone and the install.
-- CR-NFR-3: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
+- CR-NFR-3: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux with glibc 2.35 or later (Ubuntu 22.04) (x86_64 and arm64).
 - CR-NFR-4: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
-- CR-NFR-5: License. The port uses the MIT License. Each file that derives from the original names its source.
+- CR-NFR-5: License. The port uses the MIT License. Every source file in the crate counts as derived from the original. Each one starts with a header comment that names the upstream repository, the upstream file path, and the pinned commit.
 
 ## 7. Parity and bug fixes
 
 The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them.
 
-- CR-PB-1: `crapper/parity/upstream.toml` records the pinned commit of the original.
-- CR-PB-2: A change of the pinned commit needs a new parity run.
+- CR-PB-1: `crapper/parity/upstream.toml` records the pinned commit of the original and the exact versions of `tree-sitter`, `tree-sitter-language-pack`, and each other Python dependency of the original. The parity runner installs these versions.
+- CR-PB-2: A change of the pinned commit needs a passing parity run, as AC-1 defines a pass. The parity runner writes `crapper/parity/last-run.toml` with the commit and the result.
 - CR-PB-3: Each bug fix, and each other difference from the original, including a difference that comes from Python only, has an entry in `crapper/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
 - CR-PB-4: Each bug fix has a test that fails on the behavior of the original and passes on the port.
 - CR-PB-6: Mads Madsen approves each entry in `crapper/parity/fixes.toml`.
@@ -89,13 +90,18 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 15. AC-15 (CR-10): The port gives these known values: CC=1 and coverage 0 give `2`; CC=5 and coverage 0.5 give `8.125`; CC=5 and coverage 1 give `5`.
 16. AC-16 (CR-12): For each of the four coverage formats, a stored coverage report read with `--use-existing-coverage` gives the same coverage for each function in the original and the port.
 17. AC-17 (CR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as CR-NFR-2 defines.
+18. AC-18 (CR-NFR-3): A CI matrix of four targets (macOS 14 arm64, macOS 14 x86_64, Linux x86_64 with glibc 2.35 or later on Ubuntu 22.04, and Linux arm64 with glibc 2.35 or later on Ubuntu 22.04) builds the port and passes the parity fixtures with `--use-existing-coverage` on each target.
+19. AC-19 (CR-NFR-4): On a clean host with Rust stable and a C compiler, `cargo install --git <repo> crapper` succeeds, and `crapper --help` exits `0`.
+20. AC-20 (CR-NFR-5): `crapper/LICENSE` is the MIT License text, and a check finds the CR-NFR-5 header comment in every `.rs` file in `crapper/`.
+21. AC-21 (CR-PB-1): The parity runner fails when `upstream.toml` lacks the commit or a version. After the install, the Python dependency versions of the original match the versions in `upstream.toml`.
+22. AC-22 (CR-PB-2): CI fails when the commit in `crapper/parity/last-run.toml` differs from the commit in `crapper/parity/upstream.toml`, or when the result in `last-run.toml` is not a pass.
 
 ## 9. Risks
 
 | Risk | Effect | Mitigation |
 | --- | --- | --- |
 | The original changes often. | The port drifts from the original. | Pin one commit (CR-PB-1). Update on purpose only (CR-PB-2). |
-| A tree-sitter grammar version in Rust differs from the one in Python. | Different parse trees give a different CC or different names. | Pin the grammar versions. AC-1 detects a difference. |
+| A tree-sitter grammar version in Rust differs from the one in Python. | Different parse trees give a different CC or different names. | Pin the grammar versions. `upstream.toml` records the exact Python dependency versions of the original, and the parity runner installs them (CR-PB-1). AC-1 detects a difference. |
 | The Clojure reader in the original is custom Python code. | Edge cases of the reader are hard to copy. | The Clojure fixture covers reader conditionals, syntax-quote, and keyword calls. |
 | Floats print in a different way in Rust and Python. | Snapshots differ in the last digits. | AC-1 compares parsed EDN. The port copies the number format of the original. |
 | The six coverage tool chains must exist on the CI host. | Parity runs are slow and fragile. | Most runs use `--use-existing-coverage` with stored coverage reports. |
@@ -104,9 +110,10 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 ## 10. Dependencies
 
 1. Rust stable toolchain and Cargo on the build host.
-2. Git 2.30 or later on each host that runs `--changed`.
-3. For each language that a user analyzes: the test tools in the README of the original.
-4. For parity runs only: Python and the original at the pinned commit.
+2. A C compiler on the build host (Xcode Command Line Tools on macOS, gcc or clang on Linux).
+3. Git 2.30 or later on each host that runs `--changed`.
+4. For each language that a user analyzes: the test tools in the README of the original.
+5. For parity runs only: Python and the original at the pinned commit.
 
 ## 11. Open questions
 
