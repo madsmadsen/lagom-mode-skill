@@ -21,7 +21,7 @@ Agents that work in parallel in one checkout also see the changes of each other.
 | Finish | The successful end of a loop: SK-14, SK-16, and SK-18 succeed. |
 | Stop | The end of a loop after a failure: SK-9, SK-12, SK-14, SK-15, or SK-16. |
 | Unit | One behavior of the feature: one failing test and the code that makes it pass. |
-| Gate | A tool run that gives pass or fail with no LLM involved. |
+| Gate | A tool run and a fixed rule (SK-7) on its exit code and snapshot. The rule gives pass or fail and leaves no choice to the agent. |
 | Worktree | A Git working tree on its own branch, made with `git worktree add`. |
 | Source branch | The branch that was checked out where the loop started. |
 | Base commit | The commit that the loop worktree starts from. After a rebase (SK-15), the new tip of the source branch. |
@@ -46,9 +46,9 @@ The skills use three commands from the `PATH`: `crapper`, `dryer`, and `mutator`
 
 | Command | Used interface |
 | --- | --- |
-| `crapper` | `--changed`, a list of files, `--threshold N`, exit `2` when the worst CRAP score is higher than `N`. |
-| `dryer` | `--changed`, a list of files, `--threshold N`, a report of candidate pairs. Exit `0` after a report. |
-| `mutator` | `--changed`, a list of files, exit `0` when every executed mutant is killed, uncovered sites in `.metrics/mutate/<namespace>.edn`. |
+| `crapper` | `--changed`, a list of files, `--threshold N`. Exit `0` when the worst CRAP score is `N` or lower, and `2` when it is higher than `N` (CR-17). A table on stdout with the worst score first (CR-16). |
+| `dryer` | `--changed`, a list of files, `--threshold N`, a report of candidate pairs. Exit `0` after a report, `1` on a usage error, and `2` on an unknown `--format` (DR-13). |
+| `mutator` | `--changed`, a list of files. Exit `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives (MU-20). Uncovered sites in `.metrics/mutate/<namespace>.edn`. |
 
 ## 6. The loop
 
@@ -111,7 +111,7 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 
 ### 7.4 Tool skills
 
-- SK-20: Each tool skill states where to find the install instructions of its tool, how to run the tool on uncommitted changes and on a list of files, and how to read its output.
+- SK-20: Each tool skill names the document with the install instructions of its tool: the README of its port. It also states how to run the tool on uncommitted changes and on a list of files, and how to read its output.
 - SK-21: The crapper skill maps a high score to an action: split the function, add tests, or both. It states when a `match` or `case` is worth splitting.
 - SK-22: The dryer skill maps a candidate pair to an action: extract the shared shape, or record why the pair stays.
 - SK-23: The mutator skill maps each outcome to an action: cover an uncovered site, kill a survivor with a new test, or delete dead code.
@@ -124,7 +124,11 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 
 ## 9. Acceptance criteria
 
-The sample features run on a sample Rust project with the three tools on the `PATH`.
+`[ASSUMPTION: sample project and features]` The sample features run on the sample Rust project `samples/rust-todo`, a command-line to-do list, with the three tools on the `PATH`. The 3 sample feature requests are:
+
+1. Add a `done <id>` command that marks a task as done.
+2. Add a `--due <date>` option to `add`, and list overdue tasks first.
+3. Add an `export --csv` command that writes all tasks as CSV.
 
 1. AC-1 (SK-1, SK-3, SK-4, SK-5, SK-20 to SK-24): `docs/skill-checklist.md` has one item for each of these requirements. Mads Madsen inspects the skills and records pass or fail for each item. All items pass.
 2. AC-2 (SK-7, SK-9): An agent loads `feature-loop` and gets a small feature request. The agent ends with all four conditions of SK-7 true for the feature files, or with a stop report after the retry limit. Mads Madsen reviews the log for 3 sample features. `[ASSUMPTION: sample size]`
