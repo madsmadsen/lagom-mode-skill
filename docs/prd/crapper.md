@@ -1,0 +1,109 @@
+# PRD: crapper
+
+Status: Draft 1. Owner and approver: Mads Madsen. Date: 2026-11-07.
+
+This document states the requirements for `crapper`, a Rust port of [crapper](https://github.com/unclebob/crapper) by Robert C. Martin. The port is one Cargo crate in the `crapper/` directory. It does not depend on another crate or tool in this repository. Each statement that comes from a guess and not from a source carries the label `[ASSUMPTION]`.
+
+## 1. Problem
+
+crapper gives a CRAP score to each function, so that a human or an agent can find functions that are complex and not well tested. The original is written in Python. A project in another language then needs a working Python setup only to run crapper.
+
+## 2. Definitions
+
+| Term | Meaning |
+| --- | --- |
+| Original | The Python crapper at the commit pinned in `crapper/parity/upstream.toml`. |
+| Port | The Rust crapper that this document specifies. |
+| CC | Cyclomatic complexity: the number of decision points in a function, plus one. |
+| CRAP | Change Risk Anti-Patterns score: `CC² × (1 − coverage)³ + CC`. |
+| Snapshot | The EDN file `.metrics/crap.edn` that crapper writes. |
+| EDN | Extensible Data Notation, the Clojure data format. |
+| Parity fixture | A small project in one language that the original and the port both analyze. |
+
+## 3. Goals
+
+1. The port is a drop-in replacement for the original: same command name, same flags, same exit codes, same snapshot. The only differences are the bug fixes in `crapper/parity/fixes.toml` (section 7).
+2. The port supports the six languages of the original: Clojure, Java, Go, TypeScript (with JavaScript), Rust, and Python.
+3. The port needs no Python at run time. A Python project still needs Python to run its own tests.
+
+## 4. Non-goals
+
+1. The port does not add languages, metrics, or flags that the original does not have.
+2. The port does not change the formula or the threshold logic of the original. A bug fix is not a change of formula.
+3. The port is private. It is not published to crates.io.
+
+## 5. Functional requirements
+
+- CR-1: The port is a Rust binary named `crapper`.
+- CR-2: The port accepts every flag and positional argument of the original, with the same meaning and the same default. It rejects each flag that the original rejects, with the same exit code.
+- CR-3: The port returns the same exit code as the original for the same input.
+- CR-4: The port writes `.metrics/crap.edn` in the same EDN shape and with the same keys as the original.
+- CR-5: The port detects the language of each file by its extension, the same as the original.
+- CR-6: The port skips the directories `test`, `spec`, `vendor`, `node_modules`, and `target`, the same as the original.
+- CR-7: The port supports `--changed` with the same Git selection of files as the original.
+- CR-8: The port names functions and namespaces for each language with the table in the README of the original.
+- CR-9: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, and with an EDN-aware reader for Clojure. `[ASSUMPTION]` The original uses tree-sitter for the same grammars.
+- CR-10: The port computes `CRAP = CC² × (1 − coverage)³ + CC` for each function.
+- CR-11: The port counts decision points for each language with the rules in the README of the original, section "What each language counts".
+- CR-12: The port reads coverage in each format of the original: Cloverage form counts, LCOV, JaCoCo XML, and the Go coverage profile.
+- CR-13: The port runs the default coverage command for each language from the README of the original, section "Coverage commands". It supports `--coverage-command`, `--use-existing-coverage`, and `--no-coverage`.
+- CR-14: If a coverage tool is missing, the port installs it the same way as the original. This covers `cargo-llvm-cov` for Rust, `@vitest/coverage-v8` in `node_modules` for Vitest with no edit to `package.json`, and `coverage` and `pytest` in the interpreter of the project for Python.
+- CR-15: The port prints each tool install on stderr before it starts the install.
+- CR-16: The port prints a table on stdout with the worst score first.
+- CR-17: `--threshold N` makes the port exit `2` when the worst score is higher than `N`.
+
+## 6. Non-functional requirements
+
+- CR-NFR-1: Determinism. Two runs on the same files with the same coverage report write byte-identical snapshots.
+- CR-NFR-2: Speed. On each parity fixture, the port with `--use-existing-coverage` finishes in less time than the original. `[ASSUMPTION]`
+- CR-NFR-3: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
+- CR-NFR-4: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
+- CR-NFR-5: License. The port uses the MIT License. Each file that derives from the original names its source.
+
+## 7. Parity and bug fixes
+
+The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them.
+
+- CR-PB-1: `crapper/parity/upstream.toml` records the pinned commit of the original.
+- CR-PB-2: A change of the pinned commit needs a new parity run.
+- CR-PB-3: Each bug fix has an entry in `crapper/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
+- CR-PB-4: Each bug fix has a test that fails on the behavior of the original and passes on the port.
+- CR-PB-5: A bug that comes from Python only needs no entry if the port cannot have it.
+- CR-PB-6: Mads Madsen approves each entry in `crapper/parity/fixes.toml`.
+
+## 8. Acceptance criteria
+
+1. AC-1 (CR-2, CR-3, CR-4): `crapper/parity/coverage.toml` maps every flag of the original and every row of the README tables (CR-8, CR-11, CR-13) to at least one fixture run. For each entry, the original and the port give the same exit code and the same snapshot after both are parsed as EDN. A difference that `fixes.toml` lists does not count as a failure.
+2. AC-2 (CR-5, CR-9): A parity fixture exists for each of the six languages.
+3. AC-3 (CR-17): On a fixture with a worst score of 12, `crapper --threshold 10` exits `2` and `crapper --threshold 12` exits `0`. On a fixture with a worst score of exactly 10.0, `crapper --threshold 9.99` exits `2`.
+4. AC-4 (CR-7): On a fixture with a modified, a staged, and an untracked source file, the original and the port, both run with `--changed`, select the same files and write the same snapshot.
+5. AC-5 (CR-13): On a fixture, the original and the port give the same exit code and snapshot with `--coverage-command <cmd>` and with `--no-coverage`.
+6. AC-6 (CR-14, CR-15): On a Rust fixture on a host without `cargo-llvm-cov`, the port installs it, prints the install on stderr, and writes a snapshot with coverage values.
+7. AC-7 (CR-14): On a Vitest fixture without `@vitest/coverage-v8`, the port installs it in `node_modules`, and `package.json` is unchanged. On a Python fixture without `coverage` and `pytest`, the port installs them in the interpreter of the project.
+8. AC-8 (CR-16): On each fixture, the table that the port prints on stdout equals the table of the original.
+9. AC-9 (CR-2): A flag that the original rejects is also rejected by the port, with the same exit code.
+10. AC-10 (CR-NFR-1): Two runs on each fixture with `--use-existing-coverage` write byte-identical snapshots.
+11. AC-11 (Goal 3): The fixtures for Clojure, Java, Go, TypeScript, and Rust pass with the port on a host that has no Python installed. The expected results come from an earlier parity run.
+12. AC-12 (CR-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
+
+## 9. Risks
+
+| Risk | Effect | Mitigation |
+| --- | --- | --- |
+| The original changes often. | The port drifts from the original. | Pin one commit (CR-PB-1). Update on purpose only (CR-PB-2). |
+| A tree-sitter grammar version in Rust differs from the one in Python. | Different parse trees give a different CC or different names. | Pin the grammar versions. AC-1 detects a difference. |
+| The Clojure reader in the original is custom Python code. | Edge cases of the reader are hard to copy. | The Clojure fixture covers reader conditionals, syntax-quote, and keyword calls. |
+| Floats print in a different way in Rust and Python. | Snapshots differ in the last digits. | AC-1 compares parsed EDN. The port copies the number format of the original. |
+| The six coverage tool chains must exist on the CI host. | Parity runs are slow and fragile. | Most runs use `--use-existing-coverage` with stored coverage reports. |
+| The port installs tools into the environment of the user. | An install surprises the user. | CR-15 prints each install. |
+
+## 10. Dependencies
+
+1. Rust stable toolchain and Cargo on the build host.
+2. Git 2.30 or later on each host that runs `--changed`.
+3. For each language that a user analyzes: the test tools in the README of the original.
+4. For parity runs only: Python and the original at the pinned commit.
+
+## 11. Open questions
+
+Each `[ASSUMPTION]` label in this document is an open question for the owner.
