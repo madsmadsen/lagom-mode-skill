@@ -8,9 +8,9 @@ This document states the overall goal of the `deterministic-coding` repository a
 
 An AI coding agent decides by itself when its work is done. Its idea of "done" changes from run to run. A human must then read the full diff to find complex functions, duplicated code, and code that the tests do not really check.
 
-This repository gives the agent a fixed loop with quality gates. A gate is a tool run that gives pass or fail with no LLM involved. The same files give the same verdict each time, so the agent cannot argue with a gate. The agent finishes a feature only when all gates pass. Otherwise it stops and reports.
+This repository gives the agent a fixed loop with quality gates. A gate is a tool run that gives pass or fail with no LLM involved. The same files give the same verdict each time, so the agent cannot argue with a gate. The agent finishes a feature only when all gates pass. If a gate still fails after its retry limit (skills SK-9), the agent stops and reports.
 
-The loop is based on [ub-mode](https://github.com/unclebob/ub-mode) by Robert C. Martin. The gates are his three tools: [crapper](https://github.com/unclebob/crapper), [dryer](https://github.com/unclebob/dryer), and [mutator](https://github.com/unclebob/mutator). The tools are written in Python. This repository ports each tool to Rust, so that the gates need no Python at run time.
+The loop is based on [ub-mode](https://github.com/unclebob/ub-mode) by Robert C. Martin. The gates are his three tools: [crapper](https://github.com/unclebob/crapper), [dryer](https://github.com/unclebob/dryer), and [mutator](https://github.com/unclebob/mutator). The tools are written in Python. This repository ports each tool to Rust, so that the crapper, dryer, and mutator binaries need no Python at run time.
 
 ## 2. Parts
 
@@ -25,7 +25,7 @@ The parts are independent:
 
 1. A tool does not know about another tool. Each tool is one Cargo package with no dependency on another package in this repository.
 2. The skills do not know how a tool is built. They use `crapper`, `dryer`, and `mutator` as commands on the `PATH`, with the interface in section 5 of the skills PRD.
-3. A change to one part needs no change to another part, if the command interface of the tools stays the same.
+3. A change to one part needs no change to another part, if the command interface of the tools stays the same. The command interface is the set of commands, flags, exit codes, and outputs in section 5 of the skills PRD. A change to a tool outside this set needs no change to the skills.
 
 ## 3. Users
 
@@ -72,10 +72,15 @@ The parts are independent:
 
 The repository reaches its goal when all of these are true:
 
-1. An agent with `feature-loop` finishes sample features in two different agents, with all gates passed (skills PRD, AC-2 and AC-14).
+1. Each of the 3 sample features (skills PRD, AC-2) ends with all four SK-7 conditions true, in two different agent harnesses named in the skills PRD, with no change to the skills (skills PRD, AC-14). A stop report counts as a failure for this criterion.
 2. All three ports have replaced their originals (section 5.1).
-3. On a project that is not a Python project, the gates run with no Python installed.
+3. crapper, dryer, and mutator run on a host with no Python installed on the Clojure, Java, Go, TypeScript, and Rust fixtures (crapper PRD AC-11, dryer PRD AC-8, mutator PRD AC-11).
 
 ## 7. Open questions
 
 Each `[ASSUMPTION]` label in this document and in the four part PRDs is an open question for the owner.
+
+## 8. Acceptance criteria
+
+1. AC-1 (section 2, item 1): For each of `crapper/`, `dryer/`, and `mutator/`, `cargo metadata` lists no path dependency and no git dependency on another package in this repository.
+2. AC-2 (section 2, item 2): No file under `skills/` refers to the source or the build of `crapper/`, `dryer/`, or `mutator/`.

@@ -67,10 +67,11 @@ The original imports code from a crapper checkout for the work in this section. 
 - MU-18: Before each run that is not a scan run, the port restores the source files from `target/mutator-backup/`, the same as the original.
 - MU-19: If a snapshot exists, the port runs differentially. It reruns the survivors and every site in a function whose text changed. `--mutate-all` reruns all sites.
 - MU-20: The port exits `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives.
+- MU-21: When a mutant times out, or its test time is within 10% of its timeout, the port runs that mutant once more with 2 times the timeout. The outcome of this second run is the outcome of the mutant. This behavior differs from the original, and `mutator/parity/fixes.toml` lists it. `[ASSUMPTION: 10% and 2 times]`
 
 ## 6. Non-functional requirements
 
-- MU-NFR-1: Determinism. Two runs on the same files give the same outcome for each mutant, except a mutant whose test time is within 10% of its timeout. `[ASSUMPTION: 10%]`
+- MU-NFR-1: Determinism. Two runs on the same files give the same outcome for each mutant. A mutant near its timeout gets a stable outcome through MU-21.
 - MU-NFR-2: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
 - MU-NFR-3: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
 - MU-NFR-4: License. The port uses the MIT License. Each file that derives from the original or from the crapper code that the original imports names its source.
@@ -101,6 +102,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 10. AC-10 (MU-2): A flag that the original rejects is also rejected by the port, with the same exit code.
 11. AC-11 (Goal 3): The fixtures for Clojure, Java, Go, TypeScript, and Rust pass with the port on a host that has no Python installed and no crapper checkout. The expected results come from an earlier parity run.
 12. AC-12 (MU-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
+13. AC-13 (MU-21, MU-NFR-1): On a fixture with a mutant whose test time is within 10% of its timeout, the port runs the mutant a second time with 2 times the timeout. Five runs on this fixture give the same outcome for each mutant and byte-identical snapshots.
 
 ## 9. Risks
 
@@ -109,7 +111,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 | The original changes often. | The port drifts from the original. | Pin one commit (MU-PB-1). Update on purpose only (MU-PB-2). |
 | The port copies the crapper code that the original imports. | The function names or the coverage of the port drift from the crapper code. | AC-1 compares with the original, which uses the pinned crapper code. |
 | A tree-sitter grammar version in Rust differs from the one in Python. | Different parse trees give different sites or names. | Pin the grammar versions. AC-1 detects a difference. |
-| Two mutator runs at the same time on one host slow each other down. | A survivor can time out and count as killed. | `[ASSUMPTION]` Accepted. MU-NFR-1 allows a difference near the timeout. |
+| Two mutator runs at the same time on one host slow each other down. | A survivor can time out and count as killed. | MU-21 runs each mutant near its timeout a second time with 2 times the timeout. AC-13 checks the outcome. |
 | A backup from an old run is restored. | The restore overwrites later edits to the source files. | `[ASSUMPTION]` The port copies the behavior of the original. A fix needs an entry in `fixes.toml`. |
 | A run on a large project takes a long time. | The run can hit the command timeout of an agent. | Use `--changed` or a list of files. |
 

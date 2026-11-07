@@ -139,7 +139,7 @@ The sample features run on a sample Rust project with the three tools on the `PA
 11. AC-11 (SK-15, SK-19): The rebase has a conflict. The agent stops and reports, and the loop worktree and the loop branch still exist.
 12. AC-12 (SK-16): The remote rejects the push. The agent stops, the log names the rejection, and the remote branch is unchanged.
 13. AC-13 (SK-18): The loop worktree has uncommitted changes after SK-14 and SK-16 succeed. The agent does not remove the worktree, and it reports the changes.
-14. AC-14 (SK-2): The same 3 sample features finish in two different agents with no change to the skills.
+14. AC-14 (SK-2): The same 3 sample features finish in two different agent harnesses, Claude Code and omp, with no change to the skills. `[ASSUMPTION: harnesses]`
 
 ## 10. Success metrics
 
