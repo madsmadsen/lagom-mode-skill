@@ -8,7 +8,7 @@ This document states the overall goal of the `deterministic-coding` repository a
 
 An AI coding agent decides by itself when its work is done. Its idea of "done" changes from run to run. A human must then read the full diff to find complex functions, duplicated code, and code that the tests do not really check.
 
-This repository gives the agent a fixed loop with quality gates. A gate is a tool run and a fixed rule (skills SK-7) on its exit code and snapshot. The rule gives pass or fail and leaves no choice to the agent. On the same input files, the same project tests, and the same installed coverage tools, each tool gives the same exit code and the same snapshot, except for the accepted risks in section 9. So the agent cannot argue with a gate. The agent finishes a feature only when all tests pass and all gates pass. If a gate still fails after its retry limit (skills SK-9), the agent stops and reports.
+This repository gives the agent a fixed loop with quality gates. A gate is a tool run and a fixed rule (skills SK-7) on its exit code and snapshot. The rule gives pass or fail and leaves no choice to the agent. On the same input files, the same project tests, and the same coverage tools (after any install that the tool makes on its first run), each tool gives the same exit code and a byte-identical snapshot, except for the accepted risks in section 9. So the agent cannot argue with a gate. The agent finishes a feature only when all tests pass and all gates pass. If a gate still fails after its retry limit (skills SK-9), the agent stops and reports.
 
 The loop is based on [ub-mode](https://github.com/unclebob/ub-mode) by Robert C. Martin. The gates are his three tools: [crapper](https://github.com/unclebob/crapper), [dryer](https://github.com/unclebob/dryer), and [mutator](https://github.com/unclebob/mutator). The tools are written in Python. This repository ports each tool to Rust, so that the crapper, dryer, and mutator binaries need no Python at run time.
 
@@ -34,7 +34,7 @@ The parts are independent:
 | Developer | Asks an agent for a small feature and gets a change that passed every gate. |
 | Agent | Gets numbered steps (SK-5), a written list of stop conditions (SK-25), and a stated next action for each tool exit code (SK-24). |
 | Reviewer | Reads a short log and a few small commits, not a large unchecked diff. |
-| [uml-viewer](https://github.com/unclebob/uml-viewer) user | Reads the same `.metrics/` snapshots as before, now written by the ports. A `fixes.toml` entry that changes snapshot keys or shape is checked against uml-viewer before approval. |
+| [uml-viewer](https://github.com/unclebob/uml-viewer) user | Reads the same `.metrics/` snapshots as before, now written by the ports, except for approved `fixes.toml` entries. Before Mads Madsen approves a `fixes.toml` entry that changes snapshot keys or shape, he loads the port's fixture snapshot in uml-viewer at a pinned commit, and it renders with no error. The entry records `uml_viewer_commit` and `uml_viewer_checked_on`. |
 
 ## 4. Non-goals
 
@@ -46,7 +46,7 @@ The parts are independent:
 
 ### 5.1 Order of delivery
 
-1. The skills come first. They use the Python originals until a Rust port replaces its original.
+1. Skills work and port work can overlap. The skills ship first and use the Python originals. The skills PRD states how each original goes on the PATH (one wrapper script per tool) and that the mutator original needs a crapper checkout at ../crapper.
 2. A port replaces its original only after it passes its parity criteria and Mads Madsen approves.
 3. The ports can come in any order, because no port depends on another. `[ASSUMPTION]` crapper comes first, because the skills need it in every gate.
 4. The development of this repository uses `feature-loop` with the tools that are installed at that time.
@@ -85,10 +85,12 @@ Each `[ASSUMPTION]` label in this document and in the four part PRDs is an open 
 
 1. AC-1 (section 2, item 1): For each of `crapper/`, `dryer/`, and `mutator/`, `cargo metadata` lists no path dependency and no git dependency on another package in this repository.
 2. AC-2 (section 2, item 2): No file under `skills/` mentions `cargo` or this repository. A search under `skills/` for `cargo` and for `deterministic-coding` finds no match.
-3. AC-3 (section 2, item 3): Each command, positional file argument, flag, exit code, and output that a tool skill names appears in section 5 of the skills PRD.
-4. AC-4 (section 1, determinism): crapper PRD AC-10 and mutator PRD AC-13 pass.
+3. AC-3 (section 2, item 3): Each command, positional file argument, flag, exit code, and output that a skill under `skills/` names, including `feature-loop`, appears in section 5 of the skills PRD.
+4. AC-4 (section 1, determinism): crapper PRD AC-10, dryer PRD AC-7, and mutator PRD AC-13 pass. On each port's fixtures, after any tool install, two runs of each SK-8 gate command give the same exit code and byte-identical snapshots.
+5. AC-5 (section 3, uml-viewer user): Each `fixes.toml` entry that changes snapshot keys or shape has the fields `uml_viewer_commit` and `uml_viewer_checked_on`, and the fixture snapshot of that entry renders with no error in uml-viewer at that commit.
 
 ## 9. Accepted risks
 
 1. A flaky test in the project can change the result of skills SK-7 item 1 between runs on the same files. The tools do not control this.
 2. A mutant whose second run under mutator MU-21 takes about 2 times its timeout can still change its outcome between runs.
+3. The first gate run in a new worktree can install a coverage tool. It needs network access to the package registry, and a failed install fails the gate.

@@ -47,8 +47,8 @@ The skills use three commands from the `PATH`: `crapper`, `dryer`, and `mutator`
 | Command | Used interface |
 | --- | --- |
 | `crapper` | `--changed`, a list of files, `--threshold N`. Exit `0` when the worst CRAP score is `N` or lower, and `2` when it is higher than `N` (CR-17). A table on stdout with the worst score first (CR-16). |
-| `dryer` | `--changed`, a list of files, `--threshold N`, a report of candidate pairs. Exit `0` after a report, `1` on a usage error, and `2` on an unknown `--format` (DR-13). |
-| `mutator` | `--changed`, a list of files. Exit `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives (MU-20). Uncovered sites in `.metrics/mutate/<namespace>.edn`. |
+| `dryer` | `--changed`, a list of files, `--threshold N`, a report of candidate pairs in the snapshot `.metrics/dry.edn`, with the two forms of each pair `[ASSUMPTION: field name]` and their similarity score `[ASSUMPTION: field name]` (DR-10). Exit `0` after a report, `1` on a usage error, and `2` on an unknown `--format` (DR-13). |
+| `mutator` | `--changed`, a list of files. Exit `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives (MU-20). Uncovered sites, survivors, and dead code in `.metrics/mutate/<namespace>.edn`, with the field name of each: uncovered sites `[ASSUMPTION: field name]`, survivors `[ASSUMPTION: field name]`, and dead code `[ASSUMPTION: field name]`. |
 
 ## 6. The loop
 
@@ -97,6 +97,7 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 - SK-9: `feature-loop` sets a retry limit for each gate. If a gate still fails after the limit, the agent stops and reports the failure and the log. It does not lower a threshold, delete a test, or edit a gate command to pass. `[ASSUMPTION]` The limit is 3 tries for each gate.
 - SK-10: `feature-loop` tells the agent to keep a log of each action and its reason, and to report the log at the end.
 - SK-11: `feature-loop` tells the agent to commit each unit after its unit gates pass. Each commit message states why, what changed, and how the agent proved it.
+- SK-25: `feature-loop` lists every stop condition (SK-9, SK-12, SK-14, SK-15, SK-16) in one numbered list.
 
 ### 7.3 Worktree
 
@@ -130,7 +131,7 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 2. Add a `--due <date>` option to `add`, and list overdue tasks first.
 3. Add an `export --csv` command that writes all tasks as CSV.
 
-1. AC-1 (SK-1, SK-3, SK-4, SK-5, SK-20 to SK-24): `docs/skill-checklist.md` has one item for each of these requirements. Mads Madsen inspects the skills and records pass or fail for each item. All items pass.
+1. AC-1 (SK-1, SK-3, SK-4, SK-5, SK-20 to SK-25): `docs/skill-checklist.md` has one item for each of these requirements. Mads Madsen inspects the skills and records pass or fail for each item. All items pass.
 2. AC-2 (SK-7, SK-9): An agent loads `feature-loop` and gets a small feature request. The agent ends with all four conditions of SK-7 true for the feature files, or with a stop report after the retry limit. Mads Madsen reviews the log for 3 sample features. `[ASSUMPTION: sample size]`
 3. AC-3 (SK-6): In the log of each sample feature, every unit has a run of its failing test, with the failure reason recorded, before the first change to production code in that unit.
 4. AC-4 (SK-8): In one sample feature, unit 1 and unit 3 add two functions that dryer scores 0.8 or more. The unit gates pass, the feature gates fail, and the agent removes the duplication before it finishes.
@@ -167,6 +168,7 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 1. Git 2.30 or later on each host that runs a loop.
 2. `crapper`, `dryer`, and `mutator` on the `PATH`, with the interface in section 5.
 3. The test tools of the project that the agent works on.
+4. Until a Rust port replaces its original, one wrapper script for each tool puts the Python original on the `PATH` under the command name `crapper`, `dryer`, or `mutator`. The mutator original needs a crapper checkout at `../crapper`, next to the mutator checkout.
 
 ## 13. Open questions
 
