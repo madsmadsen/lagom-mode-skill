@@ -10,3 +10,5 @@ pub mod sites;
 pub mod ts;
 pub mod runner;
 pub mod workers;
+pub mod coverage;
+pub mod cover_run;
