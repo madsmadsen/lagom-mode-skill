@@ -1,0 +1,326 @@
+# Parity runs for the Rust port. Every required item below is covered by at least one run.
+# Each run executes the ORIGINAL Python crapper (see record_original.py).
+
+[required]
+items = ["flag:-h", "flag:--help", "flag:--root", "flag:-s", "flag:--source-root", "flag:--changed", "flag:--no-coverage",
+         "flag:--use-existing-coverage", "flag:--coverage-command", "flag:--threshold", "arg:path", "arg:filter",
+         "cr8:clojure","cr8:java","cr8:go","cr8:typescript","cr8:rust","cr8:python",
+         "cr11:clojure","cr11:java","cr11:go","cr11:typescript","cr11:rust","cr11:python",
+         "cr13:clojure","cr13:java","cr13:go","cr13:typescript","cr13:rust","cr13:python",
+         "reject:unknown-flag","reject:missing-value","reject:bad-threshold","reject:no-coverage+coverage-command",
+         "cr6:skip-dirs","cr7:changed","cr10:no-data"]
+
+# Existing-report runs: read the fixture's checked-in coverage reports only.
+[[run]]
+id = "python-existing"
+fixture = "python"
+args = ["--use-existing-coverage"]
+setup = []
+requires = []
+covers = ["language:python", "flag:--use-existing-coverage", "cr8:python", "cr11:python"]
+expect_exit = 0
+
+[[run]]
+id = "clojure-existing"
+fixture = "clojure"
+args = ["--use-existing-coverage"]
+setup = []
+requires = []
+covers = ["language:clojure", "flag:--use-existing-coverage", "cr8:clojure", "cr11:clojure"]
+expect_exit = 0
+
+[[run]]
+id = "java-existing"
+fixture = "java"
+args = ["--use-existing-coverage"]
+setup = []
+requires = []
+covers = ["language:java", "flag:--use-existing-coverage", "cr8:java", "cr11:java"]
+expect_exit = 0
+
+[[run]]
+id = "go-existing"
+fixture = "go"
+args = ["--use-existing-coverage"]
+setup = []
+requires = []
+covers = ["language:go", "flag:--use-existing-coverage", "cr8:go", "cr11:go"]
+expect_exit = 0
+
+[[run]]
+id = "typescript-existing"
+fixture = "typescript"
+args = ["--use-existing-coverage"]
+setup = []
+requires = []
+covers = ["language:typescript", "flag:--use-existing-coverage", "cr8:typescript", "cr11:typescript"]
+expect_exit = 0
+
+[[run]]
+id = "rust-existing"
+fixture = "rust"
+args = ["--use-existing-coverage"]
+setup = []
+requires = []
+covers = ["language:rust", "flag:--use-existing-coverage", "cr8:rust", "cr11:rust"]
+expect_exit = 0
+
+# Default coverage commands (CR-13). Skipped and reported when the host tool is missing.
+[[run]]
+id = "cr13-clojure"
+fixture = "clojure"
+args = []
+setup = []
+requires = ["clj"]
+covers = ["cr13:clojure", "language:clojure"]
+expect_exit = 0
+
+[[run]]
+id = "cr13-java"
+fixture = "java"
+args = []
+setup = []
+requires = ["mvn"]
+covers = ["cr13:java", "language:java"]
+expect_exit = 0
+
+[[run]]
+id = "cr13-go"
+fixture = "go"
+args = []
+setup = []
+requires = ["go"]
+covers = ["cr13:go", "language:go"]
+expect_exit = 0
+
+[[run]]
+id = "cr13-typescript"
+fixture = "typescript"
+args = []
+setup = []
+requires = ["npm"]
+covers = ["cr13:typescript", "language:typescript"]
+expect_exit = 0
+
+[[run]]
+id = "cr13-rust"
+fixture = "rust"
+args = []
+setup = []
+requires = ["cargo", "cargo-llvm-cov"]
+covers = ["cr13:rust", "language:rust"]
+expect_exit = 0
+
+[[run]]
+id = "cr13-python"
+fixture = "python"
+args = []
+setup = []
+requires = ["python3", "coverage"]
+covers = ["cr13:python", "language:python"]
+expect_exit = 0
+
+# Coverage flags.
+[[run]]
+id = "python-coverage-command-true"
+fixture = "python"
+args = ["--coverage-command", "true"]
+setup = []
+requires = []
+covers = ["flag:--coverage-command"]
+expect_exit = 0
+
+[[run]]
+id = "python-no-coverage"
+fixture = "python"
+args = ["--no-coverage"]
+setup = []
+requires = []
+covers = ["flag:--no-coverage"]
+expect_exit = 0
+
+# Help.
+[[run]]
+id = "help-short"
+fixture = "python"
+args = ["-h"]
+setup = []
+requires = []
+covers = ["flag:-h"]
+expect_exit = 0
+
+[[run]]
+id = "help-long"
+fixture = "python"
+args = ["--help"]
+setup = []
+requires = []
+covers = ["flag:--help"]
+expect_exit = 0
+
+# Project root, source roots, positional path and filter.
+[[run]]
+id = "flags-root"
+fixture = "flags"
+args = ["--root", "proj", "--no-coverage"]
+setup = []
+requires = []
+covers = ["flag:--root", "flag:--no-coverage"]
+expect_exit = 0
+
+[[run]]
+id = "flags-source-root-short"
+fixture = "flags"
+args = ["-s", "proj/src/ui", "--no-coverage"]
+setup = []
+requires = []
+covers = ["flag:-s", "flag:--no-coverage"]
+expect_exit = 0
+
+[[run]]
+id = "flags-source-root-long"
+fixture = "flags"
+args = ["--source-root", "proj/src/shop", "--no-coverage"]
+setup = []
+requires = []
+covers = ["flag:--source-root", "flag:--no-coverage"]
+expect_exit = 0
+
+[[run]]
+id = "flags-path"
+fixture = "flags"
+args = ["proj/src/shop/cart.py", "--no-coverage"]
+setup = []
+requires = []
+covers = ["arg:path", "flag:--no-coverage"]
+expect_exit = 0
+
+[[run]]
+id = "flags-filter"
+fixture = "flags"
+args = ["cart", "--no-coverage"]
+setup = []
+requires = []
+covers = ["arg:filter", "flag:--no-coverage"]
+expect_exit = 0
+
+# Changed files (CR-7): git repo with committed, modified, staged and untracked files.
+[[run]]
+id = "changed"
+fixture = "changed"
+args = ["--changed", "--no-coverage"]
+setup = [
+  "git init -q",
+  "git -c user.name=parity -c user.email=parity@example.invalid add src/unchanged.py src/modified.py src/staged.py",
+  "git -c user.name=parity -c user.email=parity@example.invalid commit -qm base",
+  "printf 'def extra(x):\\n    if x:\\n        return 2\\n    return 3\\n' >> src/modified.py",
+  "printf 'def staged_extra(x):\\n    if x:\\n        return 2\\n    return 3\\n' >> src/staged.py",
+  "git add src/staged.py",
+]
+requires = ["git"]
+covers = ["flag:--changed", "cr7:changed", "flag:--no-coverage"]
+expect_exit = 0
+
+# Directory skipping (CR-6).
+[[run]]
+id = "dirs-skip"
+fixture = "dirs"
+args = ["--no-coverage"]
+setup = []
+requires = []
+covers = ["cr6:skip-dirs", "flag:--no-coverage"]
+expect_exit = 0
+
+# Thresholds (AC-3): worst CRAP 12 on threshold12; worst CRAP 10.0 on threshold10.
+[[run]]
+id = "threshold-exceeded"
+fixture = "threshold12"
+args = ["--use-existing-coverage", "--threshold", "10"]
+setup = []
+requires = []
+covers = ["flag:--threshold", "flag:--use-existing-coverage"]
+expect_exit = 2
+
+[[run]]
+id = "threshold-12-ok"
+fixture = "threshold12"
+args = ["--use-existing-coverage", "--threshold", "12"]
+setup = []
+requires = []
+covers = ["flag:--threshold", "flag:--use-existing-coverage"]
+expect_exit = 0
+
+[[run]]
+id = "threshold10-exceeded"
+fixture = "threshold10"
+args = ["--use-existing-coverage", "--threshold", "9.99"]
+setup = []
+requires = []
+covers = ["flag:--threshold", "flag:--use-existing-coverage"]
+expect_exit = 2
+
+[[run]]
+id = "threshold10-ok"
+fixture = "threshold10"
+args = ["--use-existing-coverage", "--threshold", "10"]
+setup = []
+requires = []
+covers = ["flag:--threshold", "flag:--use-existing-coverage"]
+expect_exit = 0
+
+# Missing coverage: the report lists the file but not every function (AC-25).
+[[run]]
+id = "missing-function"
+fixture = "missing"
+args = ["--use-existing-coverage"]
+setup = []
+requires = []
+covers = ["flag:--use-existing-coverage", "ac25:absent-function"]
+expect_exit = 0
+
+# No coverage data at all (CR-10).
+[[run]]
+id = "cr10-no-data"
+fixture = "nodata"
+args = ["--use-existing-coverage"]
+setup = []
+requires = []
+covers = ["cr10:no-data", "flag:--use-existing-coverage"]
+expect_exit = 0
+
+# Rejected arguments.
+[[run]]
+id = "reject-unknown-flag"
+fixture = "python"
+args = ["--bogus"]
+setup = []
+requires = []
+covers = ["reject:unknown-flag"]
+expect_exit = 1
+
+[[run]]
+id = "reject-missing-value"
+fixture = "python"
+args = ["--root"]
+setup = []
+requires = []
+covers = ["reject:missing-value"]
+expect_exit = 1
+
+[[run]]
+id = "reject-bad-threshold"
+fixture = "python"
+args = ["--threshold", "abc"]
+setup = []
+requires = []
+covers = ["reject:bad-threshold"]
+expect_exit = 1
+
+[[run]]
+id = "reject-no-coverage-command"
+fixture = "python"
+args = ["--no-coverage", "--coverage-command", "true"]
+setup = []
+requires = []
+covers = ["reject:no-coverage+coverage-command"]
+expect_exit = 1

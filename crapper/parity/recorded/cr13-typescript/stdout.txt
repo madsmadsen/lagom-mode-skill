@@ -1,0 +1,14 @@
+
+> tsfixture@0.1.0 coverage
+> node scripts/write-lcov.js
+
+CRAP Report
+===========
+Languages: typescript
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+find                           api.users.Store                        3   0.0%     12.0
+pick                           api.users                              3  25.0%      6.8
+userName                       api.users                              3 100.0%      3.0
+GET /users                     api.users                              1   0.0%      2.0

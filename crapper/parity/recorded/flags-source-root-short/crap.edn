@@ -1,0 +1,3 @@
+{:entries [
+  {:name "view", :namespace "ui.view", :complexity 2, :coverage nil, :crap nil}
+]}

@@ -1,0 +1,5 @@
+{:entries [
+  {:name "app", :namespace "main.app", :complexity 2, :coverage nil, :crap nil}
+  {:name "keep", :namespace "testing.keep", :complexity 2, :coverage nil, :crap nil}
+  {:name "util", :namespace "util", :complexity 2, :coverage nil, :crap nil}
+]}

@@ -1,0 +1,8 @@
+CRAP Report
+===========
+Languages: rust
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+classify                       rustfix                                5  62.5%      6.3
+first_even                     rustfix                                3  60.0%      3.6

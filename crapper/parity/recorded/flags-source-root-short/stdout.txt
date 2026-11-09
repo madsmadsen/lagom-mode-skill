@@ -1,0 +1,7 @@
+CRAP Report
+===========
+Languages: python
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+view                           ui.view                                2   N/A       N/A

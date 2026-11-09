@@ -1,0 +1,4 @@
+{:entries [
+  {:name "absent", :namespace "pair", :complexity 2, :coverage 0.0, :crap 6.0}
+  {:name "covered", :namespace "pair", :complexity 2, :coverage 75.0, :crap 2.0625}
+]}

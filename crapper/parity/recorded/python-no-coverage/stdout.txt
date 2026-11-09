@@ -1,0 +1,9 @@
+CRAP Report
+===========
+Languages: python
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+discount                       pricing                                4   N/A       N/A
+clamp                          util                                   3   N/A       N/A
+label                          pricing                                2   N/A       N/A

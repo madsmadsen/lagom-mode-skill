@@ -1,0 +1,7 @@
+CRAP Report
+===========
+Languages: python
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+cart_total                     shop.cart                              2   N/A       N/A

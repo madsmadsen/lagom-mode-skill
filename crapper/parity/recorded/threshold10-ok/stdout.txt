@@ -1,0 +1,7 @@
+CRAP Report
+===========
+Languages: python
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+route                          route                                 10 100.0%     10.0

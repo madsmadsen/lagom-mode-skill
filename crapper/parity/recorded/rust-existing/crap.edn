@@ -1,0 +1,4 @@
+{:entries [
+  {:name "classify", :namespace "rustfix", :complexity 5, :coverage 62.5, :crap 6.3184}
+  {:name "first_even", :namespace "rustfix", :complexity 3, :coverage 60.0, :crap 3.576}
+]}

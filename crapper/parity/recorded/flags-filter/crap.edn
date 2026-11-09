@@ -1,0 +1,3 @@
+{:entries [
+  {:name "cart_total", :namespace "shop.cart", :complexity 2, :coverage nil, :crap nil}
+]}

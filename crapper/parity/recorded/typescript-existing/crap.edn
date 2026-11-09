@@ -1,0 +1,6 @@
+{:entries [
+  {:name "find", :namespace "api.users.Store", :complexity 3, :coverage 0.0, :crap 12.0}
+  {:name "pick", :namespace "api.users", :complexity 3, :coverage 25.0, :crap 6.7969}
+  {:name "userName", :namespace "api.users", :complexity 3, :coverage 100.0, :crap 3.0}
+  {:name "GET /users", :namespace "api.users", :complexity 1, :coverage 0.0, :crap 2.0}
+]}

@@ -1,0 +1,4 @@
+{:entries [
+  {:name "Grade", :namespace "example.com/gofixture/calc", :complexity 3, :coverage 50.0, :crap 4.125}
+  {:name "Sum", :namespace "example.com/gofixture/calc", :complexity 2, :coverage 100.0, :crap 2.0}
+]}

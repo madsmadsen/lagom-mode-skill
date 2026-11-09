@@ -1,0 +1,9 @@
+CRAP Report
+===========
+Languages: python
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+app                            main.app                               2   N/A       N/A
+keep                           testing.keep                           2   N/A       N/A
+util                           util                                   2   N/A       N/A

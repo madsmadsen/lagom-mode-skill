@@ -1,0 +1,12 @@
+{
+  "name": "tsfixture",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "coverage": "node scripts/write-lcov.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

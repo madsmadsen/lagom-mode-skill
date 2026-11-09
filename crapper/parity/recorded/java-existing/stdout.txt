@@ -1,0 +1,8 @@
+CRAP Report
+===========
+Languages: java
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+place                          demo.pkg.Board                         5  40.0%     10.4
+name                           demo.pkg.Board                         4 100.0%      4.0

@@ -1,0 +1,9 @@
+CRAP Report
+===========
+Languages: clojure
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+grade                          demo.core                              4  66.7%      4.6
+describe-item                  demo.core                              3 100.0%      3.0
+tag                            demo.shared                            1   0.0%      2.0

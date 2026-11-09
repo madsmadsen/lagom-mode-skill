@@ -1,0 +1,5 @@
+{:entries [
+  {:name "discount", :namespace "pricing", :complexity 4, :coverage nil, :crap nil}
+  {:name "clamp", :namespace "util", :complexity 3, :coverage nil, :crap nil}
+  {:name "label", :namespace "pricing", :complexity 2, :coverage nil, :crap nil}
+]}

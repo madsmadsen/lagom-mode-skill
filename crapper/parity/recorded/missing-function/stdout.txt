@@ -1,0 +1,8 @@
+CRAP Report
+===========
+Languages: python
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+absent                         pair                                   2   0.0%      6.0
+covered                        pair                                   2  75.0%      2.1

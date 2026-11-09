@@ -1,0 +1,3 @@
+{:entries [
+  {:name "plain", :namespace "plain", :complexity 2, :coverage 0.0, :crap 6.0}
+]}

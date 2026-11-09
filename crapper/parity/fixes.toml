@@ -1,0 +1,10 @@
+# Differences from the original (CR-PB-3, CR-PB-6). Read by parity/run.py.
+#
+# Each difference that a parity run finds needs one [[fix]] table with:
+#   issue or description  what differs and why
+#   behavior              the changed behavior of the port
+#   fixture               the parity fixture under parity/fixtures/ that shows it
+#   approved_by           "Mads Madsen" (set only after Mads Madsen approves)
+#
+# No differences are approved yet.
+fixes = []

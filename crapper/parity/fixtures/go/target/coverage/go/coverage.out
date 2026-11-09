@@ -1,0 +1,8 @@
+mode: set
+example.com/gofixture/calc/calc.go:3.25,4.19 1 1
+example.com/gofixture/calc/calc.go:4.20,5.10 1 1
+example.com/gofixture/calc/calc.go:6.23,7.10 1 0
+example.com/gofixture/calc/calc.go:9.2,9.13 1 0
+example.com/gofixture/calc/calc.go:12.25,13.13 1 1
+example.com/gofixture/calc/calc.go:14.24,15.10 1 1
+example.com/gofixture/calc/calc.go:17.2,17.15 1 1

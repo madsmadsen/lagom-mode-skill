@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.0//EN" "report.dtd">
+<report name="board">
+  <package name="demo/pkg">
+    <class name="demo/pkg/Board" sourcefilename="Board.java">
+      <method name="place" desc="(II)I" line="4">
+        <counter type="INSTRUCTION" missed="6" covered="4"/>
+      </method>
+      <method name="name" desc="(I)Ljava/lang/String;" line="14">
+        <counter type="INSTRUCTION" missed="0" covered="7"/>
+      </method>
+    </class>
+    <sourcefile name="Board.java">
+      <counter type="INSTRUCTION" missed="6" covered="11"/>
+    </sourcefile>
+  </package>
+</report>
