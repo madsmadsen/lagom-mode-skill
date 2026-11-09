@@ -241,6 +241,17 @@ mod tests {
         }
     }
 
+    // CR-5
+    #[test]
+    fn cr_5_suffix_follows_python_path_suffix() {
+        assert_eq!(suffix("a.py"), ".py");
+        assert_eq!(suffix("a.b.c"), ".c");
+        assert_eq!(suffix("a."), "");
+        assert_eq!(suffix(".bashrc"), "");
+        assert_eq!(suffix("a"), "");
+        assert_eq!(suffix("x.tar.gz"), ".gz");
+    }
+
     // CR-6
     #[test]
     fn cr_6_test_file_names_are_test_files() {
@@ -350,6 +361,25 @@ mod tests {
             iter_source_files(&[root.to_path_buf()]),
             vec![canonical(root, "src/app.py")]
         );
+    }
+
+    // CR-6
+    #[test]
+    fn cr_6_symlinked_files_are_collected_and_symlinked_directories_are_not() {
+        let dir = tempdir().unwrap();
+        let outside = tempdir().unwrap();
+        write(outside.path(), "real.py");
+        write(outside.path(), "sub/z.py");
+        let root = dir.path();
+        write(root, "src/app.py");
+        symlink(outside.path().join("real.py"), root.join("link.py")).unwrap();
+        symlink(outside.path().join("sub"), root.join("linkdir")).unwrap();
+        let mut expected = vec![
+            canonical(root, "src/app.py"),
+            canonical(outside.path(), "real.py"),
+        ];
+        expected.sort_by(|a, b| a.as_os_str().as_bytes().cmp(b.as_os_str().as_bytes()));
+        assert_eq!(iter_source_files(&[root.to_path_buf()]), expected);
     }
 
     // CR-6

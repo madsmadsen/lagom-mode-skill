@@ -657,4 +657,27 @@ mod tests {
         };
         assert_eq!(options.threshold, Some(10.0));
     }
+
+    // CR-2, CR-13
+    #[test]
+    fn cr_2_cr_13_default_does_not_read_existing_coverage() {
+        let Parsed::Analyze(options) = parse_args(&[]) else {
+            panic!("expected an analysis");
+        };
+        assert!(!options.use_existing_coverage);
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_exit_code_is_the_status_or_the_negated_signal() {
+        assert_eq!(exit_code(ExitStatus::from_raw(0x0100)), 1);
+        assert_eq!(exit_code(ExitStatus::from_raw(0x0200)), 2);
+        assert_eq!(exit_code(ExitStatus::from_raw(9)), -9);
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_exit_code_without_status_or_signal_is_1() {
+        assert_eq!(exit_code(ExitStatus::from_raw(0x7f)), 1);
+    }
 }

@@ -262,3 +262,138 @@ fn cr_16_report_first_row_is_worst_score() {
         "first row was: {first_row}"
     );
 }
+
+// CR-7, AC-4
+#[test]
+fn cr_7_ac_4_changed_with_root_skips_outside_deleted_and_non_source() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    git(repo, &["init", "-q"]);
+    write_file(repo, "sub/app.py", "def app_before(x):\n    return x\n");
+    write_file(repo, "sub/gone.py", "def gone_fn(x):\n    return x\n");
+    write_file(
+        repo,
+        "sub/test_x.py",
+        "def test_x_before(x):\n    return x\n",
+    );
+    write_file(repo, "sub/README.md", "old\n");
+    write_file(
+        repo,
+        "other/outside.py",
+        "def outside_before(x):\n    return x\n",
+    );
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "init"]);
+
+    write_file(repo, "sub/app.py", "def app_fn(x):\n    return x\n");
+    write_file(repo, "sub/test_x.py", "def test_x_fn(x):\n    return x\n");
+    write_file(repo, "sub/README.md", "new\n");
+    write_file(
+        repo,
+        "other/outside.py",
+        "def outside_fn(x):\n    return x\n",
+    );
+    fs::remove_file(repo.join("sub/gone.py")).expect("delete file");
+
+    let output = crapper_in(&repo.join("sub"), &["--changed", "--no-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+    let out = stdout(&output);
+    assert!(out.contains("app_fn"), "output was: {out}");
+    assert!(!out.contains("outside_fn"), "output was: {out}");
+    assert!(!out.contains("test_x_fn"), "output was: {out}");
+    assert!(!out.contains("gone_fn"), "output was: {out}");
+}
+
+// CR-7, AC-4
+#[test]
+fn cr_7_ac_4_changed_ignores_deleted_files() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    git(repo, &["init", "-q"]);
+    write_file(repo, "sub/gone.py", "def gone_fn(x):\n    return x\n");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "init"]);
+    fs::remove_file(repo.join("sub/gone.py")).expect("delete file");
+
+    let output = crapper_in(&repo.join("sub"), &["--changed", "--no-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(stdout(&output), "No source files to analyze.\n");
+}
+
+// CR-7, AC-4
+#[test]
+fn cr_7_ac_4_changed_ignores_files_outside_root() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    git(repo, &["init", "-q"]);
+    write_file(repo, "sub/notes.txt", "notes\n");
+    write_file(
+        repo,
+        "other/outside.py",
+        "def outside_before(x):\n    return x\n",
+    );
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "init"]);
+    write_file(
+        repo,
+        "other/outside.py",
+        "def outside_fn(x):\n    return x\n",
+    );
+
+    let output = crapper_in(&repo.join("sub"), &["--changed", "--no-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(stdout(&output), "No source files to analyze.\n");
+}
+
+// CR-7, AC-4
+#[test]
+fn cr_7_ac_4_changed_ignores_non_source_and_test_files() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    git(repo, &["init", "-q"]);
+    write_file(repo, "sub/README.md", "old\n");
+    write_file(
+        repo,
+        "sub/test_x.py",
+        "def test_x_before(x):\n    return x\n",
+    );
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-q", "-m", "init"]);
+    write_file(repo, "sub/README.md", "new\n");
+    write_file(repo, "sub/test_x.py", "def test_x_fn(x):\n    return x\n");
+
+    let output = crapper_in(&repo.join("sub"), &["--changed", "--no-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(stdout(&output), "No source files to analyze.\n");
+}
+
+// CR-3, CR-7
+#[test]
+fn cr_3_changed_without_git_on_path_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    let output = Command::new(env!("CARGO_BIN_EXE_crapper"))
+        .env("PATH", root)
+        .args([
+            "--root",
+            root.to_str().expect("utf-8 temp path"),
+            "--changed",
+            "--no-coverage",
+        ])
+        .output()
+        .expect("crapper binary runs");
+    assert_eq!(exit_code(&output), 1);
+}
+
+// CR-3, CR-4
+#[test]
+fn cr_3_unwritable_metrics_location_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(root, ".metrics", "a file, not a directory\n");
+
+    let output = crapper_in(root, &["--no-coverage"]);
+    assert_eq!(exit_code(&output), 1);
+}

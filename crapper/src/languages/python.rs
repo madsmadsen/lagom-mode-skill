@@ -46,9 +46,11 @@ fn is_decision(node: Node) -> bool {
 }
 
 fn has_logic_operator(node: Node) -> bool {
-    (0..node.child_count())
-        .filter_map(|i| node.child(i))
-        .any(|child| matches!(child.kind(), "and" | "or"))
+    let mut cursor = node.walk();
+    let found = node
+        .children(&mut cursor)
+        .any(|child| matches!(child.kind(), "and" | "or"));
+    found
 }
 
 fn skip_nested_class(node: Node) -> bool {
@@ -266,5 +268,36 @@ def literal():
         assert_eq!(lines, [("a", 1, 2), ("b", 5, 8)]);
         assert_eq!(functions[0].language, "python");
         assert_eq!(functions[0].path, "src/demo/lines.py");
+    }
+
+    // CR-8: strip_root removes a source root only when it is a real prefix; "" and "." never strip.
+    #[test]
+    fn cr_8_strip_root_removes_only_a_root_that_prefixes_the_path() {
+        assert_eq!(strip_root("lib/pkg/mod.py", "lib"), "pkg/mod.py");
+        assert_eq!(strip_root("src/pkg/mod.py", "src/"), "pkg/mod.py");
+        assert_eq!(strip_root("src/pkg/mod.py", "src\\"), "pkg/mod.py");
+        assert_eq!(strip_root("other/pkg/mod.py", "lib"), "other/pkg/mod.py");
+        assert_eq!(strip_root("lib/pkg/mod.py", "."), "lib/pkg/mod.py");
+        assert_eq!(strip_root("/x/y.py", ""), "/x/y.py");
+        assert_eq!(strip_root("./x/y.py", ""), "x/y.py");
+        assert_eq!(strip_root("./src/pkg/mod.py", "."), "src/pkg/mod.py");
+    }
+
+    // CR-8: module names follow each source_root value: empty, ".", "src", "src/", backslash, and a non-prefix root.
+    #[test]
+    fn cr_8_module_names_follow_source_root_values() {
+        let source = "def f():\n    return 1\n";
+        let namespace =
+            |path: &str, root: &str| functions_in_source(source, path, root)[0].namespace.clone();
+        assert_eq!(namespace("/x/y.py", ""), ".x.y");
+        assert_eq!(namespace("x.py", ""), "x");
+        assert_eq!(namespace("./src/pkg/mod.py", "."), "pkg.mod");
+        assert_eq!(namespace("src/pkg/mod.py", "src"), "pkg.mod");
+        assert_eq!(namespace("src/pkg/mod.py", "src/"), "pkg.mod");
+        assert_eq!(namespace("src/pkg/mod.py", "src\\"), "pkg.mod");
+        assert_eq!(namespace("lib\\pkg\\mod.py", "lib\\"), "pkg.mod");
+        assert_eq!(namespace("lib/pkg/mod.py", "lib"), "pkg.mod");
+        assert_eq!(namespace("./lib/pkg/mod.py", "lib"), "lib.pkg.mod");
+        assert_eq!(namespace("other/pkg/mod.py", "lib"), "other.pkg.mod");
     }
 }

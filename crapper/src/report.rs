@@ -15,8 +15,7 @@ const NAMESPACE_MAX: usize = 72;
 /// Column width: at least `minimum`, grows with the longest value up to `maximum`.
 /// Widths count characters, as Python `len` counts code points.
 fn column_width(minimum: usize, maximum: usize, lengths: impl Iterator<Item = usize>) -> usize {
-    let longest = lengths.max().unwrap_or(0);
-    minimum.max(longest.min(maximum))
+    lengths.fold(minimum, |width, length| width.max(length.min(maximum)))
 }
 
 /// Formats a present value with `format`, or the fixed `na` text when the value is missing.
