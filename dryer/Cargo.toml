@@ -1,0 +1,32 @@
+[package]
+name = "dryer"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "Structural duplicate finder for Clojure, Java, Go, TypeScript, Rust, and Python."
+
+[dependencies]
+tree-sitter = "0.27.2"
+tree-sitter-go = "0.25.0"
+tree-sitter-java = "0.23.5"
+tree-sitter-python = { git = "https://github.com/tree-sitter/tree-sitter-python", rev = "26855eabccb19c6abf499fbc5b8dc7cc9ab8bc64" }
+tree-sitter-rust = "0.24.2"
+tree-sitter-typescript = "0.23.2"
+regex = "1"
+
+[dev-dependencies]
+tempfile = "3"
+toml = "0.8"
+
+[[bin]]
+name = "dryer"
+path = "src/main.rs"
+
+[lib]
+name = "dryer"
+path = "src/lib.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
