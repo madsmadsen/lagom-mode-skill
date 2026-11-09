@@ -302,4 +302,40 @@ mod tests {
         assert!(err.contains("not a git repository"));
         assert!(!out.contains("No source files"));
     }
+
+    // DR-4: when .metrics cannot be created, the run reports the io error and exits 1.
+    #[test]
+    fn dr4_metrics_write_failure_exits_one() {
+        let (_dir, proj) = seeded_project();
+        fs::write(proj.join(".metrics"), "not a directory").expect("blocker file");
+        let (code, _out, err) = run_args(&[
+            "--root",
+            &proj_str(&proj),
+            "--min-lines",
+            "3",
+            "--min-nodes",
+            "1",
+        ]);
+        assert_eq!(code, 1);
+        assert!(err.starts_with("dryer: "), "stderr was {err:?}");
+    }
+
+    // DR-8: an unterminated Clojure list is reported as a warning; the run still succeeds.
+    #[test]
+    fn dr8_clojure_read_warning_is_reported_and_run_succeeds() {
+        let (_dir, proj) = project();
+        write_source(&proj, "bad.clj", "(defn f [x]\n  (inc x)");
+        write_source(&proj, "good.clj", "(defn g [x]\n  (inc x))\n");
+        let (code, _out, err) = run_args(&[
+            "--root",
+            &proj_str(&proj),
+            "--min-lines",
+            "1",
+            "--min-nodes",
+            "1",
+        ]);
+        assert_eq!(code, 0);
+        assert!(err.contains("dryer: bad.clj:"), "stderr was {err:?}");
+        assert!(err.contains("unterminated list"), "stderr was {err:?}");
+    }
 }

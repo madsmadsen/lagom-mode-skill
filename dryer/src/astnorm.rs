@@ -245,11 +245,8 @@ fn name_value(name: Node, head: bool, data: &[u8]) -> Option<Norm> {
             Norm::Kw("symbol")
         });
     }
-    if head {
-        value(name, Mode::Callee, false, data)
-    } else {
-        value(name, Mode::Norm, false, data)
-    }
+    let mode = if head { Mode::Callee } else { Mode::Norm };
+    value(name, mode, head, data)
 }
 
 fn named_before_args(node: Node<'_>) -> (Vec<Node<'_>>, Option<Node<'_>>) {
@@ -738,6 +735,42 @@ mod tests {
             "function Box(props: Props) {\n  // comment\n  const count = useCount<number>(props.start) || 0;\n  const on = props?.enabled && count > 2;\n  return on ? <span>{count}</span> : null;\n}\n",
             r#"[:function_declaration :symbol [:formal_parameters [:required_parameter :symbol [:type_annotation :symbol]]] [:statement_block [:lexical_declaration [:variable_declarator :symbol [:symbol "="] [:binary_expression [:call_expression [:symbol "useCount"] [:type_arguments [:symbol "<"] [:predefined_type] [:symbol ">"]] [:arguments [:member_expression :symbol :symbol]]] [:symbol "||"] :literal]]] [:lexical_declaration [:variable_declarator :symbol [:symbol "="] [:binary_expression [:member_expression :symbol [:optional_chain [:symbol "?."]] :symbol] [:symbol "&&"] [:binary_expression :symbol [:symbol ">"] :literal]]]] [:return_statement [:ternary_expression :symbol [:symbol "?"] [:jsx_element [:jsx_opening_element [:symbol "<"] :symbol [:symbol ">"]] [:jsx_expression :symbol] [:jsx_closing_element :symbol [:symbol ">"]]] :literal]]]]"#,
             106,
+        );
+    }
+
+    // DR-9: golden from the original Python dryer, Rust tuple-index field in non-head and callee position.
+    #[test]
+    fn dr9_golden_rs_tuple_head() {
+        assert_golden(
+            "rust",
+            "function_item",
+            "fn tuple_head(p: Pair, a: i32) -> i32 {\n    let first = p.0;\n    let rest = p.1(a);\n    p.0.len() as i32 + first + rest\n}\n",
+            r#"[:function_item :symbol [:parameters [:parameter :symbol :symbol] [:parameter :symbol [:primitive_type]]] [:primitive_type] [:block [:let_declaration :symbol [:symbol "="] [:field_expression :symbol :literal]] [:let_declaration :symbol [:symbol "="] [:call_expression [:field_expression :symbol :literal] [:arguments :symbol]]] [:binary_expression [:binary_expression [:type_cast_expression [:call_expression [:field_expression [:field_expression :symbol :literal] [:symbol "len"]] [:arguments]] [:primitive_type]] [:symbol "+"] :symbol] [:symbol "+"] :symbol]]]"#,
+            72,
+        );
+    }
+
+    // DR-9: golden from the original Python dryer, chained Rust tuple indexes in non-head position.
+    #[test]
+    fn dr9_golden_rs_tuple_chain() {
+        assert_golden(
+            "rust",
+            "function_item",
+            "fn tuple_chain(outer: Outer) -> bool {\n    // tuple index chain\n    let ok = outer.0.1 == 3 && outer.2.0 > 1;\n    outer.0.0.is_some() || !ok\n}\n",
+            r#"[:function_item :symbol [:parameters [:parameter :symbol :symbol]] [:primitive_type] [:block [:let_declaration :symbol [:symbol "="] [:binary_expression [:binary_expression [:field_expression [:field_expression :symbol :literal] :literal] [:symbol "=="] :literal] [:symbol "&&"] [:binary_expression [:field_expression [:field_expression :symbol :literal] :literal] [:symbol ">"] :literal]]] [:binary_expression [:call_expression [:field_expression [:field_expression [:field_expression :symbol :literal] :literal] [:symbol "is_some"]] [:arguments]] [:symbol "||"] [:unary_expression [:symbol "!"] :symbol]]]]"#,
+            77,
+        );
+    }
+
+    // DR-9: golden from the original Python dryer, TypeScript private (#) member in callee and non-head position.
+    #[test]
+    fn dr9_golden_ts_private_member() {
+        assert_golden(
+            "typescript",
+            "method_definition",
+            "class Counter {\n  #count = 0;\n  bump(step: number): number {\n    this.#count += step;\n    return this.#count.toFixed(2).length + this.#scale(step);\n  }\n}\n",
+            r#"[:method_definition :symbol [:formal_parameters [:required_parameter :symbol [:type_annotation [:predefined_type]]]] [:type_annotation [:predefined_type]] [:statement_block [:expression_statement [:augmented_assignment_expression [:member_expression [:this] [:private_property_identifier]] [:symbol "+="] :symbol]] [:return_statement [:binary_expression [:member_expression [:call_expression [:member_expression [:member_expression [:this] [:private_property_identifier]] [:symbol "toFixed"]] [:arguments :literal]] :symbol] [:symbol "+"] [:call_expression [:member_expression [:this] [:private_property_identifier]] [:arguments :symbol]]]]]]"#,
+            69,
         );
     }
 }

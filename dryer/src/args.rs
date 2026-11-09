@@ -188,20 +188,26 @@ enum Field {
     Format,
 }
 
+/// Each value-taking flag and the field it sets.
+const VALUE_FLAGS: &[(&str, Field)] = &[
+    ("-s", Field::SourceRoot),
+    ("--source-root", Field::SourceRoot),
+    ("--root", Field::Root),
+    ("--threshold", Field::Threshold),
+    ("--min-lines", Field::MinLines),
+    ("--min-nodes", Field::MinNodes),
+    ("--format", Field::Format),
+];
+
 /// Maps a value-taking flag to the field it sets.
 fn value_field(arg: &str) -> Option<Field> {
-    match arg {
-        "-s" | "--source-root" => Some(Field::SourceRoot),
-        "--root" => Some(Field::Root),
-        "--threshold" => Some(Field::Threshold),
-        "--min-lines" => Some(Field::MinLines),
-        "--min-nodes" => Some(Field::MinNodes),
-        "--format" => Some(Field::Format),
-        _ => None,
-    }
+    VALUE_FLAGS
+        .iter()
+        .find(|(flag, _)| *flag == arg)
+        .map(|(_, field)| *field)
 }
 
-/// Parses `value` for `field` (numbers and counts are validated; text is stored as given) and stores it.
+/// Parses `value` for `field` and stores it. Only dispatches on the parse kind of the field.
 fn apply_option(
     field: Field,
     value: &str,
@@ -209,12 +215,42 @@ fn apply_option(
     options: &mut Options,
 ) -> Result<(), String> {
     match field {
+        Field::SourceRoot | Field::Root | Field::Format => {
+            apply_text(field, value, options);
+            Ok(())
+        }
+        Field::Threshold => apply_number(value, option, options),
+        Field::MinLines | Field::MinNodes => apply_count(field, value, option, options),
+    }
+}
+
+/// Text fields store the value as given.
+fn apply_text(field: Field, value: &str, options: &mut Options) {
+    match field {
         Field::SourceRoot => options.source_roots.push(value.to_string()),
         Field::Root => options.project_root = PathBuf::from(value),
-        Field::Format => options.format = value.to_string(),
-        Field::Threshold => options.threshold = parse_number(value, option)?,
-        Field::MinLines => options.min_lines = parse_count(value, option)?,
-        Field::MinNodes => options.min_nodes = parse_count(value, option)?,
+        _ => options.format = value.to_string(),
+    }
+}
+
+/// The threshold is a Python-style float.
+fn apply_number(value: &str, option: &str, options: &mut Options) -> Result<(), String> {
+    options.threshold = parse_number(value, option)?;
+    Ok(())
+}
+
+/// The min options are non-negative integers.
+fn apply_count(
+    field: Field,
+    value: &str,
+    option: &str,
+    options: &mut Options,
+) -> Result<(), String> {
+    let count = parse_count(value, option)?;
+    if field == Field::MinLines {
+        options.min_lines = count;
+    } else {
+        options.min_nodes = count;
     }
     Ok(())
 }

@@ -789,8 +789,7 @@ fn assemble(node: &Form, kids: Vec<Norm>) -> Norm {
 }
 
 fn with_tag(tag: &'static str, kids: Vec<Norm>) -> Norm {
-    let mut out = Vec::with_capacity(kids.len() + 1);
-    out.push(Norm::Kw(tag));
+    let mut out = vec![Norm::Kw(tag)];
     out.extend(kids);
     Norm::List(out)
 }
@@ -1198,5 +1197,78 @@ mod tests {
             assert!(forms.is_empty());
             assert_eq!(warning.as_deref(), Some("1: unterminated vector"));
         });
+    }
+
+    // DR-8: a regex literal reads as one literal and normalizes as one.
+    #[test]
+    fn dr8_regex_literal_reads_as_one_literal() {
+        let forms = read_clean("#\"a.*b\"\n");
+        assert_eq!(forms.len(), 1);
+        assert!(matches!(forms[0], Form::Lit { .. }));
+        assert_eq!(pr(&normalize(&forms[0])), ":literal");
+    }
+
+    // DR-9: a regex literal inside a form normalizes to a literal argument.
+    #[test]
+    fn dr9_regex_literal_inside_a_form_normalizes_to_literal() {
+        let forms = read_clean("(re-find #\"a.*b\" s)\n");
+        assert_eq!(
+            pr(&normalize(&forms[0])),
+            "[:list [:symbol \"re-find\"] :literal :symbol]"
+        );
+    }
+
+    // DR-8: an escaped quote does not end a regex literal.
+    #[test]
+    fn dr8_regex_literal_with_escaped_quote_reads_cleanly() {
+        let forms = read_clean("#\"a\\\"b\"\n");
+        assert_eq!(forms.len(), 1);
+        assert!(matches!(forms[0], Form::Lit { .. }));
+    }
+
+    // DR-8: an unterminated regex literal reports an unterminated string.
+    #[test]
+    fn dr8_unterminated_regex_literal_reports_unterminated_string() {
+        assert_eq!(
+            warning_of("#\"abc\n").as_deref(),
+            Some("1: unterminated string")
+        );
+    }
+
+    // DR-8: a comment inside a form is skipped up to the end of its line.
+    #[test]
+    fn dr8_comment_inside_a_form_is_skipped() {
+        let forms = read_clean("(foo ; ignored x y z\n bar)\n");
+        let names: Vec<&str> = items_of(&forms[0]).iter().map(name_of).collect();
+        assert_eq!(names, vec!["foo", "bar"]);
+    }
+
+    // DR-8: a comment at top level before a form is skipped.
+    #[test]
+    fn dr8_top_level_comment_before_a_form_is_skipped() {
+        let forms = read_clean("; header\n(foo)\n");
+        assert_eq!(forms.len(), 1);
+        assert_eq!(forms[0].line(), 2);
+    }
+
+    // DR-8: an auto-resolved keyword keeps its name without the colons.
+    #[test]
+    fn dr8_auto_resolved_keyword_keeps_its_name() {
+        let forms = read_clean("::auto\n");
+        assert_eq!(name_of(&forms[0]), "auto");
+    }
+
+    // DR-8: a bare double colon is an empty keyword.
+    #[test]
+    fn dr8_bare_double_colon_is_an_empty_keyword() {
+        let forms = read_clean("::\n");
+        assert_eq!(name_of(&forms[0]), "");
+    }
+
+    // DR-8: a keyword may contain a slash for its namespace.
+    #[test]
+    fn dr8_namespaced_keyword_keeps_the_slash() {
+        let forms = read_clean(":a/b\n");
+        assert_eq!(name_of(&forms[0]), "a/b");
     }
 }
