@@ -44,3 +44,11 @@ Method: ub-mode. Orchestrator plans and verifies; implementer agents
   nearest). All removed; "No duplicate candidates found".
 - Fixed a flaky e2e helper: git commit now ignores user gpg/hook config.
 - The crapper run also analysed `parity/fixtures` (and wrote `target/` in the Rust fixture); fixture build output is git-ignored and removed.
+
+## Mutator gate on the port itself (incomplete)
+- Ran the port on `src` with `--use-existing-coverage` and `cargo test --lib` plus eight fast integration tests as the test command
+  (per-worker `CARGO_TARGET_DIR`). Only `src/bind.rs` finished before the run was stopped (each mutant needs a Rust compile; about 15 min per file;
+  ~600 sites in 26 files). bind.rs: 33 killed, 3 survived: `bind.rs:241 <= -> <`, `241 < -> <=`, `248 >= -> >` (boundary conditions in the
+  `splitlines`/`digest` range clamp). These survivors are NOT yet fixed; other files are NOT yet mutation-checked.
+- Not verified: AC-9 with a real `cargo-llvm-cov` install (the e2e test uses a fake `cargo`; the host already has the tool and a real install needs network
+  and a host without it). MU-PB-6 approval of `fixes.toml` entries is pending (`approved = false`).
