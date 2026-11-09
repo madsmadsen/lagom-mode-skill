@@ -245,8 +245,7 @@ fn visit_optional(at: At, token: &str, language: Language, found: &mut Vec<RawSi
 }
 
 fn visit_not(at: At, token: &str, found: &mut Vec<RawSite>) {
-    let parent = at.parent_kind();
-    let unary_host = UNARY_PARENTS.contains(&parent) || parent == "comparison_operator";
+    let unary_host = UNARY_PARENTS.contains(&at.parent_kind());
     if matches!(token, "!" | "not") && unary_host {
         add(found, at, token, "", "unary");
     }
@@ -585,6 +584,20 @@ mod tests {
                 "False"
             ),
             "def f():\n    return False\n"
+        );
+    }
+
+    /// MU-12: Python `not in` is not a site. The original reports no site for it, so the
+    /// program text is left as written.
+    #[test]
+    fn mu_12_python_not_in_has_no_sites() {
+        assert!(
+            discover_raw(
+                "def f(x, items):\n    return x not in items\n",
+                Language::Python,
+                "a.py"
+            )
+            .is_empty()
         );
     }
 

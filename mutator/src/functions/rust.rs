@@ -15,7 +15,7 @@ use crate::ts::{
 
 const TYPE_KINDS: &[&str] = &["type_identifier", "generic_type", "scoped_type_identifier"];
 static PACKAGE_BLOCK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?ms)^\[package\](.*?)(?:^\[|\z)").expect("package block pattern is valid")
+    Regex::new(r"(?ms)^\[package\].*?(?:^\[|\z)").expect("package block pattern is valid")
 });
 static PACKAGE_NAME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(?m)^name\s*=\s*"([^"]+)""#).expect("name pattern is valid"));
@@ -76,7 +76,7 @@ fn impl_type(data: &[u8], imp: Node) -> Option<String> {
     let children: Vec<Node> = imp.children(&mut cursor).collect();
     let for_at = children.iter().position(|child| child.kind() == "for");
     let scope = match for_at {
-        Some(index) => &children[index + 1..],
+        Some(index) => &children[index..],
         None => &children[..],
     };
     let mut types = scope
@@ -112,7 +112,6 @@ fn namespace(modules: &[String], extra: &[String], type_name: Option<&str>) -> S
 fn package_root(file: &Path) -> (String, Option<PathBuf>) {
     resolve(file)
         .ancestors()
-        .skip(1)
         .find_map(|dir| package_name(dir).map(|name| (name, dir.to_path_buf())))
         .map_or_else(
             || (String::from("crate"), None),
@@ -122,10 +121,9 @@ fn package_root(file: &Path) -> (String, Option<PathBuf>) {
 
 fn package_name(dir: &Path) -> Option<String> {
     let text = fs::read_to_string(dir.join("Cargo.toml")).ok()?;
-    let block = PACKAGE_BLOCK.captures(&text)?;
-    let body = block.get(1)?.as_str();
+    let block = PACKAGE_BLOCK.find(&text)?;
     let name = PACKAGE_NAME
-        .captures(body)
+        .captures(block.as_str())
         .and_then(|found| found.get(1))
         .map(|name| name.as_str().to_string())
         .or_else(|| {

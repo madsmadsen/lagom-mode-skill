@@ -199,6 +199,16 @@ def factory():
     }
 
     #[test]
+    // MU-9: a non-empty project root is stripped from the path when no src/ segment follows it
+    fn mu_9_python_project_root_is_stripped_without_src() {
+        let source = "def f():\n    return 1\n";
+        assert_eq!(
+            listed(source, "/proj/demo/app.py", Some("/proj")),
+            ["demo.app f"]
+        );
+    }
+
+    #[test]
     // MU-9: strings and comments are not functions; a package __init__ names its package
     fn mu_9_python_strings_and_comments_add_no_functions() {
         let source = r#"
