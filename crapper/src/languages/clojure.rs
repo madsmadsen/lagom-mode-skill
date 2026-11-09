@@ -263,12 +263,17 @@ impl FormCounter {
         }
     }
 
-    fn open(&mut self) {
+    /// A form starts at this character unless a form is already in progress at top level.
+    fn begin_form(&mut self) {
         if self.depth == 1 && !self.in_form {
             self.forms += 1;
         }
-        self.depth += 1;
         self.in_form = true;
+    }
+
+    fn open(&mut self) {
+        self.begin_form();
+        self.depth += 1;
     }
 
     fn close(&mut self) {
@@ -279,10 +284,7 @@ impl FormCounter {
     }
 
     fn atom(&mut self) {
-        if self.depth == 1 && !self.in_form {
-            self.forms += 1;
-        }
-        self.in_form = true;
+        self.begin_form();
     }
 
     fn space(&mut self) {

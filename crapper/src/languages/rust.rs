@@ -12,15 +12,15 @@
 //! `mod tests` are test code and are not scored.
 
 use std::ffi::OsStr;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use regex::Regex;
 use tree_sitter::Node;
 
 use crate::languages::ts::{
-    absolute_path, binary_logic, child_of_type, complexity, descendants, end_line, node_text,
-    parse, start_line, Grammar,
+    absolute_path, ancestor_names, binary_logic, child_of_type, complexity, descendants, end_line,
+    node_text, parse, resolve, start_line, Grammar,
 };
 use crate::model::Function;
 
@@ -67,17 +67,6 @@ fn lossy(name: Option<&OsStr>) -> String {
         .unwrap_or_default()
 }
 
-fn ancestor_mods(data: &[u8], node: Node) -> Vec<String> {
-    let mut names: Vec<String> = std::iter::successors(node.parent(), |n| n.parent())
-        .filter(|n| n.kind() == "mod_item")
-        .filter_map(|n| {
-            child_of_type(n, &["identifier"]).map(|ident| node_text(data, ident).to_string())
-        })
-        .collect();
-    names.reverse();
-    names
-}
-
 fn first_type_name(data: &[u8], node: Node) -> Option<String> {
     descendants(node)
         .into_iter()
@@ -111,40 +100,6 @@ fn impl_owner(data: &[u8], node: Node) -> Option<String> {
     let parent = node.parent().filter(|p| p.kind() == "declaration_list")?;
     let owner = parent.parent().filter(|o| o.kind() == "impl_item")?;
     impl_type(data, owner)
-}
-
-/// Lexical `.` and `..` cleanup, then the longest existing prefix is canonicalized.
-/// Mirrors Python's `Path.resolve()`, which does not require the file to exist.
-fn resolve(path: &Path) -> PathBuf {
-    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
-    let mut lexical = PathBuf::new();
-    for component in absolute.components() {
-        match component {
-            Component::ParentDir => {
-                lexical.pop();
-            }
-            Component::CurDir => {}
-            other => lexical.push(other),
-        }
-    }
-    canonical_prefix(&lexical)
-}
-
-fn canonical_prefix(path: &Path) -> PathBuf {
-    let mut suffix: Vec<&OsStr> = Vec::new();
-    let mut prefix = path;
-    loop {
-        if let Ok(real) = prefix.canonicalize() {
-            return suffix.iter().rev().fold(real, |acc, part| acc.join(part));
-        }
-        match (prefix.parent(), prefix.file_name()) {
-            (Some(parent), Some(name)) => {
-                suffix.push(name);
-                prefix = parent;
-            }
-            _ => return path.to_path_buf(),
-        }
-    }
 }
 
 fn package_name(dir: &Path) -> Option<String> {
@@ -234,7 +189,7 @@ fn record_function(data: &[u8], node: Node, modules: &[String], path: &str) -> O
     if node.parent().is_some_and(|p| p.kind() == "block") {
         return None;
     }
-    let mods = ancestor_mods(data, node);
+    let mods = ancestor_names(data, node, "mod_item");
     if mods.iter().any(|name| name == "tests") {
         return None;
     }

@@ -91,6 +91,19 @@ pub fn descendants<'t>(node: Node<'t>) -> Vec<Node<'t>> {
     found
 }
 
+/// Names of the ancestors of `node` with the given `kind`, outermost first. Each name is the
+/// text of the ancestor's `identifier` child; ancestors without one are skipped.
+pub fn ancestor_names(data: &[u8], node: Node, kind: &str) -> Vec<String> {
+    let mut names: Vec<String> = std::iter::successors(node.parent(), |n| n.parent())
+        .filter(|n| n.kind() == kind)
+        .filter_map(|n| {
+            child_of_type(n, &["identifier"]).map(|ident| node_text(data, ident).to_string())
+        })
+        .collect();
+    names.reverse();
+    names
+}
+
 /// Absolute path for a file. A relative path is joined to `project_root` when one is given.
 /// Relative paths are resolved like Python's `Path.resolve()`.
 pub fn absolute_path(path: &str, project_root: Option<&str>) -> String {
@@ -106,19 +119,14 @@ pub fn absolute_path(path: &str, project_root: Option<&str>) -> String {
         Some(root) => Path::new(root).join(file_path),
         None => file_path.to_path_buf(),
     };
-    let anchored = if joined.is_absolute() {
-        joined
-    } else {
-        std::env::current_dir()
-            .expect("the process has a current directory")
-            .join(joined)
-    };
-    resolve(&anchored).to_string_lossy().into_owned()
+    resolve(&joined).to_string_lossy().into_owned()
 }
 
-/// Canonicalizes the longest existing prefix of `path`, then appends the rest lexically.
-fn resolve(path: &Path) -> PathBuf {
-    let mut current = lexically_normal(path);
+/// Python's `Path.resolve()`: absolute, lexically normalized, and symlinks resolved on the
+/// longest existing prefix. The file need not exist.
+pub fn resolve(path: &Path) -> PathBuf {
+    let absolute = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+    let mut current = lexically_normal(&absolute);
     let mut missing: Vec<OsString> = Vec::new();
     loop {
         if let Ok(real) = fs::canonicalize(&current) {

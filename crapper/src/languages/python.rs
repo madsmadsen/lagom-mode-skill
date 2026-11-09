@@ -14,7 +14,8 @@
 use tree_sitter::Node;
 
 use crate::languages::ts::{
-    child_of_type, complexity, descendants, end_line, node_text, parse, start_line, Grammar,
+    ancestor_names, child_of_type, complexity, descendants, end_line, node_text, parse, start_line,
+    Grammar,
 };
 use crate::model::Function;
 
@@ -104,20 +105,9 @@ fn is_nested_function(node: Node) -> bool {
         .is_some_and(|ancestor| ancestor.kind() == "function_definition")
 }
 
-fn class_names(data: &[u8], node: Node) -> Vec<String> {
-    let mut names: Vec<String> = std::iter::successors(node.parent(), |n| n.parent())
-        .filter(|n| n.kind() == "class_definition")
-        .filter_map(|n| {
-            child_of_type(n, &["identifier"]).map(|ident| node_text(data, ident).to_string())
-        })
-        .collect();
-    names.reverse();
-    names
-}
-
 fn record(data: &[u8], node: Node, module: &str, path: &str) -> Option<Function> {
     let ident = child_of_type(node, &["identifier"])?;
-    let classes = class_names(data, node);
+    let classes = ancestor_names(data, node, "class_definition");
     let namespace = std::iter::once(module)
         .chain(classes.iter().map(String::as_str))
         .collect::<Vec<_>>()

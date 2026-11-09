@@ -19,18 +19,17 @@ fn column_width(minimum: usize, maximum: usize, lengths: impl Iterator<Item = us
     minimum.max(longest.min(maximum))
 }
 
+/// Formats a present value with `format`, or the fixed `na` text when the value is missing.
+fn format_optional(value: Option<f64>, na: &str, format: impl FnOnce(f64) -> String) -> String {
+    value.map_or_else(|| na.to_string(), format)
+}
+
 fn format_coverage(coverage: Option<f64>) -> String {
-    match coverage {
-        None => "  N/A ".to_string(),
-        Some(value) => format!("{value:5.1}%"),
-    }
+    format_optional(coverage, "  N/A ", |value| format!("{value:5.1}%"))
 }
 
 fn format_crap(score: Option<f64>) -> String {
-    match score {
-        None => "     N/A".to_string(),
-        Some(value) => format!("{value:8.1}"),
-    }
+    format_optional(score, "     N/A", |value| format!("{value:8.1}"))
 }
 
 fn format_row(entry: &Entry, name_width: usize, namespace_width: usize) -> String {
