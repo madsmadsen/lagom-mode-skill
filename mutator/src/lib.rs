@@ -12,3 +12,5 @@ pub mod runner;
 pub mod workers;
 pub mod coverage;
 pub mod cover_run;
+pub mod engine;
+pub mod report;
