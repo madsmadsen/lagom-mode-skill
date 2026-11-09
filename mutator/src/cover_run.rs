@@ -316,6 +316,34 @@ fn cover_modules(root: &Path, modules: Vec<PathBuf>, none: &str, plan: fn(&Path)
     }
 }
 
+/// One language whose modules are the directories that hold a `marker` file.
+struct Marked {
+    extension: &'static str,
+    marker: &'static str,
+    none: &'static str,
+    plan: fn(&Path) -> Vec<Step>,
+}
+
+const JAVA: Marked = Marked {
+    extension: "java",
+    marker: "pom.xml",
+    none: "No pom.xml; skipping Java coverage.",
+    plan: java_module_plan,
+};
+
+const GO: Marked = Marked {
+    extension: "go",
+    marker: "go.mod",
+    none: "No go.mod; skipping Go coverage.",
+    plan: go_module_plan,
+};
+
+/// Covers the modules that contain `files` with the language's extension and marker file.
+fn cover_marked(root: &Path, files: &[PathBuf], marked: &Marked) {
+    let modules = modules_with(files, marked.extension, marked.marker, root);
+    cover_modules(root, modules, marked.none, marked.plan);
+}
+
 /// `target/coverage/<language>/lcov.info`, or a slug of the module path below the root.
 fn coverage_report(root: &Path, module: &Path, language: Language) -> PathBuf {
     let root = resolve(root);
@@ -350,8 +378,8 @@ fn modules_with(files: &[PathBuf], extension: &str, marker: &str, root: &Path) -
 fn cover_language(language: Language, root: &Path, files: &[PathBuf]) {
     match language {
         Language::Clojure => cover_clojure(root),
-        Language::Java => cover_java(root, files),
-        Language::Go => cover_go(root, files),
+        Language::Java => cover_marked(root, files, &JAVA),
+        Language::Go => cover_marked(root, files, &GO),
         Language::TypeScript => cover_typescript(root, files),
         Language::Python => cover_python(root, files),
         Language::Rust => cover_rust(root, files),
@@ -446,15 +474,6 @@ fn java_module_plan(module: &Path) -> Vec<Step> {
     ]
 }
 
-fn cover_java(root: &Path, files: &[PathBuf]) {
-    cover_modules(
-        root,
-        modules_with(files, "java", "pom.xml", root),
-        "No pom.xml; skipping Java coverage.",
-        java_module_plan,
-    );
-}
-
 // Go
 
 fn go_test_args(profile: &Path) -> Vec<String> {
@@ -472,15 +491,6 @@ fn go_module_plan(module: &Path) -> Vec<Step> {
             failure: Some(scored_exit("Go", module)),
         },
     ]
-}
-
-fn cover_go(root: &Path, files: &[PathBuf]) {
-    cover_modules(
-        root,
-        modules_with(files, "go", "go.mod", root),
-        "No go.mod; skipping Go coverage.",
-        go_module_plan,
-    );
 }
 
 // TypeScript
@@ -687,7 +697,6 @@ fn typescript_plan(
     package: &Path,
     report: &Path,
     command: Result<Option<Vec<String>>, String>,
-    setup: Option<ProviderSetup>,
 ) -> Vec<Step> {
     let command = match command {
         Err(message) => return vec![Step::Notice(message)],
@@ -699,7 +708,11 @@ fn typescript_plan(
         }
         Ok(Some(command)) => command,
     };
-    let mut steps = setup.map_or_else(Vec::new, |setup| vitest_provider_steps(package, setup));
+    let mut steps = if needs_vitest_provider(&command) && !package.join(VITEST_PROVIDER).is_dir() {
+        vitest_provider_steps(package, provider_setup(package))
+    } else {
+        Vec::new()
+    };
     steps.push(Step::Disk(Disk::Prepare(report.to_path_buf())));
     steps.push(Step::Run {
         command: Command::Argv(command),
@@ -717,15 +730,7 @@ fn typescript_plan(
 fn cover_typescript_package(root: &Path, files: &[PathBuf], package: &Path) {
     let report = coverage_report(root, package, Language::TypeScript);
     let command = typescript_command(package, files, report_dir(&report));
-    let setup = match &command {
-        Ok(Some(command))
-            if needs_vitest_provider(command) && !package.join(VITEST_PROVIDER).is_dir() =>
-        {
-            Some(provider_setup(package))
-        }
-        _ => None,
-    };
-    execute(&typescript_plan(package, &report, command, setup), package);
+    execute(&typescript_plan(package, &report, command), package);
 }
 
 fn cover_typescript(root: &Path, files: &[PathBuf]) {
@@ -1624,11 +1629,11 @@ mod tests {
         let package = Path::new("pkg");
         let report = Path::new("pkg/target/coverage/typescript/lcov.info");
         assert_eq!(
-            typescript_plan(package, report, Err("bad json".to_owned()), None),
+            typescript_plan(package, report, Err("bad json".to_owned())),
             vec![Step::Notice("bad json".to_owned())]
         );
         assert_eq!(
-            typescript_plan(package, report, Ok(None), None),
+            typescript_plan(package, report, Ok(None)),
             vec![Step::Notice(
                 "No package.json test script in pkg; skipping TypeScript coverage.".to_owned()
             )]
@@ -1640,7 +1645,7 @@ mod tests {
     fn mu_10_typescript_plan_without_provider_prepares_then_runs() {
         let package = Path::new("pkg");
         let report = Path::new("pkg/target/coverage/typescript/lcov.info");
-        let steps = typescript_plan(package, report, Ok(Some(words(&["npm", "test"]))), None);
+        let steps = typescript_plan(package, report, Ok(Some(words(&["npm", "test"]))));
         assert_eq!(
             steps,
             vec![
@@ -1656,27 +1661,21 @@ mod tests {
         );
     }
 
-    // MU-10: with a provider to install, the plan installs, restores manifests, requires it, then runs.
+    // MU-10: with no provider installed, the plan installs it, restores manifests, requires it, then runs.
     #[test]
     fn mu_10_typescript_plan_with_provider_installs_before_running() {
         let package = Path::new("pkg");
         let report = Path::new("pkg/target/coverage/typescript/lcov.info");
-        let manifests: ManifestSnapshot = vec![(PathBuf::from("pkg/package.json"), None)];
-        let setup = ProviderSetup {
-            spec: "@vitest/coverage-v8@2".to_owned(),
-            manifests: manifests.clone(),
-        };
-        let steps = typescript_plan(
-            package,
-            report,
-            Ok(Some(words(&["npx", "vitest"]))),
-            Some(setup),
-        );
+        let manifests: ManifestSnapshot = MANIFESTS
+            .iter()
+            .map(|name| (package.join(name), None))
+            .collect();
+        let steps = typescript_plan(package, report, Ok(Some(words(&["npx", "vitest"]))));
         assert_eq!(
             steps,
             vec![
                 Step::Notice(
-                    "Installing @vitest/coverage-v8@2 so Vitest can write LCOV. package.json and the lockfile are restored afterward.".to_owned()
+                    "Installing @vitest/coverage-v8 so Vitest can write LCOV. package.json and the lockfile are restored afterward.".to_owned()
                 ),
                 Step::Run {
                     command: argv(&[
@@ -1684,7 +1683,7 @@ mod tests {
                         "install",
                         "--no-save",
                         "--no-package-lock",
-                        "@vitest/coverage-v8@2",
+                        "@vitest/coverage-v8",
                     ]),
                     failure: None,
                 },
@@ -2055,8 +2054,8 @@ mod tests {
     fn mu_10_entry_points_skip_without_markers() {
         let dir = tempdir().unwrap();
         cover_clojure(dir.path());
-        cover_java(dir.path(), &[]);
-        cover_go(dir.path(), &[]);
+        cover_language(Language::Java, dir.path(), &[]);
+        cover_language(Language::Go, dir.path(), &[]);
         cover_rust(dir.path(), &[]);
         assert!(!dir.path().join("target").exists());
     }
@@ -2078,5 +2077,55 @@ mod tests {
         execute(&steps, dir.path());
         assert!(!cleaned.join("index.html").exists());
         assert!(!lcov.exists());
+    }
+
+    // MU-11: each Language arm reaches its own coverage function; with no files, every arm only skips.
+    #[test]
+    fn mu_11_cover_language_each_arm_skips_without_files() {
+        let dir = tempdir().unwrap();
+        for language in [
+            Language::Clojure,
+            Language::Java,
+            Language::Go,
+            Language::TypeScript,
+            Language::Python,
+            Language::Rust,
+        ] {
+            cover_language(language, dir.path(), &[]);
+        }
+        assert!(!dir.path().join("target").exists());
+    }
+
+    // MU-11: a TypeScript package with no test script plans only a notice, so no tool runs.
+    #[test]
+    fn mu_11_cover_typescript_skips_package_without_test_script() {
+        let dir = tempdir().unwrap();
+        fs::write(
+            dir.path().join("package.json"),
+            br#"{"scripts":{"build":"tsc"}}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        let file = dir.path().join("src/index.ts");
+        fs::write(&file, b"export {};").unwrap();
+        cover_typescript(dir.path(), &[file]);
+        assert!(!dir.path().join("target").exists());
+    }
+
+    // MU-11: a package.json that is not an object plans only the lookup error, so no tool runs.
+    #[test]
+    fn mu_11_cover_typescript_package_reports_bad_package_json() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("package.json"), b"[1]").unwrap();
+        cover_typescript_package(dir.path(), &[], dir.path());
+        assert!(!dir.path().join("target").exists());
+    }
+
+    // MU-11: with no TypeScript files, cover_typescript warns and plans no package.
+    #[test]
+    fn mu_11_cover_typescript_without_files_warns_and_returns() {
+        let dir = tempdir().unwrap();
+        cover_typescript(dir.path(), &[]);
+        assert!(!dir.path().join("target").exists());
     }
 }

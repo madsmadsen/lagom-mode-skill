@@ -30,3 +30,17 @@ Method: ub-mode. Orchestrator plans and verifies; implementer agents
   - `report`: expected unmarked scan line has two leading spaces; `engine`: clamp lint.
 - `cargo clippy --fix` removed 8 mechanical lints (collapsible if, `?`, `last()`, `bytes().nth`). Why: tool-made fixes, no hand-written Rust.
 - Committed green groups in order: scaffold, functions, sites, bind+metrics, runner+workers, coverage, engine.
+
+## Make it Right: gates
+- Parity: wrote `parity/run.py` (+ `coverage.toml`, six fixtures) and ran it against the original (`/tmp/mu/venv`). First run found one bug:
+  `--scan` marked every site as changed when no snapshot exists (Python: empty set). Fixed with a test. Stdout is now compared strictly. Result: 38/38 PASS
+  (same exit codes, same EDN snapshots apart from `tested-at`).
+- `parity/golden.py` records the original's output on each fixture into `tests/golden/` so `tests/fixtures_langs.rs` needs no Python (AC-11).
+- e2e tests (`tests/*.rs`): AC-2..AC-9 (AC-9 with a fake `cargo` on PATH), AC-10, AC-12 (`fixes_toml.rs`), AC-1 (`parity_map.rs`), AC-13.
+- crapper (original, `crapper src`): found cover_run functions at CRAP 12-30 and `edn::render`, `push_json_char` at CC 11-12. Fixed by
+  splitting coverage code into pure planners plus one executor with tests for each branch; render/push_json_char split into helpers.
+  Final: max CRAP 9.0 (`link_children`).
+- dryer (original, threshold 0.8): 8 duplicate pairs (4 copies of `resolve`, `strip_src` x2, ancestor names x2, literal tables, setter/number twins,
+  nearest). All removed; "No duplicate candidates found".
+- Fixed a flaky e2e helper: git commit now ignores user gpg/hook config.
+- The crapper run also analysed `parity/fixtures` (and wrote `target/` in the Rust fixture); fixture build output is git-ignored and removed.

@@ -35,16 +35,28 @@ pub fn run_env(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Out {
 }
 
 fn git(dir: &Path, args: &[&str]) {
-    let status = Command::new("git")
+    let output = Command::new("git")
         .arg("-c")
         .arg("user.name=mutator-test")
         .arg("-c")
         .arg("user.email=mutator-test@example.com")
+        .arg("-c")
+        .arg("commit.gpgsign=false")
+        .arg("-c")
+        .arg("core.hooksPath=/dev/null")
+        .arg("-c")
+        .arg("init.defaultBranch=main")
         .args(args)
         .current_dir(dir)
-        .status()
+        .output()
         .expect("spawn git");
-    assert!(status.success(), "git {args:?} failed");
+    if !output.status.success() {
+        eprintln!("{}", String::from_utf8_lossy(&output.stderr));
+        panic!(
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
 }
 
 /// An empty project directory that is a git repository.

@@ -149,23 +149,33 @@ fn json_string(text: &str) -> String {
     out
 }
 
+/// Short escapes that Python `json.dumps` writes as a two-character sequence.
+const SHORT_ESCAPES: [(char, &str); 7] = [
+    ('"', "\\\""),
+    ('\\', "\\\\"),
+    ('\n', "\\n"),
+    ('\r', "\\r"),
+    ('\t', "\\t"),
+    ('\u{8}', "\\b"),
+    ('\u{c}', "\\f"),
+];
+
 /// Appends one character escaped as Python `json.dumps` with `ensure_ascii=True`.
 fn push_json_char(out: &mut String, ch: char) {
-    match ch {
-        '"' => out.push_str("\\\""),
-        '\\' => out.push_str("\\\\"),
-        '\n' => out.push_str("\\n"),
-        '\r' => out.push_str("\\r"),
-        '\t' => out.push_str("\\t"),
-        '\u{8}' => out.push_str("\\b"),
-        '\u{c}' => out.push_str("\\f"),
-        ' '..='~' => out.push(ch),
-        _ => {
-            let mut units = [0u16; 2];
-            for unit in ch.encode_utf16(&mut units).iter() {
-                out.push_str(&format!("\\u{unit:04x}"));
-            }
-        }
+    if let Some(&(_, escape)) = SHORT_ESCAPES.iter().find(|(short, _)| *short == ch) {
+        out.push_str(escape);
+    } else if (' '..='~').contains(&ch) {
+        out.push(ch);
+    } else {
+        push_utf16_escapes(out, ch);
+    }
+}
+
+/// Appends `\uXXXX` for each UTF-16 unit of `ch`; a non-BMP character gives a surrogate pair.
+fn push_utf16_escapes(out: &mut String, ch: char) {
+    let mut units = [0u16; 2];
+    for unit in ch.encode_utf16(&mut units).iter() {
+        out.push_str(&format!("\\u{unit:04x}"));
     }
 }
 

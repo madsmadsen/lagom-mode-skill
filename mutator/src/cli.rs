@@ -157,15 +157,17 @@ impl Default for Options {
 
 type ValueSetter = fn(&mut Options, &str) -> Result<(), String>;
 type FlagSetter = fn(&mut Options);
+type Predicate = fn(&Options) -> bool;
+type Conflict = (Predicate, &'static str);
 
 const VALUE_OPTIONS: &[(&[&str], ValueSetter)] = &[
     (&["-s", "--source-root"], add_source_root),
     (&["--root"], set_root),
     (&["--coverage-command"], |options, value| {
-        Ok(set_text(options, value, |o| &mut o.coverage_command))
+        set_text(options, value, |o| &mut o.coverage_command)
     }),
     (&["--test-command"], |options, value| {
-        Ok(set_text(options, value, |o| &mut o.test_command))
+        set_text(options, value, |o| &mut o.test_command)
     }),
     (&["--timeout-factor"], set_timeout_factor),
     (&["--mutation-warning"], set_mutation_warning),
@@ -198,8 +200,13 @@ fn set_root(options: &mut Options, value: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn set_text(options: &mut Options, value: &str, field: fn(&mut Options) -> &mut Option<String>) {
+fn set_text(
+    options: &mut Options,
+    value: &str,
+    field: fn(&mut Options) -> &mut Option<String>,
+) -> Result<(), String> {
     *field(options) = Some(value.to_string());
+    Ok(())
 }
 
 fn set_timeout_factor(options: &mut Options, value: &str) -> Result<(), String> {
@@ -294,7 +301,7 @@ fn apply_arg(options: &mut Options, arg: &str, next: Option<&String>) -> Result<
     Ok(1)
 }
 
-const CONFLICTS: &[(fn(&Options) -> bool, &str)] = &[
+const CONFLICTS: &[Conflict] = &[
     (
         |options| options.mutate_all && options.since_last_run,
         "--mutate-all cannot be combined with --since-last-run",
@@ -798,7 +805,7 @@ mod tests {
     /// MU-2: each switch sets its own field, and `--reuse-coverage` is an alias.
     #[test]
     fn mu_2_switches_set_their_fields() {
-        let cases: &[(&str, fn(&Options) -> bool)] = &[
+        let cases: &[(&str, Predicate)] = &[
             ("--changed", |o| o.changed),
             ("--scan", |o| o.scan),
             ("--mutate-all", |o| o.mutate_all),
