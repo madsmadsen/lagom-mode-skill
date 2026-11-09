@@ -1,0 +1,24 @@
+KILLED    src/main/java/demo/Counter.java:9 >= -> >
+SURVIVED  src/main/java/demo/Counter.java:9 && -> ||
+SURVIVED  src/main/java/demo/Counter.java:9 != -> ==
+SURVIVED  src/main/java/demo/Counter.java:9 0 -> 1
+KILLED    src/main/java/demo/Counter.java:13 < -> <=
+KILLED    src/main/java/demo/Counter.java:13 0 -> 1
+SURVIVED  src/main/java/demo/Counter.java:14 delete -
+SURVIVED  src/main/java/demo/Counter.java:14 * -> /
+KILLED    src/main/java/demo/Counter.java:16 + -> -
+KILLED    src/main/java/demo/Counter.java:16 / -> *
+KILLED    src/main/java/demo/Counter.java:16 1 -> 0
+SURVIVED  src/main/java/demo/Counter.java:20 delete !
+SURVIVED  src/main/java/demo/Counter.java:20 || -> &&
+SURVIVED  src/main/java/demo/Counter.java:20 true -> false
+KILLED    src/main/java/demo/Counter.java:28 == -> !=
+KILLED    src/main/java/demo/Counter.java:28 false -> true
+Function Namespace          Killed  Survived  Uncovered  Sites   Score
+----------------------------------------------------------------------
+ready    demo.Counter            0         3          0      3   0.0%
+isFull   demo.Counter            1         3          0      4  25.0%
+step     demo.Counter            5         2          0      7  71.4%
+flip     demo.Counter.Pair       2         0          0      2 100.0%
+----------------------------------------------------------------------
+Total                            8         8          0     16   50.0%

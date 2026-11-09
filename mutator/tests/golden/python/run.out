@@ -1,0 +1,38 @@
+SURVIVED  src/demo/board.py:8 0 -> 1
+KILLED    src/demo/board.py:11 >= -> >
+KILLED    src/demo/board.py:11 0 -> 1
+SURVIVED  src/demo/board.py:11 and -> or
+SURVIVED  src/demo/board.py:11 < -> <=
+SURVIVED  src/demo/board.py:11 or -> and
+SURVIVED  src/demo/board.py:11 delete not
+SURVIVED  src/demo/board.py:14 == -> !=
+SURVIVED  src/demo/board.py:14 or -> and
+SURVIVED  src/demo/board.py:14 False -> True
+KILLED    src/demo/board.py:17 < -> <=
+KILLED    src/demo/board.py:17 0 -> 1
+SURVIVED  src/demo/board.py:18 delete -
+SURVIVED  src/demo/board.py:18 * -> /
+SURVIVED  src/demo/board.py:19 + -> -
+SURVIVED  src/demo/board.py:19 / -> *
+SURVIVED  src/demo/board.py:19 1 -> 0
+SURVIVED  src/demo/board.py:19 - -> +
+SURVIVED  src/demo/board.py:19 0 -> 1
+SURVIVED  src/demo/board.py:23 == -> !=
+SURVIVED  src/demo/board.py:23 True -> False
+SURVIVED  src/demo/board.py:23 and -> or
+SURVIVED  src/demo/board.py:23 1 -> 0
+SURVIVED  src/demo/board.py:23 != -> ==
+SURVIVED  src/demo/board.py:23 0 -> 1
+SURVIVED  src/demo/board.py:27 * -> /
+SURVIVED  src/demo/board.py:27 + -> -
+SURVIVED  src/demo/board.py:27 1 -> 0
+Function    Namespace         Killed  Survived  Uncovered  Sites   Score
+------------------------------------------------------------------------
+_hide       demo.board             0         6          0      6   0.0%
+_full       demo.board.Board       0         3          0      3   0.0%
+open_square demo.board             0         3          0      3   0.0%
+__init__    demo.board.Board       0         1          0      1   0.0%
+score       demo.board.Board       2         7          0      9  22.2%
+place       demo.board.Board       2         4          0      6  33.3%
+------------------------------------------------------------------------
+Total                              4        24          0     28   14.3%

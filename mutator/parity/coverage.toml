@@ -1,0 +1,320 @@
+# Parity runs for run.py. Each [[run]] executes in a fresh copy of its fixture,
+# once with the original and once with the port. Fields:
+#   name         unique id, shown in the output
+#   fixture      directory under mutator/parity/, relative to it
+#   setup        optional; strings run with `sh -c` in the tree, and
+#                { mutator = [...] } runs the side's tool with those args
+#   args         arguments for the tool, after setup
+#   expect_exit  optional; both sides must exit with this code
+#   covers       the flags, README rows, PRD ids (MU-*, AC-*), and exit codes this run exercises
+#
+# Mutating runs get `--max-workers 2` unless args has -h/--help/--scan/--max-workers,
+# or expect_exit is 1 (usage errors).
+
+# ---------- flags (AC-1) ----------
+
+[[run]]
+name = "flag-help-short"
+fixture = "fixtures/python"
+args = ["-h"]
+expect_exit = 0
+covers = ["-h", "exit 0"]
+
+[[run]]
+name = "flag-help-long"
+fixture = "fixtures/python"
+args = ["--help"]
+expect_exit = 0
+covers = ["--help", "exit 0"]
+
+[[run]]
+name = "flag-root"
+fixture = "fixtures/python"
+args = ["--root", ".", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--root", "--no-coverage", "--test-command"]
+
+[[run]]
+name = "flag-source-root-short"
+fixture = "fixtures/python"
+args = ["-s", "src", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["-s"]
+
+[[run]]
+name = "flag-source-root-long"
+fixture = "fixtures/python"
+args = ["--source-root", "src", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--source-root"]
+
+[[run]]
+name = "flag-changed"
+fixture = "fixtures/python"
+setup = [
+  'echo "# edited" >> src/demo/board.py',
+  'printf "x = 1\n" > src/demo/extra.py && git add src/demo/extra.py',
+  'printf "y = 2\n" > src/demo/untracked.py',
+]
+args = ["--changed", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--changed", "MU-7"]
+
+[[run]]
+name = "flag-scan"
+fixture = "fixtures/python"
+args = ["--scan", "--no-coverage"]
+expect_exit = 0
+covers = ["--scan", "exit 0"]
+
+[[run]]
+name = "flag-mutate-all"
+fixture = "fixtures/python"
+setup = [{ mutator = ["--no-coverage", "--test-command", "sh check.sh"] }]
+args = ["--mutate-all", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--mutate-all"]
+
+[[run]]
+name = "flag-since-last-run"
+fixture = "fixtures/python"
+setup = [
+  { mutator = ["--no-coverage", "--test-command", "sh check.sh"] },
+  'sed -i.bak "s/return self.cells == 64/return self.cells == 63/" src/demo/board.py && rm -f src/demo/board.py.bak',
+]
+args = ["--since-last-run", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--since-last-run", "MU-19"]
+
+[[run]]
+name = "flag-lines"
+fixture = "fixtures/python"
+args = ["--lines", "11,14", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--lines"]
+
+[[run]]
+name = "flag-lines-nothing-to-run"
+fixture = "fixtures/python"
+args = ["--lines", "1", "--no-coverage", "--test-command", "sh check.sh"]
+expect_exit = 0
+covers = ["--lines", "exit 0"]
+
+[[run]]
+name = "flag-use-existing-coverage"
+fixture = "fixtures/python"
+args = ["--use-existing-coverage", "--test-command", "sh check.sh"]
+covers = ["--use-existing-coverage"]
+
+[[run]]
+name = "flag-reuse-coverage"
+fixture = "fixtures/python"
+args = ["--reuse-coverage", "--test-command", "sh check.sh"]
+covers = ["--reuse-coverage"]
+
+[[run]]
+name = "flag-coverage-command"
+fixture = "fixtures/python"
+args = ["--coverage-command", "true", "--test-command", "sh check.sh"]
+covers = ["--coverage-command", "MU-10"]
+
+[[run]]
+name = "flag-timeout-factor"
+fixture = "fixtures/python"
+args = ["--timeout-factor", "5", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--timeout-factor", "MU-15"]
+
+[[run]]
+name = "flag-mutation-warning"
+fixture = "fixtures/python"
+args = ["--mutation-warning", "1", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--mutation-warning"]
+
+[[run]]
+name = "flag-max-workers"
+fixture = "fixtures/python"
+args = ["--max-workers", "1", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--max-workers"]
+
+[[run]]
+name = "flag-verbose"
+fixture = "fixtures/python"
+args = ["--verbose", "--no-coverage", "--test-command", "sh check.sh"]
+covers = ["--verbose"]
+
+# ---------- rejected combinations and bad values (usage error, exit 1) ----------
+
+[[run]]
+name = "usage-mutate-all-since-last-run"
+fixture = "fixtures/python"
+args = ["--mutate-all", "--since-last-run"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-no-coverage-coverage-command"
+fixture = "fixtures/python"
+args = ["--no-coverage", "--coverage-command", "true"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-scan-mutate-all"
+fixture = "fixtures/python"
+args = ["--scan", "--mutate-all"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-scan-max-workers"
+fixture = "fixtures/python"
+args = ["--scan", "--max-workers", "2"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-unknown-flag"
+fixture = "fixtures/python"
+args = ["--bogus"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-missing-value"
+fixture = "fixtures/python"
+args = ["--test-command"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-timeout-factor-not-number"
+fixture = "fixtures/python"
+args = ["--timeout-factor", "abc"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-timeout-factor-zero"
+fixture = "fixtures/python"
+args = ["--timeout-factor", "0"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-max-workers-zero"
+fixture = "fixtures/python"
+args = ["--max-workers", "0"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-lines-zero"
+fixture = "fixtures/python"
+args = ["--lines", "0"]
+expect_exit = 1
+covers = ["exit 1"]
+
+[[run]]
+name = "usage-lines-not-int"
+fixture = "fixtures/python"
+args = ["--lines", "x"]
+expect_exit = 1
+covers = ["exit 1"]
+
+# ---------- exit 2 and exit 3 ----------
+
+[[run]]
+name = "exit-2-baseline-fails"
+fixture = "fixtures/python"
+setup = [{ mutator = ["--no-coverage", "--test-command", "sh check.sh"] }]
+args = ["--no-coverage", "--test-command", "false"]
+expect_exit = 2
+covers = ["exit 2", "MU-14"]
+
+[[run]]
+name = "exit-3-survivor-changed-backup"
+fixture = "fixtures/python"
+setup = [
+  'mkdir -p target/mutator-backup/src/demo && cp src/demo/board.py target/mutator-backup/src/demo/board.py',
+  'sed -i.bak "s/return self.cells == 64/return self.cells == 63/" src/demo/board.py && rm -f src/demo/board.py.bak',
+]
+args = ["--no-coverage", "--test-command", "sh check.sh"]
+expect_exit = 3
+covers = ["exit 3", "MU-18", "AC-6"]
+
+# ---------- differential, default mode (MU-19) ----------
+
+[[run]]
+name = "differential-default"
+fixture = "fixtures/python"
+setup = [
+  { mutator = ["--no-coverage", "--test-command", "sh check.sh"] },
+  'sed -i.bak "s/return self.cells == 64/return self.cells == 63/" src/demo/board.py && rm -f src/demo/board.py.bak',
+]
+args = ["--no-coverage", "--test-command", "sh check.sh"]
+covers = ["MU-19"]
+
+# ---------- full runs, one fixture per language (AC-2) ----------
+
+[[run]]
+name = "fixture-clojure"
+fixture = "fixtures/clojure"
+args = ["--no-coverage", "--test-command", "sh check.sh"]
+expect_exit = 3
+covers = [
+  "MU-5", "MU-8", "MU-13", "exit 3",
+  "clojure: arithmetic heads", "clojure: comparison heads", "clojure: =/not=",
+  "clojure: if/if-not", "clojure: when/when-not", "clojure: and/or",
+  "clojure: seq pairs", "clojure: predicate pairs", "clojure: coercion pairs",
+  "clojure: true/false", "clojure: 0/1",
+]
+
+[[run]]
+name = "fixture-java"
+fixture = "fixtures/java"
+args = ["--no-coverage", "--test-command", "sh check.sh"]
+expect_exit = 3
+covers = [
+  "MU-5", "MU-8", "MU-13", "exit 3",
+  "java: true/false", "java: ==/!=", "java: </<=", "java: >/>=", "java: +/-",
+  "java: */", "java: &&/||", "java: delete !", "java: delete unary -", "java: 0/1",
+]
+
+[[run]]
+name = "fixture-go"
+fixture = "fixtures/go"
+args = ["--no-coverage", "--test-command", "sh check.sh"]
+expect_exit = 3
+covers = [
+  "MU-5", "MU-8", "MU-13", "exit 3",
+  "go: +/-", "go: * -> /", "go: comparisons", "go: ==/!=", "go: true/false",
+  "go: &&/||", "go: 0/1",
+]
+
+[[run]]
+name = "fixture-typescript"
+fixture = "fixtures/typescript"
+args = ["--no-coverage", "--test-command", "sh check.sh"]
+expect_exit = 3
+covers = [
+  "MU-5", "MU-8", "MU-13", "exit 3",
+  "typescript: +/-", "typescript: */", "typescript: >/>=", "typescript: &&/||",
+  "typescript: ===/!==", "typescript: ??->||", "typescript: ?.->.",
+  "typescript: call drops ?.", "typescript: index drops ?.",
+  "typescript: delete !", "typescript: true/false", "typescript: 0/1",
+]
+
+[[run]]
+name = "fixture-rust"
+fixture = "fixtures/rust"
+args = ["--no-coverage", "--test-command", "sh check.sh"]
+expect_exit = 3
+covers = [
+  "MU-5", "MU-8", "MU-13", "exit 3",
+  "rust: &&/||", "rust: delete !", "rust: delete unary -", "rust: 0/1",
+]
+
+[[run]]
+name = "fixture-python"
+fixture = "fixtures/python"
+args = ["--no-coverage", "--test-command", "sh check.sh"]
+expect_exit = 3
+covers = [
+  "MU-5", "MU-8", "MU-13", "exit 3",
+  "python: and/or", "python: not", "python: True/False", "python: ==/!=",
+  "python: comparisons", "python: +/-", "python: * -> /", "python: 0/1",
+  "python: unary -",
+]

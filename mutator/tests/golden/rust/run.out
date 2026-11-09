@@ -1,0 +1,23 @@
+SURVIVED  src/lib.rs:5 && -> ||
+SURVIVED  src/lib.rs:5 || -> &&
+SURVIVED  src/lib.rs:5 delete !
+KILLED    src/lib.rs:9 delete -
+KILLED    src/lib.rs:9 + -> -
+KILLED    src/lib.rs:9 0 -> 1
+SURVIVED  src/lib.rs:18 0 -> 1
+SURVIVED  src/lib.rs:22 * -> /
+SURVIVED  src/lib.rs:22 1 -> 0
+KILLED    src/lib.rs:27 == -> !=
+KILLED    src/lib.rs:27 0 -> 1
+SURVIVED  src/lib.rs:27 && -> ||
+SURVIVED  src/lib.rs:27 delete !
+SURVIVED  src/lib.rs:27 false -> true
+Function Namespace      Killed  Survived  Uncovered  Sites   Score
+------------------------------------------------------------------
+gate     demo                0         3          0      3   0.0%
+bump     demo::Counter       0         2          0      2   0.0%
+new      demo::Counter       0         1          0      1   0.0%
+reset    demo::Counter       2         3          0      5  40.0%
+negate   demo                3         0          0      3 100.0%
+------------------------------------------------------------------
+Total                        5         9          0     14   35.7%

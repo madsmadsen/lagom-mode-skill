@@ -1,0 +1,23 @@
+KILLED    demo.go:14 < -> <=
+KILLED    demo.go:14 0 -> 1
+SURVIVED  demo.go:15 * -> /
+SURVIVED  demo.go:17 + -> -
+SURVIVED  demo.go:17 + -> -
+SURVIVED  demo.go:17 1 -> 0
+KILLED    demo.go:23 >= -> >
+SURVIVED  demo.go:23 && -> ||
+SURVIVED  demo.go:23 != -> ==
+SURVIVED  demo.go:23 0 -> 1
+SURVIVED  demo.go:27 == -> !=
+SURVIVED  demo.go:27 true -> false
+SURVIVED  demo.go:27 || -> &&
+SURVIVED  demo.go:27 0 -> 1
+SURVIVED  demo.go:27 > -> >=
+SURVIVED  demo.go:27 1 -> 0
+Function Namespace                 Killed  Survived  Uncovered  Sites   Score
+-----------------------------------------------------------------------------
+hidden   example.com/demo               0         6          0      6   0.0%
+Full     example.com/demo               1         3          0      4  25.0%
+Bump     example.com/demo.Counter       2         4          0      6  33.3%
+-----------------------------------------------------------------------------
+Total                                   3        13          0     16   18.8%

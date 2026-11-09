@@ -259,6 +259,9 @@ fn carry_forward(
 }
 
 fn changed_forms(history: &History, digests: &Digests) -> HashSet<FormKey> {
+    if history.forms.is_empty() {
+        return HashSet::new();
+    }
     digests
         .iter()
         .filter(|(key, digest)| {
@@ -722,5 +725,40 @@ mod tests {
     fn mu_18_restore_backups_without_backup_dir_restores_nothing() {
         let root = tempdir().expect("tempdir");
         assert!(restore_backups(root.path()).is_empty());
+    }
+
+    // MU-19: without a snapshot, scan marks nothing as changed and prints no footer.
+    #[test]
+    fn mu_19_scan_without_snapshot_marks_nothing() {
+        let (root, path) = project(SOURCE);
+        let out = scan_file(&path, root.path(), None, true, None);
+        assert!(out.starts_with("Scan: 4 mutation sites in "), "{out}");
+        assert!(!out.lines().any(|line| line.starts_with('*')), "{out}");
+        assert!(!out.contains("marks a function"), "{out}");
+    }
+
+    // MU-19: with a snapshot, only the function whose text changed is starred.
+    #[test]
+    fn mu_19_scan_stars_only_the_changed_function() {
+        let source = format!("{SOURCE}\ndef sub(a, b):\n    return a - b\n");
+        let (root, path) = project(&source);
+        run(&path, root.path(), &options("true", true));
+        fs::write(&path, source.replace("return a - b", "return a * b")).expect("write");
+        let out = scan_file(&path, root.path(), None, true, None);
+        let starred: Vec<&str> = out
+            .lines()
+            .filter(|line| line.starts_with('*') && line.contains("[defn"))
+            .collect();
+        assert!(!starred.is_empty(), "{out}");
+        assert!(
+            starred.iter().all(|line| line.contains("[defn/sub]")),
+            "{out}"
+        );
+        assert!(
+            out.lines()
+                .any(|line| line.starts_with(' ') && line.contains("[defn/add]")),
+            "{out}"
+        );
+        assert!(out.ends_with("* marks a function whose text changed since the last snapshot.\n"));
     }
 }
