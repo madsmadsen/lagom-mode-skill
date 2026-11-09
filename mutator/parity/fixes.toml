@@ -1,0 +1,30 @@
+# MU-PB-3: every difference from the original. MU-PB-6: Mads Madsen approves each entry.
+# Each entry names a test (MU-PB-4, AC-12) in `mutator/tests/`.
+
+[[fix]]
+id = "second-run-near-timeout"
+requirement = "MU-21"
+description = """The original kills a mutant as soon as its first run times out. Under load, a
+survivor can then count as killed. The port runs a mutant a second time with 2 times the timeout
+when the first run timed out or took at least 90% of the timeout, and uses the second result."""
+changed_behavior = "A mutant that times out once, or runs within 10% of its timeout, gets one more run with 2x timeout."
+fixture = "tests/fixtures/slow-mutant"
+test = "tests/mu21_second_run.rs::mu_21_second_run_decides_the_outcome"
+changes_snapshot_keys_or_shape = false
+approved = false
+
+[[fix]]
+id = "idempotent-tested-at"
+requirement = "MU-NFR-1"
+description = """The original writes a new `:tested-at` time on every run, so two runs on the same
+files give snapshots that differ in one line (PRD AC-13 asks for byte-identical snapshots). The port
+keeps the old file when the new content equals it apart from `:tested-at`."""
+changed_behavior = "`:tested-at` changes only when another value in the snapshot changes."
+fixture = "tests/fixtures/slow-mutant"
+test = "tests/mu21_second_run.rs::mu_nfr_1_five_runs_give_identical_snapshots"
+changes_snapshot_keys_or_shape = false
+approved = false
+
+# Not listed on purpose (MU-PB-5): `bugs/python-tests-run-with-mutators-virtualenv.md` comes from
+# Python only. The port has no interpreter of its own and uses the project's `.venv` or `venv`
+# Python, else `python3` on the PATH.

@@ -1,0 +1,9 @@
+# MU-PB-1: pinned commits. A change needs a new parity run (MU-PB-2).
+[original]
+repo = "https://github.com/unclebob/mutator"
+commit = "a5a0cb803b66e0cdb8bf471b3b08af701d424a41"
+
+[crapper]
+# The checkout the original imports from ../crapper. The port has its own copy of the code it needs.
+repo = "https://github.com/unclebob/crapper"
+commit = "6fd92c4c9bcc56efb64a2f8743d5a2993bcfd42d"
