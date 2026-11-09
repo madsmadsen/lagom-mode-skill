@@ -1,0 +1,7 @@
+# Pinned original (CR-PB-1). The parity runner installs exactly these versions.
+repository = "https://github.com/unclebob/crapper"
+commit = "6fd92c4c9bcc56efb64a2f8743d5a2993bcfd42d"
+
+[python-dependencies]
+tree-sitter = "0.26.1"
+tree-sitter-language-pack = "1.25.0"
