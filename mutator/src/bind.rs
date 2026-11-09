@@ -989,4 +989,29 @@ mod tests {
                 .all(|s| mutation_file(&s.mutation_id).as_deref() == Some("src/demo.py"))
         );
     }
+
+    #[test]
+    fn mu_9_contains_byte_range_is_start_inclusive_end_exclusive() {
+        let f = bytes_function("f", 1, 3, (10, 20));
+        assert!(contains(&f, 2, Some(10)));
+        assert!(contains(&f, 2, Some(19)));
+        assert!(!contains(&f, 2, Some(20)));
+        assert!(!contains(&f, 2, Some(9)));
+    }
+
+    #[test]
+    fn mu_9_contains_line_range_is_inclusive_on_both_ends() {
+        let f = function("f", "demo", 1, 3);
+        assert!(!contains(&f, 0, None));
+        assert!(contains(&f, 1, None));
+        assert!(contains(&f, 3, None));
+        assert!(!contains(&f, 4, None));
+    }
+
+    #[test]
+    fn mu_9_tightness_zero_length_byte_span_is_zero() {
+        assert_eq!(tightness(&bytes_function("f", 1, 4, (5, 5))), 0);
+        assert_eq!(tightness(&bytes_function("f", 1, 4, (5, 9))), 4);
+        assert_eq!(tightness(&bytes_function("f", 1, 4, (9, 5))), 3_000_000);
+    }
 }

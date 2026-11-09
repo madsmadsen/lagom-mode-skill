@@ -213,7 +213,7 @@ fn exit_code(status: ExitStatus) -> i32 {
     status
         .code()
         .or_else(|| status.signal().map(|signal| -signal))
-        .unwrap_or(1)
+        .expect("a unix exit status has a code or a signal")
 }
 
 /// Echoes `+ (cwd) command` to stderr, runs it with inherited stdio, returns its status.
@@ -229,13 +229,11 @@ fn run_shell(command: &Command, cwd: &Path) -> i32 {
 }
 
 fn run_custom(text: &str, root: &Path) -> i32 {
-    let code = run_shell(&Command::Shell(text.to_owned()), root);
-    if code != 0 {
-        warn(&format!(
-            "Coverage command exited {code}. Reports already on disk will not be read."
-        ));
-    }
-    code
+    let failure = Failure::Exit {
+        before: "Coverage command exited ".to_owned(),
+        after: ". Reports already on disk will not be read.".to_owned(),
+    };
+    run_reported(&Command::Shell(text.to_owned()), root, Some(&failure))
 }
 
 /// Every entry below `dir`, without following symlinked directories.
@@ -1074,11 +1072,11 @@ fn run_step(step: &Step, cwd: &Path, last: &mut i32) -> bool {
 }
 
 fn require(check: &Check, message: &str, cwd: &Path, last: i32) -> bool {
-    let ok = holds(check, cwd, last);
-    if !ok {
-        warn(message);
+    if holds(check, cwd, last) {
+        return true;
     }
-    ok
+    warn(message);
+    false
 }
 
 fn holds(check: &Check, cwd: &Path, last: i32) -> bool {
@@ -1089,11 +1087,18 @@ fn holds(check: &Check, cwd: &Path, last: i32) -> bool {
     }
 }
 
+/// The warning for a planned command that exits nonzero; none on success or without failure text.
+fn failure_text(failure: Option<&Failure>, code: i32) -> Option<String> {
+    failure
+        .filter(|_| code != 0)
+        .map(|failure| failure.render(code))
+}
+
 /// Runs a planned command, printing its failure text when it exits nonzero.
 fn run_reported(command: &Command, cwd: &Path, failure: Option<&Failure>) -> i32 {
     let code = run_shell(command, cwd);
-    if let Some(failure) = failure.filter(|_| code != 0) {
-        warn(&failure.render(code));
+    if let Some(text) = failure_text(failure, code) {
+        warn(&text);
     }
     code
 }
@@ -1109,11 +1114,18 @@ fn run_disk(disk: &Disk) {
     }
 }
 
+/// The LLVM tool when the install exited zero and cargo-llvm-cov is now on the PATH.
+fn llvm_cov_after_install(install: Option<i32>, found: bool) -> Option<RustTool> {
+    (install == Some(0) && found).then_some(RustTool::LlvmCov)
+}
+
 fn install_llvm_cov() -> Option<RustTool> {
     let plan = rust_install_plan(which("rustup").is_some());
     let cwd = env::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    if execute(&plan, &cwd) == Some(0) && which("cargo-llvm-cov").is_some() {
-        return Some(RustTool::LlvmCov);
+    if let Some(tool) =
+        llvm_cov_after_install(execute(&plan, &cwd), which("cargo-llvm-cov").is_some())
+    {
+        return Some(tool);
     }
     warn("Rust coverage will score 0%.");
     None
@@ -2127,5 +2139,96 @@ mod tests {
         let dir = tempdir().unwrap();
         cover_typescript(dir.path(), &[]);
         assert!(!dir.path().join("target").exists());
+    }
+
+    // MU-12: a custom command that exits nonzero is run and its status returned; an empty one is skipped.
+    #[test]
+    fn mu_12_custom_command_runs_and_returns_its_status() {
+        let tmp = tempdir().expect("tempdir");
+        assert_eq!(run_coverage(tmp.path(), &[], Some("exit 7")), 7);
+        assert_eq!(run_coverage(tmp.path(), &[], Some("")), 0);
+    }
+
+    // MU-12: a command killed by a signal reports the negated signal number.
+    #[test]
+    fn mu_12_signal_exit_is_negative_signal_number() {
+        let tmp = tempdir().expect("tempdir");
+        assert_eq!(
+            run_shell(&Command::Shell("kill -9 $$".to_owned()), tmp.path()),
+            -9
+        );
+    }
+
+    // MU-12: a failure text is printed only for a nonzero exit, rendered with that code.
+    #[test]
+    fn mu_12_failure_text_only_for_nonzero_exit() {
+        let text = Failure::Text("broke".to_owned());
+        let exit = Failure::Exit {
+            before: "exit ".to_owned(),
+            after: "!".to_owned(),
+        };
+        assert_eq!(failure_text(Some(&text), 0), None);
+        assert_eq!(failure_text(Some(&text), 1), Some("broke".to_owned()));
+        assert_eq!(failure_text(Some(&exit), 2), Some("exit 2!".to_owned()));
+        assert_eq!(failure_text(None, 2), None);
+    }
+
+    // MU-12: a Vitest package is detected by its test script or by a vitest config file.
+    #[test]
+    fn mu_12_uses_vitest_by_test_script_or_config() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path();
+        let node = scripts_of(
+            serde_json::from_str(r#"{"scripts":{"test":"node --test"}}"#).expect("json"),
+        );
+        let vitest =
+            scripts_of(serde_json::from_str(r#"{"scripts":{"test":"vitest run"}}"#).expect("json"));
+        assert!(!uses_vitest(root, &node));
+        assert!(uses_vitest(root, &vitest));
+        write(root, "vitest.config.ts", "export default {}\n");
+        assert!(uses_vitest(root, &node));
+    }
+
+    // MU-12: TypeScript packages come only from TypeScript sources, never from other languages.
+    #[test]
+    fn mu_12_typescript_packages_ignore_other_languages() {
+        let tmp = tempdir().expect("tempdir");
+        let root = tmp.path();
+        write(root, "web/package.json", "{}");
+        write(root, "svc/package.json", "{}");
+        let app = write(root, "web/src/app.ts", "export const n = 1\n");
+        let lib = write(root, "svc/src/lib.rs", "pub fn run() {}\n");
+        assert_eq!(
+            typescript_packages(root, &[app, lib]),
+            vec![resolve(&root.join("web"))]
+        );
+    }
+
+    // MU-12: an LLVM install counts only when it exits zero and cargo-llvm-cov is then found.
+    #[test]
+    fn mu_12_llvm_cov_needs_zero_exit_and_a_found_binary() {
+        assert_eq!(
+            llvm_cov_after_install(Some(0), true),
+            Some(RustTool::LlvmCov)
+        );
+        assert_eq!(llvm_cov_after_install(Some(0), false), None);
+        assert_eq!(llvm_cov_after_install(Some(1), true), None);
+        assert_eq!(llvm_cov_after_install(None, true), None);
+    }
+
+    // MU-12: a Require passes when its check holds and returns false when it does not.
+    #[test]
+    fn mu_12_require_passes_only_when_check_holds() {
+        let dir = tempdir().expect("tempdir");
+        assert!(require(&Check::LastRunOk, "unused", dir.path(), 0));
+        assert!(!require(&Check::LastRunOk, "unused", dir.path(), 1));
+    }
+
+    // MU-12: LastRunOk holds only for a zero exit status.
+    #[test]
+    fn mu_12_last_run_ok_holds_only_for_zero() {
+        let dir = tempdir().expect("tempdir");
+        assert!(holds(&Check::LastRunOk, dir.path(), 0));
+        assert!(!holds(&Check::LastRunOk, dir.path(), 1));
     }
 }

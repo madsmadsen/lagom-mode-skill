@@ -169,17 +169,18 @@ fn read_all(mut reader: PipeReader) -> String {
 }
 
 fn finish(child: &mut Child, timeout: Option<Duration>) -> (i32, bool) {
-    match wait_for(child, timeout) {
-        Ok(Some(status)) => (exit_code(status), false),
-        Ok(None) => {
-            kill_group_and_reap(child);
-            (TIMED_OUT_CODE, true)
-        }
-        Err(_) => {
-            kill_group_and_reap(child);
-            (UNKNOWN_EXIT_CODE, false)
-        }
+    let outcome = wait_for(child, timeout);
+    if let Ok(Some(status)) = outcome {
+        return (exit_code(status), false);
     }
+    kill_group_and_reap(child);
+    let timed_out = matches!(outcome, Ok(None));
+    let code = if timed_out {
+        TIMED_OUT_CODE
+    } else {
+        UNKNOWN_EXIT_CODE
+    };
+    (code, timed_out)
 }
 
 fn wait_for(child: &mut Child, timeout: Option<Duration>) -> io::Result<Option<ExitStatus>> {
@@ -191,7 +192,8 @@ fn wait_for(child: &mut Child, timeout: Option<Duration>) -> io::Result<Option<E
         if let Some(status) = child.try_wait()? {
             return Ok(Some(status));
         }
-        if started.elapsed() >= limit {
+        // Some once the elapsed time reaches the limit.
+        if started.elapsed().checked_sub(limit).is_some() {
             return Ok(None);
         }
         thread::sleep(POLL_INTERVAL);
@@ -427,6 +429,7 @@ mod tests {
     use super::*;
     use crate::model::Language;
     use std::os::unix::fs::symlink;
+    use std::sync::{Mutex, PoisonError};
     use std::time::{Duration, Instant};
     use tempfile::tempdir;
 
@@ -452,6 +455,32 @@ mod tests {
 
     fn display(path: &Path) -> String {
         path.display().to_string()
+    }
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Runs `body` with PYTHONPATH set to `value` (or unset), then restores the previous value.
+    fn with_python_path<T>(value: Option<&str>, body: impl FnOnce() -> T) -> T {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+        let previous = std::env::var_os("PYTHONPATH");
+        set_python_path(value.map(OsStr::new));
+        let result = body();
+        set_python_path(previous.as_deref());
+        result
+    }
+
+    fn set_python_path(value: Option<&OsStr>) {
+        // SAFETY: every caller holds ENV_LOCK, so no other test in this module changes the environment at the same time.
+        unsafe {
+            match value {
+                Some(value) => std::env::set_var("PYTHONPATH", value),
+                None => std::env::remove_var("PYTHONPATH"),
+            }
+        }
+    }
+
+    fn python_path_in(cwd: &Path) -> String {
+        run_in(&shell(r#"printf %s "$PYTHONPATH""#), cwd).output
     }
 
     // MU-14: the baseline runs the test command and keeps its exit status.
@@ -546,6 +575,41 @@ mod tests {
         );
     }
 
+    // MU-17: a worker with no src directory puts only the worker directory on PYTHONPATH.
+    #[test]
+    fn mu_17_worker_overlay_skips_missing_source_directories() {
+        let tmp = tempdir().expect("tempdir");
+        let worker = tmp.path().join("target/mutation-workers/run-1/worker-0");
+        fs::create_dir_all(&worker).expect("create worker");
+        let output = with_python_path(None, || python_path_in(&worker));
+        assert_eq!(output, display(&worker));
+    }
+
+    // MU-17: a parent PYTHONPATH is kept after the worker entries.
+    #[test]
+    fn mu_17_worker_overlay_appends_the_parent_python_path() {
+        let tmp = tempdir().expect("tempdir");
+        let worker = tmp.path().join("target/mutation-workers/run-1/worker-0");
+        let src = worker.join("src");
+        fs::create_dir_all(&src).expect("create worker src");
+        let output = with_python_path(Some("/mu/parent"), || python_path_in(&worker));
+        assert_eq!(
+            output,
+            format!("{}:{}:/mu/parent", display(&src), display(&worker))
+        );
+    }
+
+    // MU-17: an empty parent PYTHONPATH adds no empty entry.
+    #[test]
+    fn mu_17_worker_overlay_ignores_an_empty_parent_python_path() {
+        let tmp = tempdir().expect("tempdir");
+        let worker = tmp.path().join("target/mutation-workers/run-1/worker-0");
+        let src = worker.join("src");
+        fs::create_dir_all(&src).expect("create worker src");
+        let output = with_python_path(Some(""), || python_path_in(&worker));
+        assert_eq!(output, format!("{}:{}", display(&src), display(&worker)));
+    }
+
     // MU-15: a timed-out command is killed, reports 124, and returns before the sleep ends.
     #[test]
     fn mu_15_timeout_kills_the_process_group() {
@@ -575,6 +639,41 @@ mod tests {
         );
         assert!(result.timed_out);
         assert_eq!(result.output, "started\n");
+    }
+
+    // MU-14: a spawn failure is never reported as a timeout, even when a limit is set.
+    #[test]
+    fn mu_14_spawn_failure_is_not_a_timeout() {
+        let dir = tempdir().expect("tempdir");
+        let result = CommandRunner::default().run(
+            &argv(["mu-no-such-binary-xyz"]),
+            dir.path(),
+            Some(Duration::from_secs(5)),
+        );
+        assert_eq!(result.code, 127);
+        assert!(!result.timed_out);
+    }
+
+    // MU-15: a timeout kills the whole process group, so a background grandchild dies too.
+    #[test]
+    fn mu_15_timeout_kills_background_grandchildren() {
+        let dir = tempdir().expect("tempdir");
+        let marker = dir.path().join("survivor");
+        let script = format!(
+            "(sleep 1; touch '{}') >/dev/null 2>&1 & sleep 30 >/dev/null 2>&1",
+            display(&marker)
+        );
+        let result = CommandRunner::default().run(
+            &shell(&script),
+            dir.path(),
+            Some(Duration::from_millis(200)),
+        );
+        assert!(result.timed_out);
+        std::thread::sleep(Duration::from_millis(1500));
+        assert!(
+            !marker.exists(),
+            "a background grandchild survived the timeout"
+        );
     }
 
     // MU-14: display renders shell text as typed and quotes each argument part.

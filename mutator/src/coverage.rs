@@ -148,7 +148,7 @@ fn path_parts(path: &str) -> Vec<&str> {
 fn source_parts(candidates: &[String]) -> Vec<Vec<&str>> {
     let mut sources: Vec<Vec<&str>> = Vec::new();
     for parts in candidates.iter().map(|candidate| path_parts(candidate)) {
-        if !parts.is_empty() && !sources.contains(&parts) {
+        if !sources.contains(&parts) {
             sources.push(parts);
         }
     }
@@ -187,9 +187,6 @@ fn suffix_rank(key: &[&str], source: &[&str]) -> Option<Rank> {
     }
     if let Some(extra) = extra_parts(key, source) {
         return Some((0, extra));
-    }
-    if source.len() <= key.len() {
-        return None;
     }
     extra_parts(source, key).map(|missing| (1, missing))
 }
@@ -954,6 +951,84 @@ mod tests {
         assert_eq!(
             covered_lines(dir.path(), &source, Language::Python),
             lines(&[])
+        );
+    }
+
+    #[test]
+    fn mu_10_report_key_equal_in_length_to_source_matches() {
+        // MU-10: a report key with the same path parts as the source, but no leading slash,
+        // matches it: equal length is still a suffix.
+        let dir = TempDir::new().expect("temp dir");
+        let source = write_source(dir.path(), "src/demo/app.py");
+        let key = absolute(&source).trim_start_matches('/').to_string();
+        write(
+            dir.path(),
+            PY_LCOV,
+            &format!("SF:{key}\nDA:1,1\nend_of_record\n"),
+        );
+        assert_eq!(
+            covered_lines(dir.path(), &source, Language::Python),
+            lines(&[1])
+        );
+    }
+
+    #[test]
+    fn mu_10_longer_report_key_outranks_shorter_suffix() {
+        // MU-10: a key with extra leading parts (rank 0) beats a key one part short of the source
+        // (rank 1), even though the short key has fewer missing parts.
+        let dir = TempDir::new().expect("temp dir");
+        let source = write_source(dir.path(), "src/demo/app.py");
+        let abs = absolute(&source);
+        let (_, short) = abs
+            .trim_start_matches('/')
+            .split_once('/')
+            .expect("nested test path");
+        let longer = format!("x/y{abs}");
+        let report =
+            format!("SF:{longer}\nDA:1,1\nend_of_record\nSF:{short}\nDA:2,1\nend_of_record\n");
+        write(dir.path(), PY_LCOV, &report);
+        assert_eq!(
+            covered_lines(dir.path(), &source, Language::Python),
+            lines(&[1])
+        );
+    }
+
+    #[test]
+    fn mu_10_empty_report_key_matches_nothing() {
+        // MU-10: an empty report key has no path parts, so it is never a suffix of a source.
+        let mut index: Keyed<LineSet> = BTreeMap::new();
+        index.insert(String::new(), LineSet::new());
+        assert!(lookup(&index, "/no/such/app.py").is_none());
+    }
+
+    #[test]
+    fn mu_10_root_source_matches_no_report_key() {
+        // MU-10: a source with no path parts ("/") has no suffix to match any report key.
+        let mut index: Keyed<LineSet> = BTreeMap::new();
+        index.insert("a/b.rs".to_string(), LineSet::new());
+        assert!(lookup(&index, "/").is_none());
+    }
+
+    #[test]
+    fn mu_10_go_malformed_segment_error_names_its_line() {
+        // MU-10: the parse error reports the 1-based line number of the malformed segment.
+        let error = parse_go_profile("mode: set\nbroken\n").expect_err("malformed segment");
+        assert!(error.contains("on line 2:"), "{error}");
+    }
+
+    #[test]
+    fn mu_16_jacoco_empty_counts_are_zero() {
+        // MU-16: an empty or missing ci/cb count is 0, so that line has no covered instructions.
+        let dir = TempDir::new().expect("temp dir");
+        let source = write_source(dir.path(), "src/demo/Board.java");
+        let report = r#"<report name="demo"><package name="demo"><sourcefile name="Board.java">
+<line nr="3" mi="0" ci="" mb="0" cb=""/>
+<line nr="4" mi="0" ci="1" mb="0" cb=""/>
+</sourcefile></package></report>"#;
+        write(dir.path(), JACOCO_REPORT, report);
+        assert_eq!(
+            covered_lines(dir.path(), &source, Language::Java),
+            lines(&[4])
         );
     }
 }

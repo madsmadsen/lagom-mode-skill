@@ -72,13 +72,8 @@ pub fn write_results(
     let incoming = group_forms(forms);
     let incoming_outcomes = file_outcomes(outcomes, file_key);
     let existing = read_snapshots(&root);
-    let (mut retained, previous) = retain(&existing, file_key);
-    let touched: BTreeSet<String> = incoming
-        .keys()
-        .chain(&previous)
-        .chain(retained.keys())
-        .cloned()
-        .collect();
+    let mut retained = retain(&existing, file_key);
+    let touched: BTreeSet<String> = incoming.keys().chain(retained.keys()).cloned().collect();
     let mut written: Vec<PathBuf> = Vec::new();
     for namespace in &touched {
         let kept = retained.remove(namespace).unwrap_or_default();
@@ -197,10 +192,6 @@ fn form_file<'a>(form: &'a Value, data: &'a Value) -> Option<&'a str> {
         .or_else(|| text_field(data, "source"))
 }
 
-fn mentions_file(data: &Value, file_key: &str) -> bool {
-    forms_of(data).any(|form| form_file(form, data) == Some(file_key))
-}
-
 fn remember(history: &mut History, data: &Value, namespace: &str, file_key: &str) {
     for form in forms_of(data) {
         remember_form(history, form, data, namespace, file_key);
@@ -258,19 +249,24 @@ fn now_stamp() -> String {
         .to_string()
 }
 
-fn render_snapshot(namespace: &str, source: &str, forms: Vec<Value>, outcomes: &Outcomes) -> Value {
+fn render_snapshot(
+    namespace: &str,
+    source: &str,
+    forms: Vec<Value>,
+    outcomes: &Outcomes,
+) -> Vec<(Value, Value)> {
     let outcome_map = outcomes
         .iter()
         .map(|(id, status)| (text(id), Value::Keyword(status.as_str().to_string())))
         .collect();
-    Value::Map(vec![
+    vec![
         pair("version", Value::Int(1)),
         pair("tested-at", text(&now_stamp())),
         pair("source", text(source)),
         pair("namespace", text(namespace)),
         pair("outcomes", Value::Map(outcome_map)),
         pair("forms", Value::Vector(forms)),
-    ])
+    ]
 }
 
 fn kept_forms(data: &Value, file_key: &str) -> Vec<Value> {
@@ -298,22 +294,15 @@ fn keep(retained: &mut BTreeMap<String, Retained>, namespace: &str, data: &Value
     entry.outcomes.extend(outcomes);
 }
 
-fn retain(
-    existing: &[(PathBuf, Value)],
-    file_key: &str,
-) -> (BTreeMap<String, Retained>, BTreeSet<String>) {
+fn retain(existing: &[(PathBuf, Value)], file_key: &str) -> BTreeMap<String, Retained> {
     let mut retained: BTreeMap<String, Retained> = BTreeMap::new();
-    let mut previous = BTreeSet::new();
     for (_, data) in existing {
         let Some(namespace) = text_field(data, "namespace") else {
             continue;
         };
-        if mentions_file(data, file_key) {
-            previous.insert(namespace.to_string());
-        }
         keep(&mut retained, namespace, data, file_key);
     }
-    (retained, previous)
+    retained
 }
 
 fn group_forms(forms: &[FormResult]) -> BTreeMap<String, Vec<&FormResult>> {
@@ -413,7 +402,7 @@ fn write_namespace(
         return None;
     }
     let snapshot = render_snapshot(namespace, &source, forms, &merged);
-    if let Err(err) = persist_snapshot(&path, &snapshot) {
+    if let Err(err) = persist_snapshot(&path, snapshot) {
         eprintln!("Could not write {}: {err}", path.display());
         return None;
     }
@@ -427,22 +416,21 @@ fn without_tested_at(entries: &[(Value, Value)]) -> Vec<&(Value, Value)> {
         .collect()
 }
 
-fn same_content(old: &Value, new: &Value) -> bool {
-    match (old, new) {
-        (Value::Map(a), Value::Map(b)) => without_tested_at(a) == without_tested_at(b),
-        _ => false,
-    }
+fn same_content(old: &[(Value, Value)], new: &[(Value, Value)]) -> bool {
+    without_tested_at(old) == without_tested_at(new)
 }
 
 /// Write `snapshot` unless the file already holds the same content apart from `tested-at`.
-fn persist_snapshot(path: &Path, snapshot: &Value) -> io::Result<()> {
+fn persist_snapshot(path: &Path, snapshot: Vec<(Value, Value)>) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    if read_snapshot(path).is_some_and(|old| same_content(&old, snapshot)) {
+    if let Some(Value::Map(old)) = read_snapshot(path)
+        && same_content(&old, &snapshot)
+    {
         return Ok(());
     }
-    fs::write(path, format!("{}\n", render(snapshot)))
+    fs::write(path, format!("{}\n", render(&Value::Map(snapshot))))
 }
 
 fn form_file_only(data: &Value, file_key: &str) -> bool {
@@ -480,12 +468,17 @@ fn drop_stale(
 }
 
 /// Delete `path`; a file that is already gone is not an error.
-fn remove_quietly(path: &Path) {
+fn remove_if_present(path: &Path) -> io::Result<()> {
     match fs::remove_file(path) {
-        Err(err) if err.kind() != io::ErrorKind::NotFound => {
-            eprintln!("Could not write {}: {err}", path.display());
-        }
-        _ => {}
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
+
+/// Delete `path`, reporting any failure other than a file that is already gone.
+fn remove_quietly(path: &Path) {
+    if let Err(err) = remove_if_present(path) {
+        eprintln!("Could not write {}: {err}", path.display());
     }
 }
 
@@ -837,5 +830,115 @@ mod tests {
         thread::sleep(Duration::from_millis(1100));
         write_a(&root, &[form("demo", "Run", "a.go", "hash-a", 2)]);
         assert_ne!(before, fs::read(&path).unwrap());
+    }
+
+    #[test]
+    fn mu_4_only_edn_files_are_snapshots() {
+        // MU-4: a non-.edn file in the snapshot directory is not read as a snapshot
+        const STRAY: &str = r#"{:version 1 :namespace "demo" :source "a.go" :forms [{:id "defn/Run" :file "a.go" :line 2 :hash "hash-a" :killed 1 :survived 0 :uncovered 0 :sites 1}] :outcomes {}}"#;
+        let (_dir, root) = fixture();
+        let dir = root.join(".metrics").join("mutate");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("stray.txt"), format!("{STRAY}\n")).unwrap();
+        assert!(load_history(&root, "a.go").forms.is_empty());
+        assert!(edn_files(&root).is_empty());
+    }
+
+    #[test]
+    fn mu_19_writing_one_file_keeps_the_outcomes_of_another() {
+        // MU-19: outcomes recorded for a.go survive a later write of b.go in the same namespace
+        const A_OUTCOME: &str = r#"["a.go","demo","defn/Run",1,2,"a","b"]"#;
+        let (_dir, root) = fixture();
+        let recorded = outcomes(&[(A_OUTCOME, Status::Killed)]);
+        write_results(
+            &root,
+            "a.go",
+            &[form("demo", "Run", "a.go", "hash-a", 1)],
+            &recorded,
+        );
+        write_results(
+            &root,
+            "b.go",
+            &[form("demo", "Stop", "b.go", "hash-b", 4)],
+            &outcomes(&[]),
+        );
+        let history = load_history(&root, "a.go");
+        assert_eq!(history.outcomes.get(A_OUTCOME), Some(&Status::Killed));
+    }
+
+    #[test]
+    fn mu_4_a_form_without_a_line_sorts_as_line_zero() {
+        // MU-4: a kept form with no line sorts before a form on line 1 of the same file
+        const LEGACY: &str = r#"{:version 1 :namespace "demo" :source "x.go" :forms [{:id "defn/Zed" :file "x.go" :hash "hash-z" :killed 1 :survived 0 :uncovered 0 :sites 1}] :outcomes {}}"#;
+        let (_dir, root) = fixture();
+        let dir = root.join(".metrics").join("mutate");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("legacy.edn"), format!("{LEGACY}\n")).unwrap();
+        let fresh = FormResult {
+            line: 1,
+            ..form("demo", "Alpha", "x.go", "hash-a", 1)
+        };
+        write_a(&root, &[fresh]);
+        let data = read_value(&snapshot_path(&root, "demo").unwrap());
+        let ids: Vec<&str> = forms_of(&data)
+            .filter_map(|form| text_field(form, "id"))
+            .collect();
+        assert_eq!(ids, ["defn/Zed", "defn/Alpha"]);
+    }
+
+    #[test]
+    fn mu_4_snapshot_source_is_the_file_of_the_kept_forms() {
+        // MU-4: when a write leaves only other files' forms, the snapshot names the file they came from
+        let (_dir, root) = fixture();
+        write_results(
+            &root,
+            "b.go",
+            &[form("demo", "Stop", "b.go", "hash-b", 4)],
+            &outcomes(&[]),
+        );
+        write_a(&root, &[]);
+        let data = read_value(&snapshot_path(&root, "demo").unwrap());
+        assert_eq!(data.get("source").and_then(Value::as_str), Some("b.go"));
+    }
+
+    #[test]
+    fn mu_4_an_untouched_empty_snapshot_follows_its_source() {
+        // MU-4: a snapshot with no forms is removed only when this file is its source
+        const MINE: &str =
+            r#"{:version 1 :namespace "mine" :source "a.go" :forms [] :outcomes {}}"#;
+        const THEIRS: &str =
+            r#"{:version 1 :namespace "theirs" :source "b.go" :forms [] :outcomes {}}"#;
+        let (_dir, root) = fixture();
+        let dir = root.join(".metrics").join("mutate");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("mine.edn"), format!("{MINE}\n")).unwrap();
+        fs::write(dir.join("theirs.edn"), format!("{THEIRS}\n")).unwrap();
+        write_a(&root, &[form("demo", "Run", "a.go", "hash-a", 1)]);
+        assert!(!dir.join("mine.edn").exists());
+        assert!(dir.join("theirs.edn").exists());
+    }
+
+    #[test]
+    fn mu_4_an_untouched_snapshot_of_only_this_file_is_removed() {
+        // MU-4: a snapshot no write touches is removed when all of its forms come from this file
+        const OTHER: &str = r#"{:version 1 :namespace "other" :source "a.go" :forms [{:id "defn/Run" :file "a.go" :line 2 :hash "hash-a" :killed 1 :survived 0 :uncovered 0 :sites 1}] :outcomes {}}"#;
+        let (_dir, root) = fixture();
+        let dir = root.join(".metrics").join("mutate");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("other.edn"), format!("{OTHER}\n")).unwrap();
+        write_a(&root, &[form("demo", "Run", "a.go", "hash-a", 1)]);
+        assert!(!dir.join("other.edn").exists());
+    }
+
+    #[test]
+    fn mu_4_removing_a_missing_snapshot_is_not_an_error() {
+        // MU-4: a snapshot already gone is not an error; one that cannot be removed is
+        let (_dir, root) = fixture();
+        assert!(remove_if_present(&root.join("gone.edn")).is_ok());
+        let present = root.join("here.edn");
+        fs::write(&present, "{}\n").unwrap();
+        assert!(remove_if_present(&present).is_ok());
+        assert!(!present.exists());
+        assert!(remove_if_present(&root).is_err());
     }
 }

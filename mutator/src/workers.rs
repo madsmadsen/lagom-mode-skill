@@ -15,7 +15,7 @@ use std::str;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{LazyLock, Mutex, MutexGuard, PoisonError};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use regex::Regex;
 
@@ -113,7 +113,9 @@ impl Drop for RunDir {
 }
 
 fn processors() -> usize {
-    thread::available_parallelism().map_or(1, NonZeroUsize::get)
+    thread::available_parallelism()
+        .map(NonZeroUsize::get)
+        .unwrap_or_default()
 }
 
 /// The smaller of the sites, the cores, and an explicit --max-workers.
@@ -133,11 +135,8 @@ pub fn new_run_dir(root: &Path) -> io::Result<PathBuf> {
 }
 
 fn unique_suffix() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_nanos());
     let counter = RUN_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("{}-{nanos}-{counter}", std::process::id())
+    format!("{}-{counter}", std::process::id())
 }
 
 /// Removes a tree. A link is removed itself and its target is never followed.
@@ -856,5 +855,150 @@ mod tests {
         assert_eq!(outcome_of(&result(124, true)), Status::Killed);
         assert_eq!(outcome_of(&result(1, false)), Status::Killed);
         assert_eq!(outcome_of(&result(0, false)), Status::Survived);
+    }
+
+    // MU-17: a missing intermediate directory in the worker is created, an existing one is kept.
+    #[test]
+    fn mu_17_copy_importer_creates_missing_directories_and_keeps_existing_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("root");
+        put(&root, "deep/nested/imp.mjs", "export const i = 1\n");
+        let original = fs::read(root.join("deep/nested/imp.mjs")).unwrap();
+
+        let missing = dir.path().join("missing");
+        fs::create_dir_all(&missing).unwrap();
+        copy_importer(&missing, &root, "deep/nested/imp.mjs").unwrap();
+        let copied = missing.join("deep/nested/imp.mjs");
+        assert!(copied.is_file() && !copied.is_symlink());
+        assert_eq!(fs::read(&copied).unwrap(), original);
+        assert!(missing.join("deep").is_dir() && !missing.join("deep").is_symlink());
+
+        let existing = dir.path().join("existing");
+        put(&existing, "deep/nested/keep.txt", "keep");
+        copy_importer(&existing, &root, "deep/nested/imp.mjs").unwrap();
+        assert_eq!(
+            fs::read(existing.join("deep/nested/imp.mjs")).unwrap(),
+            original
+        );
+        assert_eq!(
+            fs::read_to_string(existing.join("deep/nested/keep.txt")).unwrap(),
+            "keep"
+        );
+    }
+
+    // MU-17: only files with a known source extension are scanned for imports.
+    #[test]
+    fn mu_17_only_known_extensions_are_scanned_for_imports() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("root");
+        put(&root, "src/target.mjs", "export const t = 1\n");
+        put(
+            &root,
+            "src/main.mjs",
+            "import { t } from \"./target.mjs\";\n",
+        );
+        put(
+            &root,
+            "src/notes.txt",
+            "import { t } from \"./target.mjs\";\n",
+        );
+
+        let expected: BTreeSet<String> = ["src/main.mjs".to_string()].into_iter().collect();
+        assert_eq!(importers_of(&root, "src/target.mjs").unwrap(), expected);
+    }
+
+    // MU-17: an import counts only when it resolves to a real file under the root.
+    #[test]
+    fn mu_17_an_import_counts_only_when_it_is_a_file_under_the_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw_root = dir.path().join("root");
+        put(&raw_root, "src/real.mjs", "export const r = 1\n");
+        put(&raw_root, "src/lib/.keep", "");
+        put(dir.path(), "outside/x.mjs", "export const x = 1\n");
+        put(
+            &raw_root,
+            "src/main.mjs",
+            "import a from \"./real.mjs\";\nimport b from \"../../outside/x.mjs\";\nimport c from \"./lib\";\n",
+        );
+        let root = raw_root.canonicalize().unwrap();
+        let importer = root.join("src/main.mjs");
+        let expected = BTreeSet::from([root.join("src/real.mjs")]);
+        assert_eq!(imported_files(&importer, &root), expected);
+    }
+
+    // MU-17: each call in one root takes a new name, and every run directory exists afterwards.
+    #[test]
+    fn mu_17_each_run_dir_in_one_root_gets_a_new_existing_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let runs: Vec<PathBuf> = (0..3).map(|_| new_run_dir(dir.path()).unwrap()).collect();
+        assert!(runs.iter().all(|run| run.is_dir()));
+        let distinct: BTreeSet<&PathBuf> = runs.iter().collect();
+        assert_eq!(distinct.len(), 3);
+        for run in &runs {
+            delete_tree(run).unwrap();
+        }
+    }
+
+    // MU-21: a run that times out is repeated once with twice the timeout, and a run that
+    // finishes within that doubled budget survives.
+    #[test]
+    fn mu_21_a_run_that_times_out_is_repeated_with_twice_the_timeout() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("root");
+        put(&root, "src/x.txt", "a > b\n");
+        let source = root.join("src/x.txt");
+        let original = fs::read(&source).unwrap();
+        let log = dir.path().join("runs.log");
+        let sites = [site(2, 3, ">", "<", "slow-id")];
+        let command = Command::Shell(format!("echo run >> {} && sleep 1.5", log.display()));
+        let mut outcomes = BTreeMap::new();
+
+        run_mutants(
+            &root,
+            &source,
+            &original,
+            &sites,
+            Some(1),
+            &CommandRunner::default(),
+            &command,
+            &root,
+            Duration::from_secs(1),
+            "src/x.txt",
+            &mut outcomes,
+        );
+
+        assert_eq!(outcomes.get("slow-id"), Some(&Status::Survived));
+        assert_eq!(fs::read_to_string(&log).unwrap().lines().count(), 2);
+    }
+
+    // MU-21: a run that finishes well inside its timeout is not repeated.
+    #[test]
+    fn mu_21_a_fast_run_is_run_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("root");
+        put(&root, "src/x.txt", "a > b\n");
+        let source = root.join("src/x.txt");
+        let original = fs::read(&source).unwrap();
+        let log = dir.path().join("runs.log");
+        let sites = [site(2, 3, ">", "<", "quick-id")];
+        let command = Command::Shell(format!("echo run >> {}", log.display()));
+        let mut outcomes = BTreeMap::new();
+
+        run_mutants(
+            &root,
+            &source,
+            &original,
+            &sites,
+            Some(1),
+            &CommandRunner::default(),
+            &command,
+            &root,
+            Duration::from_secs(20),
+            "src/x.txt",
+            &mut outcomes,
+        );
+
+        assert_eq!(outcomes.get("quick-id"), Some(&Status::Survived));
+        assert_eq!(fs::read_to_string(&log).unwrap().lines().count(), 1);
     }
 }

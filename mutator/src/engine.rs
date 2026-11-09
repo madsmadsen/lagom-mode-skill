@@ -93,18 +93,22 @@ pub fn mutate_file(
     };
     let found = bind::sites_in_file(&source, &path, &root, &file_key);
     let covered = coverage_map(&found, opts.covered_lines, opts.ignore_coverage);
-    warn_uncovered(&file_key, &found, opts);
+    if let Some(message) = uncovered_warning(&file_key, found.len(), opts) {
+        eprintln!("{message}");
+    }
     let history = metrics::load_history(&root, &file_key);
     let digests = bind::form_digests(&source, &path, &root);
     let selected = select(&found, &covered, &history, &digests, opts);
     let mut outcomes = carry_forward(&found, &covered, &history, &digests);
-    warn_many(&file_key, selected.len(), opts.mutation_warning);
+    if let Some(message) = many_warning(&file_key, selected.len(), opts.mutation_warning) {
+        eprintln!("{message}");
+    }
     if let Some(failure) =
         apply_selected(&target, &selected, runner, opts, baselines, &mut outcomes)
     {
         return failure;
     }
-    let forms = form_results(&target, &digests, &found, &covered, &outcomes, opts.lines);
+    let forms = form_results(&target, &digests, &found, &covered, &outcomes);
     let written = metrics::write_results(&root, &file_key, &forms, &outcomes);
     restore_if_dirty(&path, source.as_bytes());
     RunResult {
@@ -174,7 +178,7 @@ fn site_covered(site: &Site, lines: Option<&LineSet>, ignore_coverage: bool) -> 
 }
 
 fn covered_at(covered: &Coverage, site: &Site) -> bool {
-    covered.get(&site.mutation_id).copied().unwrap_or(false)
+    covered[&site.mutation_id]
 }
 
 fn coverage_map(found: &[Site], lines: Option<&LineSet>, ignore_coverage: bool) -> Coverage {
@@ -189,19 +193,19 @@ fn coverage_map(found: &[Site], lines: Option<&LineSet>, ignore_coverage: bool) 
         .collect()
 }
 
-fn warn_uncovered(file_key: &str, found: &[Site], opts: &MutateOptions) {
-    if opts.covered_lines.is_some() || opts.ignore_coverage || found.is_empty() {
-        return;
+/// The stderr notice for sites that have no coverage data to judge them by.
+fn uncovered_warning(file_key: &str, sites: usize, opts: &MutateOptions) -> Option<String> {
+    if opts.covered_lines.is_some() || opts.ignore_coverage || sites == 0 {
+        return None;
     }
-    eprintln!(
+    Some(format!(
         "No coverage data for {file_key}; its sites are uncovered. Pass --no-coverage to run them anyway."
-    );
+    ))
 }
 
-fn warn_many(file_key: &str, selected: usize, mutation_warning: usize) {
-    if selected > mutation_warning {
-        eprintln!("WARNING: {selected} covered mutations selected in {file_key}.");
-    }
+fn many_warning(file_key: &str, selected: usize, mutation_warning: usize) -> Option<String> {
+    (selected > mutation_warning)
+        .then(|| format!("WARNING: {selected} covered mutations selected in {file_key}."))
 }
 
 /// True when the form's digest matches the snapshot, so its sites are unchanged.
@@ -364,7 +368,7 @@ fn group_by_form(sites: &[Site]) -> HashMap<FormKey, Vec<&Site>> {
     grouped
 }
 
-fn tally(owned: &[&Site], covered: &Coverage, outcomes: &Outcomes, ran_all: bool) -> Tally {
+fn tally(owned: &[&Site], covered: &Coverage, outcomes: &Outcomes) -> Tally {
     let mut tally = Tally::default();
     for site in owned {
         if !covered_at(covered, site) {
@@ -374,7 +378,6 @@ fn tally(owned: &[&Site], covered: &Coverage, outcomes: &Outcomes, ran_all: bool
         match outcomes.get(&site.mutation_id) {
             Some(Status::Killed) => tally.killed += 1,
             Some(Status::Survived) => tally.survived += 1,
-            None if ran_all => tally.survived += 1,
             None => {}
         }
     }
@@ -412,7 +415,6 @@ fn form_results(
     sites: &[Site],
     covered: &Coverage,
     outcomes: &Outcomes,
-    lines: Option<&LineSet>,
 ) -> Vec<FormResult> {
     let mut spans = bind::form_spans(target.source, target.path, target.root);
     spans.sort_by_key(|(_, span)| span.start);
@@ -424,7 +426,7 @@ fn form_results(
                 Some(list) => list,
                 None => &[],
             };
-            let counts = tally(owned, covered, outcomes, lines.is_none());
+            let counts = tally(owned, covered, outcomes);
             form_result(target, digests, key, span, owned.len(), counts)
         })
         .collect()
@@ -760,5 +762,112 @@ mod tests {
             "{out}"
         );
         assert!(out.ends_with("* marks a function whose text changed since the last snapshot.\n"));
+    }
+
+    // MU-16: scan marks every site on an uncovered line when coverage data is in use.
+    #[test]
+    fn mu_16_scan_marks_sites_on_uncovered_lines() {
+        let (root, path) = project(SOURCE);
+        let empty = LineSet::new();
+        let out = scan_file(&path, root.path(), Some(&empty), false, None);
+        assert_eq!(out.matches(" uncovered").count(), 4, "{out}");
+    }
+
+    // MU-16: scan marks nothing as uncovered when coverage checks are switched off.
+    #[test]
+    fn mu_16_scan_with_ignored_coverage_marks_nothing() {
+        let (root, path) = project(SOURCE);
+        let empty = LineSet::new();
+        let out = scan_file(&path, root.path(), Some(&empty), true, None);
+        assert!(!out.contains(" uncovered"), "{out}");
+    }
+
+    // MU-16: the uncovered-site notice needs missing coverage data, no ignore switch, and sites.
+    #[test]
+    fn mu_16_uncovered_warning_needs_missing_coverage_and_sites() {
+        let lines = LineSet::from([2]);
+        let no_data = MutateOptions {
+            covered_lines: None,
+            ignore_coverage: false,
+            ..options("true", false)
+        };
+        let with_data = MutateOptions {
+            covered_lines: Some(&lines),
+            ignore_coverage: false,
+            ..options("true", false)
+        };
+        let ignored = MutateOptions {
+            covered_lines: None,
+            ignore_coverage: true,
+            ..options("true", false)
+        };
+        assert!(
+            uncovered_warning("demo.py", 4, &no_data)
+                .is_some_and(|message| message.starts_with("No coverage data for demo.py"))
+        );
+        assert!(uncovered_warning("demo.py", 0, &no_data).is_none());
+        assert!(uncovered_warning("demo.py", 4, &with_data).is_none());
+        assert!(uncovered_warning("demo.py", 4, &ignored).is_none());
+    }
+
+    // MU-19: the mutation warning fires only when more mutants are selected than the limit.
+    #[test]
+    fn mu_19_many_warning_fires_only_above_the_limit() {
+        assert!(many_warning("demo.py", 50, 50).is_none());
+        assert_eq!(
+            many_warning("demo.py", 51, 50).as_deref(),
+            Some("WARNING: 51 covered mutations selected in demo.py.")
+        );
+    }
+
+    // MU-19: carry-forward keeps a prior outcome only for covered sites in an unchanged form.
+    #[test]
+    fn mu_19_carry_forward_needs_covered_and_unchanged_form() {
+        let (root, path) = project(SOURCE);
+        run(&path, root.path(), &options("true", true));
+        let root_path = root.path().canonicalize().expect("canonical root");
+        let path = path.canonicalize().expect("canonical path");
+        let file_key = metrics::source_key(&path, &root_path);
+        let history = metrics::load_history(&root_path, &file_key);
+        let found = bind::sites_in_file(SOURCE, &path, &root_path, &file_key);
+        let digests = bind::form_digests(SOURCE, &path, &root_path);
+        let stale: Digests = digests
+            .keys()
+            .map(|key| (key.clone(), "stale".to_owned()))
+            .collect();
+        let covered = |flag: bool| -> Coverage {
+            found
+                .iter()
+                .map(|site| (site.mutation_id.clone(), flag))
+                .collect()
+        };
+        assert_eq!(
+            carry_forward(&found, &covered(true), &history, &digests).len(),
+            4
+        );
+        assert!(carry_forward(&found, &covered(false), &history, &digests).is_empty());
+        assert!(carry_forward(&found, &covered(true), &history, &stale).is_empty());
+    }
+
+    // MU-20: a failed baseline message carries the tail of the command output after a newline.
+    #[test]
+    fn mu_20_failed_baseline_message_includes_output_tail() {
+        let (root, path) = project(SOURCE);
+        let result = run(&path, root.path(), &options("echo boom; false", true));
+        assert!(
+            result.baseline_message.ends_with("\nboom"),
+            "{}",
+            result.baseline_message
+        );
+    }
+
+    // MU-18: restoring a source rewrites it when its bytes differ from the original.
+    #[test]
+    fn mu_18_restore_if_dirty_rewrites_a_changed_file() {
+        let root = tempdir().expect("tempdir");
+        let path = root.path().join("demo.py");
+        fs::write(&path, "mutated\n").expect("write");
+        restore_if_dirty(&path, b"original\n");
+        assert_eq!(fs::read_to_string(&path).expect("read"), "original\n");
     }
 }
