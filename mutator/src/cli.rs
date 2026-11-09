@@ -1,9 +1,9 @@
 //! Port of mutator/src/mutator/cli.py (BSD Zero Clause License, Robert C. Martin).
 
 use std::collections::HashSet;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::str::FromStr;
 
 use crate::bind::splitlines;
 use crate::cover_run;
@@ -12,6 +12,7 @@ use crate::discover::{
     SKIP_DIRS, TEST_DIRS, is_test_file, iter_source_files, language_of, skipped_directory_text,
 };
 use crate::engine::{Baselines, MutateOptions, mutate_file, restore_backups, scan_file};
+use crate::fs_util::resolve;
 use crate::model::{FormResult, LineSet, RunResult};
 use crate::report::{format_results, format_site_log};
 use crate::runner::{Command as RunCommand, CommandRunner};
@@ -160,8 +161,12 @@ type FlagSetter = fn(&mut Options);
 const VALUE_OPTIONS: &[(&[&str], ValueSetter)] = &[
     (&["-s", "--source-root"], add_source_root),
     (&["--root"], set_root),
-    (&["--coverage-command"], set_coverage_command),
-    (&["--test-command"], set_test_command),
+    (&["--coverage-command"], |options, value| {
+        Ok(set_text(options, value, |o| &mut o.coverage_command))
+    }),
+    (&["--test-command"], |options, value| {
+        Ok(set_text(options, value, |o| &mut o.test_command))
+    }),
     (&["--timeout-factor"], set_timeout_factor),
     (&["--mutation-warning"], set_mutation_warning),
     (&["--max-workers"], set_max_workers),
@@ -193,18 +198,12 @@ fn set_root(options: &mut Options, value: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn set_coverage_command(options: &mut Options, value: &str) -> Result<(), String> {
-    options.coverage_command = Some(value.to_string());
-    Ok(())
-}
-
-fn set_test_command(options: &mut Options, value: &str) -> Result<(), String> {
-    options.test_command = Some(value.to_string());
-    Ok(())
+fn set_text(options: &mut Options, value: &str, field: fn(&mut Options) -> &mut Option<String>) {
+    *field(options) = Some(value.to_string());
 }
 
 fn set_timeout_factor(options: &mut Options, value: &str) -> Result<(), String> {
-    let factor = py_float(value)?;
+    let factor = py_number::<f64>(value, float_error)?;
     if factor <= 0.0 {
         return Err("--timeout-factor requires a positive number".to_string());
     }
@@ -213,7 +212,7 @@ fn set_timeout_factor(options: &mut Options, value: &str) -> Result<(), String> 
 }
 
 fn set_mutation_warning(options: &mut Options, value: &str) -> Result<(), String> {
-    options.mutation_warning = usize::try_from(py_int(value)?)
+    options.mutation_warning = usize::try_from(py_number::<i64>(value, int_error)?)
         .map_err(|_| "--mutation-warning requires a non-negative integer".to_string())?;
     Ok(())
 }
@@ -228,22 +227,20 @@ fn set_lines(options: &mut Options, value: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn py_int(value: &str) -> Result<i64, String> {
-    value
-        .trim()
-        .parse::<i64>()
-        .map_err(|_| format!("invalid literal for int() with base 10: '{value}'"))
+fn py_number<T: FromStr>(value: &str, message: fn(&str) -> String) -> Result<T, String> {
+    value.trim().parse::<T>().map_err(|_| message(value))
 }
 
-fn py_float(value: &str) -> Result<f64, String> {
-    value
-        .trim()
-        .parse::<f64>()
-        .map_err(|_| format!("could not convert string to float: '{value}'"))
+fn int_error(value: &str) -> String {
+    format!("invalid literal for int() with base 10: '{value}'")
+}
+
+fn float_error(value: &str) -> String {
+    format!("could not convert string to float: '{value}'")
 }
 
 fn workers(value: &str) -> Result<usize, String> {
-    match py_int(value)
+    match py_number::<i64>(value, int_error)
         .ok()
         .and_then(|count| usize::try_from(count).ok())
     {
@@ -259,7 +256,7 @@ fn parse_lines(value: &str) -> Result<LineSet, String> {
         .map(str::trim)
         .filter(|piece| !piece.is_empty())
     {
-        let number = py_int(piece)?;
+        let number = py_number::<i64>(piece, int_error)?;
         if number < 1 {
             return Err("--lines requires positive line numbers".to_string());
         }
@@ -297,26 +294,27 @@ fn apply_arg(options: &mut Options, arg: &str, next: Option<&String>) -> Result<
     Ok(1)
 }
 
+const CONFLICTS: &[(fn(&Options) -> bool, &str)] = &[
+    (
+        |options| options.mutate_all && options.since_last_run,
+        "--mutate-all cannot be combined with --since-last-run",
+    ),
+    (
+        |options| options.no_coverage && options.coverage_command.is_some(),
+        "--no-coverage cannot be combined with --coverage-command",
+    ),
+    (
+        |options| options.scan && options.mutate_all,
+        "--scan cannot be combined with --mutate-all",
+    ),
+    (
+        |options| options.scan && options.max_workers.is_some(),
+        "--scan cannot be combined with --max-workers",
+    ),
+];
+
 fn check_conflicts(options: &Options) -> Result<(), String> {
-    let conflicts = [
-        (
-            options.mutate_all && options.since_last_run,
-            "--mutate-all cannot be combined with --since-last-run",
-        ),
-        (
-            options.no_coverage && options.coverage_command.is_some(),
-            "--no-coverage cannot be combined with --coverage-command",
-        ),
-        (
-            options.scan && options.mutate_all,
-            "--scan cannot be combined with --mutate-all",
-        ),
-        (
-            options.scan && options.max_workers.is_some(),
-            "--scan cannot be combined with --max-workers",
-        ),
-    ];
-    match conflicts.iter().find(|(hit, _)| *hit) {
+    match CONFLICTS.iter().find(|(hit, _)| hit(options)) {
         Some((_, reason)) => Err(reason.to_string()),
         None => Ok(()),
     }
@@ -363,13 +361,6 @@ pub fn parse_args(args: &[String]) -> Options {
 struct GitStatusError {
     code: i32,
     message: String,
-}
-
-/// Canonical path when it exists, absolute path otherwise.
-fn resolve(path: &Path) -> PathBuf {
-    fs::canonicalize(path)
-        .or_else(|_| std::path::absolute(path))
-        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn git(root: &Path, git_args: &[&str]) -> Result<Vec<u8>, GitStatusError> {

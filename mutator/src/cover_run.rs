@@ -1,8 +1,9 @@
 //! Port of crapper/src/crapper/runners.py (BSD Zero Clause License, Robert C. Martin).
 
 use crate::discover::{is_test_file, language_of};
+use crate::fs_util::resolve;
 use crate::model::Language;
-use crate::runner::Command;
+use crate::runner::{Command, nearest, nearest_marker};
 use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 use std::env;
@@ -65,14 +66,69 @@ enum PythonKind {
     Unittest,
 }
 
-/// One planned action: a notice line, or a command with an optional failure line.
+/// One planned action. Plans are pure data; `execute` interprets them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Step {
-    Notice(&'static str),
+    Notice(String),
     Run {
         command: Command,
-        on_failure: Option<&'static str>,
+        failure: Option<Failure>,
     },
+    Disk(Disk),
+    Require {
+        check: Check,
+        message: String,
+    },
+    Branch {
+        check: Check,
+        then: Vec<Step>,
+        otherwise: Vec<Step>,
+    },
+}
+
+/// The text printed when a planned command exits nonzero.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Failure {
+    Text(String),
+    Exit { before: String, after: String },
+}
+
+impl Failure {
+    fn render(&self, code: i32) -> String {
+        match self {
+            Failure::Text(text) => text.clone(),
+            Failure::Exit { before, after } => format!("{before}{code}{after}"),
+        }
+    }
+}
+
+/// A filesystem change applied by the executor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Disk {
+    Prepare(PathBuf),
+    Reset(PathBuf),
+    Remove(PathBuf),
+    Restore(ManifestSnapshot),
+    Clean(PathBuf),
+    Clojure(PathBuf),
+}
+
+/// A probe that decides which branch a plan takes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Check {
+    /// The command exits zero.
+    Command(Command),
+    /// The last Run exited zero and the directory exists.
+    Installed(PathBuf),
+    /// The last Run exited zero.
+    LastRunOk,
+}
+
+fn run(command: Command) -> Step {
+    Step::Run {
+        command,
+        failure: None,
+    }
 }
 
 /// Runs the coverage tools for the languages in `files`, or the custom `command` alone.
@@ -182,37 +238,6 @@ fn run_custom(text: &str, root: &Path) -> i32 {
     code
 }
 
-/// Python's `Path.resolve`: canonical for existing paths, and for a missing file the
-/// canonical parent joined with the file name.
-fn resolve(path: &Path) -> PathBuf {
-    if let Ok(real) = fs::canonicalize(path) {
-        return real;
-    }
-    match (path.parent(), path.file_name()) {
-        (Some(parent), Some(name)) => resolve(parent).join(name),
-        _ => std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()),
-    }
-}
-
-/// The nearest ancestor of `start` (or its parent when a file) that holds `marker`, up to `stop`.
-fn nearest(start: &Path, marker: &str, stop: &Path) -> Option<PathBuf> {
-    let stop = resolve(stop);
-    let mut current = if start.is_dir() {
-        start.to_path_buf()
-    } else {
-        start.parent()?.to_path_buf()
-    };
-    loop {
-        if current.join(marker).is_file() {
-            return Some(current);
-        }
-        if current == stop {
-            return None;
-        }
-        current = current.parent()?.to_path_buf();
-    }
-}
-
 /// Every entry below `dir`, without following symlinked directories.
 fn walk(dir: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
@@ -270,12 +295,24 @@ fn reset_report(report: &Path) {
     remove_file_if_present(report);
 }
 
-fn report_exit(language: &str, code: i32, module: &Path) {
-    if code != 0 {
-        warn(&format!(
-            "{language} coverage exited {code} in {}. {language} coverage will score 0%.",
+/// The warning for a planned command that exits nonzero, naming the language and module.
+fn scored_exit(language: &str, module: &Path) -> Failure {
+    Failure::Exit {
+        before: format!("{language} coverage exited "),
+        after: format!(
+            " in {}. {language} coverage will score 0%.",
             module.display()
-        ));
+        ),
+    }
+}
+
+/// Runs each module's plan from inside that module; with no modules, prints `none` instead.
+fn cover_modules(root: &Path, modules: Vec<PathBuf>, none: &str, plan: fn(&Path) -> Vec<Step>) {
+    if modules.is_empty() {
+        execute(&[Step::Notice(none.to_owned())], root);
+    }
+    for module in &modules {
+        execute(&plan(module), module);
     }
 }
 
@@ -367,37 +404,55 @@ fn clean_clojure(root: &Path) {
     remove_empty_dirs(&coverage);
 }
 
-fn cover_clojure(root: &Path) {
+fn clojure_plan(root: &Path) -> Vec<Step> {
     if !root.join("deps.edn").is_file() && !root.join("bb.edn").is_file() {
-        warn("No deps.edn or bb.edn; skipping Clojure coverage.");
-        return;
+        return vec![Step::Notice(
+            "No deps.edn or bb.edn; skipping Clojure coverage.".to_owned(),
+        )];
     }
-    clean_clojure(root);
-    if run_shell(&argv(CLOJURE_LCOV), root) == 0 {
-        return;
-    }
-    warn("clj -M:cov --lcov failed; retrying without --lcov.");
-    let code = run_shell(&argv(CLOJURE_PLAIN), root);
-    if code != 0 {
-        warn(&format!(
-            "Clojure coverage exited {code}. Clojure coverage will score 0%."
-        ));
-    }
+    vec![
+        Step::Disk(Disk::Clojure(root.to_path_buf())),
+        Step::Branch {
+            check: Check::Command(argv(CLOJURE_LCOV)),
+            then: Vec::new(),
+            otherwise: vec![
+                Step::Notice("clj -M:cov --lcov failed; retrying without --lcov.".to_owned()),
+                Step::Run {
+                    command: argv(CLOJURE_PLAIN),
+                    failure: Some(Failure::Exit {
+                        before: "Clojure coverage exited ".to_owned(),
+                        after: ". Clojure coverage will score 0%.".to_owned(),
+                    }),
+                },
+            ],
+        },
+    ]
+}
+
+fn cover_clojure(root: &Path) {
+    execute(&clojure_plan(root), root);
 }
 
 // Java
 
+fn java_module_plan(module: &Path) -> Vec<Step> {
+    vec![
+        Step::Disk(Disk::Clean(module.join("target/site/jacoco"))),
+        Step::Disk(Disk::Remove(module.join("target/jacoco.exec"))),
+        Step::Run {
+            command: argv(MAVEN),
+            failure: Some(scored_exit("Java", module)),
+        },
+    ]
+}
+
 fn cover_java(root: &Path, files: &[PathBuf]) {
-    let modules = modules_with(files, "java", "pom.xml", root);
-    if modules.is_empty() {
-        warn("No pom.xml; skipping Java coverage.");
-        return;
-    }
-    for module in modules {
-        clean_dir(&module.join("target/site/jacoco"));
-        remove_file_if_present(&module.join("target/jacoco.exec"));
-        report_exit("Java", run_shell(&argv(MAVEN), &module), &module);
-    }
+    cover_modules(
+        root,
+        modules_with(files, "java", "pom.xml", root),
+        "No pom.xml; skipping Java coverage.",
+        java_module_plan,
+    );
 }
 
 // Go
@@ -408,18 +463,24 @@ fn go_test_args(profile: &Path) -> Vec<String> {
     args
 }
 
+fn go_module_plan(module: &Path) -> Vec<Step> {
+    let profile = module.join("target/coverage/go/coverage.out");
+    vec![
+        Step::Disk(Disk::Reset(profile.clone())),
+        Step::Run {
+            command: Command::Argv(go_test_args(&profile)),
+            failure: Some(scored_exit("Go", module)),
+        },
+    ]
+}
+
 fn cover_go(root: &Path, files: &[PathBuf]) {
-    let modules = modules_with(files, "go", "go.mod", root);
-    if modules.is_empty() {
-        warn("No go.mod; skipping Go coverage.");
-        return;
-    }
-    for module in modules {
-        let profile = module.join("target/coverage/go/coverage.out");
-        reset_report(&profile);
-        let code = run_shell(&Command::Argv(go_test_args(&profile)), &module);
-        report_exit("Go", code, &module);
-    }
+    cover_modules(
+        root,
+        modules_with(files, "go", "go.mod", root),
+        "No go.mod; skipping Go coverage.",
+        go_module_plan,
+    );
 }
 
 // TypeScript
@@ -562,35 +623,6 @@ fn restore_manifests(snapshot: &ManifestSnapshot) {
     }
 }
 
-/// Installs Vitest's coverage provider without keeping manifest changes; true when present.
-fn ensure_vitest_coverage(package: &Path) -> bool {
-    let provider = package.join(VITEST_PROVIDER);
-    if provider.is_dir() {
-        return true;
-    }
-    let spec = vitest_provider_spec(vitest_version(package).as_deref());
-    warn(&format!(
-        "Installing {spec} so Vitest can write LCOV. package.json and the lockfile are restored afterward."
-    ));
-    let snapshot = manifest_snapshot(package);
-    let code = run_shell(
-        &argv(&[
-            "npm",
-            "install",
-            "--no-save",
-            "--no-package-lock",
-            spec.as_str(),
-        ]),
-        package,
-    );
-    restore_manifests(&snapshot);
-    let ready = code == 0 && provider.is_dir();
-    if !ready {
-        warn("Vitest's coverage provider is missing. TypeScript coverage will score 0%.");
-    }
-    ready
-}
-
 fn needs_vitest_provider(command: &[String]) -> bool {
     let custom_script = command
         .iter()
@@ -614,37 +646,86 @@ fn typescript_packages(root: &Path, files: &[PathBuf]) -> Vec<PathBuf> {
     packages.into_iter().collect()
 }
 
-fn typescript_plan(package: &Path, files: &[PathBuf], report: &Path) -> Option<Vec<String>> {
-    match typescript_command(package, files, report_dir(report)) {
-        Ok(Some(command)) => Some(command),
+/// What a missing Vitest coverage provider needs: the pinned install spec and the manifests to restore.
+struct ProviderSetup {
+    spec: String,
+    manifests: ManifestSnapshot,
+}
+
+fn provider_setup(package: &Path) -> ProviderSetup {
+    ProviderSetup {
+        spec: vitest_provider_spec(vitest_version(package).as_deref()),
+        manifests: manifest_snapshot(package),
+    }
+}
+
+/// Steps that install Vitest's coverage provider, restore the manifests, and require the provider.
+fn vitest_provider_steps(package: &Path, setup: ProviderSetup) -> Vec<Step> {
+    vec![
+        Step::Notice(format!(
+            "Installing {} so Vitest can write LCOV. package.json and the lockfile are restored afterward.",
+            setup.spec
+        )),
+        run(argv(&[
+            "npm",
+            "install",
+            "--no-save",
+            "--no-package-lock",
+            setup.spec.as_str(),
+        ])),
+        Step::Disk(Disk::Restore(setup.manifests)),
+        Step::Require {
+            check: Check::Installed(package.join(VITEST_PROVIDER)),
+            message: "Vitest's coverage provider is missing. TypeScript coverage will score 0%."
+                .to_owned(),
+        },
+    ]
+}
+
+/// The steps that cover one TypeScript package, or the message that explains why there are none.
+fn typescript_plan(
+    package: &Path,
+    report: &Path,
+    command: Result<Option<Vec<String>>, String>,
+    setup: Option<ProviderSetup>,
+) -> Vec<Step> {
+    let command = match command {
+        Err(message) => return vec![Step::Notice(message)],
         Ok(None) => {
-            warn(&format!(
+            return vec![Step::Notice(format!(
                 "No package.json test script in {}; skipping TypeScript coverage.",
                 package.display()
-            ));
-            None
+            ))];
         }
-        Err(message) => {
-            warn(&message);
-            None
-        }
-    }
+        Ok(Some(command)) => command,
+    };
+    let mut steps = setup.map_or_else(Vec::new, |setup| vitest_provider_steps(package, setup));
+    steps.push(Step::Disk(Disk::Prepare(report.to_path_buf())));
+    steps.push(Step::Run {
+        command: Command::Argv(command),
+        failure: Some(Failure::Exit {
+            before: "TypeScript coverage exited ".to_owned(),
+            after: format!(
+                " in {}. TypeScript coverage will score 0%.",
+                package.display()
+            ),
+        }),
+    });
+    steps
 }
 
 fn cover_typescript_package(root: &Path, files: &[PathBuf], package: &Path) {
     let report = coverage_report(root, package, Language::TypeScript);
-    let Some(command) = typescript_plan(package, files, &report) else {
-        return;
+    let command = typescript_command(package, files, report_dir(&report));
+    let setup = match &command {
+        Ok(Some(command))
+            if needs_vitest_provider(command) && !package.join(VITEST_PROVIDER).is_dir() =>
+        {
+            Some(provider_setup(package))
+        }
+        _ => None,
     };
-    if needs_vitest_provider(&command) && !ensure_vitest_coverage(package) {
-        return;
-    }
-    prepare_report(&report);
-    report_exit(
-        "TypeScript",
-        run_shell(&Command::Argv(command), package),
-        package,
-    );
+    execute(&typescript_plan(package, &report, command, setup), package);
 }
 
 fn cover_typescript(root: &Path, files: &[PathBuf]) {
@@ -660,19 +741,12 @@ fn cover_typescript(root: &Path, files: &[PathBuf]) {
 
 // Python
 
-fn python_module_for(file: &Path, root: &Path) -> PathBuf {
-    PYTHON_MARKERS
-        .iter()
-        .find_map(|marker| nearest(file, marker, root))
-        .unwrap_or_else(|| root.to_path_buf())
-}
-
 fn python_roots(root: &Path, files: &[PathBuf]) -> Vec<PathBuf> {
     let root = resolve(root);
     let roots: BTreeSet<PathBuf> = files
         .iter()
         .filter(|file| file.extension() == Some(OsStr::new("py")))
-        .map(|file| resolve(&python_module_for(file, &root)))
+        .map(|file| resolve(&nearest_marker(file, &root, PYTHON_MARKERS)))
         .collect();
     roots.into_iter().collect()
 }
@@ -745,82 +819,147 @@ fn python_coverage_commands(
     (run, lcov)
 }
 
-fn ensure_python_module(py: &str, package: &Path, module: &str) -> bool {
-    let probe = format!("import {module}");
-    if run_shell(&argv(&[py, "-c", probe.as_str()]), package) == 0 {
-        return true;
-    }
-    warn(&format!(
-        "Installing {module} for Python coverage. The project requirements are left unchanged."
-    ));
-    run_shell(
-        &argv(&[
+/// Installs `module` with pip, after a notice that the project requirements are untouched.
+fn install_module(py: &str, module: &str) -> Vec<Step> {
+    vec![
+        Step::Notice(format!(
+            "Installing {module} for Python coverage. The project requirements are left unchanged."
+        )),
+        run(argv(&[
             py,
             "-m",
             "pip",
             "install",
             "--disable-pip-version-check",
             module,
-        ]),
-        package,
-    ) == 0
+        ])),
+    ]
 }
 
-fn python_kind(py: &str, package: &Path) -> PythonKind {
-    if !uses_pytest(package) {
-        return PythonKind::Unittest;
-    }
-    if ensure_python_module(py, package, "pytest") {
-        return PythonKind::Pytest;
-    }
-    warn(&format!(
-        "pytest is missing in {}. Falling back to unittest.",
-        package.display()
-    ));
-    PythonKind::Unittest
+fn import_probe(py: &str, module: &str) -> Check {
+    let probe = format!("import {module}");
+    Check::Command(argv(&[py, "-c", probe.as_str()]))
 }
 
-fn record_python_lcov(package: &Path, code: i32, data_file: &Path, lcov: &Command) {
-    if !data_file.exists() {
-        report_exit("Python", code, package);
-        return;
+/// Pytest when it imports, otherwise a notice and unittest discovery.
+fn test_steps(
+    py: &str,
+    package: &Path,
+    uses_pytest: bool,
+    pytest_run: Command,
+    unittest_run: Command,
+) -> Vec<Step> {
+    if !uses_pytest {
+        return vec![run(unittest_run)];
     }
-    let lcov_code = run_shell(lcov, package);
-    if lcov_code != 0 {
-        warn(&format!(
-            "coverage lcov exited {lcov_code} in {}. Python coverage will score 0%.",
+    let mut otherwise = install_module(py, "pytest");
+    otherwise.push(Step::Branch {
+        check: Check::LastRunOk,
+        then: vec![run(pytest_run.clone())],
+        otherwise: vec![
+            Step::Notice(format!(
+                "pytest is missing in {}. Falling back to unittest.",
+                package.display()
+            )),
+            run(unittest_run),
+        ],
+    });
+    vec![Step::Branch {
+        check: import_probe(py, "pytest"),
+        then: vec![run(pytest_run)],
+        otherwise,
+    }]
+}
+
+/// Everything before the test run: coverage present, report and data reset, then the tests.
+/// The last Run in the plan is the test run, so `execute` returns its exit code.
+fn python_run_plan(
+    py: &str,
+    package: &Path,
+    uses_pytest: bool,
+    data: &Path,
+    report: &Path,
+    source: &str,
+) -> Vec<Step> {
+    let command = |kind: PythonKind| {
+        Command::Argv(python_coverage_commands(py, kind, data, report, source).0)
+    };
+    let mut install = install_module(py, "coverage");
+    install.push(Step::Require {
+        check: Check::LastRunOk,
+        message: format!(
+            "coverage is missing in {}. Python coverage will score 0%.",
             package.display()
-        ));
-    } else if code != 0 {
-        warn(&format!(
+        ),
+    });
+    let mut steps = vec![
+        Step::Branch {
+            check: import_probe(py, "coverage"),
+            then: Vec::new(),
+            otherwise: install,
+        },
+        Step::Disk(Disk::Reset(report.to_path_buf())),
+        Step::Disk(Disk::Remove(data.to_path_buf())),
+    ];
+    steps.extend(test_steps(
+        py,
+        package,
+        uses_pytest,
+        command(PythonKind::Pytest),
+        command(PythonKind::Unittest),
+    ));
+    steps
+}
+
+/// Records LCOV after the tests exited with `code`, and warns as the outcome requires.
+fn python_record_plan(package: &Path, code: i32, data_exists: bool, lcov: Command) -> Vec<Step> {
+    if !data_exists {
+        return if code == 0 {
+            Vec::new()
+        } else {
+            vec![Step::Notice(format!(
+                "Python coverage exited {code} in {}. Python coverage will score 0%.",
+                package.display()
+            ))]
+        };
+    }
+    let tests_warning = if code == 0 {
+        Vec::new()
+    } else {
+        vec![Step::Notice(format!(
             "Python tests exited {code} in {}. Coverage was still recorded.",
             package.display()
-        ));
-    }
+        ))]
+    };
+    vec![
+        Step::Run {
+            command: lcov,
+            failure: Some(Failure::Exit {
+                before: "coverage lcov exited ".to_owned(),
+                after: format!(" in {}. Python coverage will score 0%.", package.display()),
+            }),
+        },
+        Step::Branch {
+            check: Check::LastRunOk,
+            then: tests_warning,
+            otherwise: Vec::new(),
+        },
+    ]
 }
 
 fn cover_python_package(root: &Path, files: &[PathBuf], package: &Path) {
     let report = coverage_report(root, package, Language::Python);
     let py = python_executable(package);
-    if !ensure_python_module(&py, package, "coverage") {
-        warn(&format!(
-            "coverage is missing in {}. Python coverage will score 0%.",
-            package.display()
-        ));
-        return;
+    let data = report_dir(&report).join(".coverage");
+    let source = python_sources(package, files);
+    let (_, lcov) = python_coverage_commands(&py, PythonKind::Unittest, &data, &report, &source);
+    let plan = python_run_plan(&py, package, uses_pytest(package), &data, &report, &source);
+    if let Some(code) = execute(&plan, package) {
+        execute(
+            &python_record_plan(package, code, data.exists(), Command::Argv(lcov)),
+            package,
+        );
     }
-    reset_report(&report);
-    let data_file = report_dir(&report).join(".coverage");
-    remove_file_if_present(&data_file);
-    let (run, lcov) = python_coverage_commands(
-        &py,
-        python_kind(&py, package),
-        &data_file,
-        &report,
-        &python_sources(package, files),
-    );
-    let code = run_shell(&Command::Argv(run), package);
-    record_python_lcov(package, code, &data_file, &Command::Argv(lcov));
 }
 
 fn cover_python(root: &Path, files: &[PathBuf]) {
@@ -870,49 +1009,105 @@ fn rust_install_notice() -> &'static str {
 
 /// The ordered install steps; the notice always precedes the cargo install command.
 fn rust_install_plan(has_rustup: bool) -> Vec<Step> {
-    let mut plan = vec![Step::Notice(rust_install_notice())];
+    let mut plan = vec![Step::Notice(rust_install_notice().to_owned())];
     if has_rustup {
         plan.push(Step::Run {
             command: argv(&["rustup", "component", "add", "llvm-tools-preview"]),
-            on_failure: Some("rustup component add llvm-tools-preview failed."),
+            failure: Some(Failure::Text(
+                "rustup component add llvm-tools-preview failed.".to_owned(),
+            )),
         });
     }
-    plan.push(Step::Run {
-        command: argv(&["cargo", "install", "cargo-llvm-cov", "--locked"]),
-        on_failure: None,
-    });
+    plan.push(run(argv(&[
+        "cargo",
+        "install",
+        "cargo-llvm-cov",
+        "--locked",
+    ])));
     plan
 }
 
-fn run_step(step: &Step, cwd: &Path) -> i32 {
+/// Interprets a plan in order. Returns the last Run's status, or None when a Require stopped it.
+fn execute(steps: &[Step], cwd: &Path) -> Option<i32> {
+    let mut last = 0;
+    run_steps(steps, cwd, &mut last).then_some(last)
+}
+
+fn run_steps(steps: &[Step], cwd: &Path, last: &mut i32) -> bool {
+    steps.iter().all(|step| run_step(step, cwd, last))
+}
+
+/// Runs one step; false stops the plan.
+fn run_step(step: &Step, cwd: &Path, last: &mut i32) -> bool {
     match step {
         Step::Notice(text) => {
             warn(text);
-            0
+            true
         }
-        Step::Run {
-            command,
-            on_failure,
+        Step::Run { command, failure } => {
+            *last = run_reported(command, cwd, failure.as_ref());
+            true
+        }
+        Step::Disk(disk) => {
+            run_disk(disk);
+            true
+        }
+        Step::Require { check, message } => require(check, message, cwd, *last),
+        Step::Branch {
+            check,
+            then,
+            otherwise,
         } => {
-            let code = run_shell(command, cwd);
-            if let Some(message) = on_failure.filter(|_| code != 0) {
-                warn(message);
-            }
-            code
+            let branch = if holds(check, cwd, *last) {
+                then
+            } else {
+                otherwise
+            };
+            run_steps(branch, cwd, last)
         }
     }
 }
 
-/// Runs the plan in order and returns the last step's status (the install itself).
-fn run_plan(plan: &[Step], cwd: &Path) -> i32 {
-    plan.iter().fold(0, |_, step| run_step(step, cwd))
+fn require(check: &Check, message: &str, cwd: &Path, last: i32) -> bool {
+    let ok = holds(check, cwd, last);
+    if !ok {
+        warn(message);
+    }
+    ok
+}
+
+fn holds(check: &Check, cwd: &Path, last: i32) -> bool {
+    match check {
+        Check::Command(command) => run_shell(command, cwd) == 0,
+        Check::Installed(dir) => last == 0 && dir.is_dir(),
+        Check::LastRunOk => last == 0,
+    }
+}
+
+/// Runs a planned command, printing its failure text when it exits nonzero.
+fn run_reported(command: &Command, cwd: &Path, failure: Option<&Failure>) -> i32 {
+    let code = run_shell(command, cwd);
+    if let Some(failure) = failure.filter(|_| code != 0) {
+        warn(&failure.render(code));
+    }
+    code
+}
+
+fn run_disk(disk: &Disk) {
+    match disk {
+        Disk::Prepare(report) => prepare_report(report),
+        Disk::Reset(report) => reset_report(report),
+        Disk::Remove(path) => remove_file_if_present(path),
+        Disk::Restore(snapshot) => restore_manifests(snapshot),
+        Disk::Clean(dir) => clean_dir(dir),
+        Disk::Clojure(root) => clean_clojure(root),
+    }
 }
 
 fn install_llvm_cov() -> Option<RustTool> {
     let plan = rust_install_plan(which("rustup").is_some());
     let cwd = env::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let code = run_plan(&plan, &cwd);
-    if code == 0 && which("cargo-llvm-cov").is_some() {
+    if execute(&plan, &cwd) == Some(0) && which("cargo-llvm-cov").is_some() {
         return Some(RustTool::LlvmCov);
     }
     warn("Rust coverage will score 0%.");
@@ -924,11 +1119,19 @@ fn rust_kind() -> Option<RustTool> {
     installed_rust_tool(&path_var).or_else(install_llvm_cov)
 }
 
-fn cover_rust_module(root: &Path, module: &Path, tool: RustTool) {
+fn rust_module_plan(root: &Path, module: &Path, tool: RustTool) -> Vec<Step> {
     let report = coverage_report(root, module, Language::Rust);
-    reset_report(&report);
-    let code = run_shell(&Command::Argv(rust_coverage_command(tool, &report)), module);
-    report_exit("Rust", code, module);
+    vec![
+        Step::Disk(Disk::Reset(report.clone())),
+        Step::Run {
+            command: Command::Argv(rust_coverage_command(tool, &report)),
+            failure: Some(scored_exit("Rust", module)),
+        },
+    ]
+}
+
+fn cover_rust_module(root: &Path, module: &Path, tool: RustTool) {
+    execute(&rust_module_plan(root, module, tool), module);
 }
 
 fn cover_rust(root: &Path, files: &[PathBuf]) {
@@ -1399,17 +1602,481 @@ mod tests {
         // MU-11: the install plan prints the notice before any install command runs.
         let install = Step::Run {
             command: argv(&["cargo", "install", "cargo-llvm-cov", "--locked"]),
-            on_failure: None,
+            failure: None,
         };
         let rustup = Step::Run {
             command: argv(&["rustup", "component", "add", "llvm-tools-preview"]),
-            on_failure: Some("rustup component add llvm-tools-preview failed."),
+            failure: Some(Failure::Text(
+                "rustup component add llvm-tools-preview failed.".to_owned(),
+            )),
         };
-        let notice = Step::Notice(rust_install_notice());
+        let notice = Step::Notice(rust_install_notice().to_owned());
         assert_eq!(
             rust_install_plan(true),
             vec![notice.clone(), rustup, install.clone()]
         );
         assert_eq!(rust_install_plan(false), vec![notice, install]);
+    }
+
+    // MU-10: a lookup error or a missing test script produces only a notice, never a command.
+    #[test]
+    fn mu_10_typescript_plan_without_command_only_notices() {
+        let package = Path::new("pkg");
+        let report = Path::new("pkg/target/coverage/typescript/lcov.info");
+        assert_eq!(
+            typescript_plan(package, report, Err("bad json".to_owned()), None),
+            vec![Step::Notice("bad json".to_owned())]
+        );
+        assert_eq!(
+            typescript_plan(package, report, Ok(None), None),
+            vec![Step::Notice(
+                "No package.json test script in pkg; skipping TypeScript coverage.".to_owned()
+            )]
+        );
+    }
+
+    // MU-10: without a missing provider, the plan prepares the report and runs the command.
+    #[test]
+    fn mu_10_typescript_plan_without_provider_prepares_then_runs() {
+        let package = Path::new("pkg");
+        let report = Path::new("pkg/target/coverage/typescript/lcov.info");
+        let steps = typescript_plan(package, report, Ok(Some(words(&["npm", "test"]))), None);
+        assert_eq!(
+            steps,
+            vec![
+                Step::Disk(Disk::Prepare(report.to_path_buf())),
+                Step::Run {
+                    command: Command::Argv(words(&["npm", "test"])),
+                    failure: Some(Failure::Exit {
+                        before: "TypeScript coverage exited ".to_owned(),
+                        after: " in pkg. TypeScript coverage will score 0%.".to_owned(),
+                    }),
+                },
+            ]
+        );
+    }
+
+    // MU-10: with a provider to install, the plan installs, restores manifests, requires it, then runs.
+    #[test]
+    fn mu_10_typescript_plan_with_provider_installs_before_running() {
+        let package = Path::new("pkg");
+        let report = Path::new("pkg/target/coverage/typescript/lcov.info");
+        let manifests: ManifestSnapshot = vec![(PathBuf::from("pkg/package.json"), None)];
+        let setup = ProviderSetup {
+            spec: "@vitest/coverage-v8@2".to_owned(),
+            manifests: manifests.clone(),
+        };
+        let steps = typescript_plan(
+            package,
+            report,
+            Ok(Some(words(&["npx", "vitest"]))),
+            Some(setup),
+        );
+        assert_eq!(
+            steps,
+            vec![
+                Step::Notice(
+                    "Installing @vitest/coverage-v8@2 so Vitest can write LCOV. package.json and the lockfile are restored afterward.".to_owned()
+                ),
+                Step::Run {
+                    command: argv(&[
+                        "npm",
+                        "install",
+                        "--no-save",
+                        "--no-package-lock",
+                        "@vitest/coverage-v8@2",
+                    ]),
+                    failure: None,
+                },
+                Step::Disk(Disk::Restore(manifests)),
+                Step::Require {
+                    check: Check::Installed(package.join(VITEST_PROVIDER)),
+                    message: "Vitest's coverage provider is missing. TypeScript coverage will score 0%.".to_owned(),
+                },
+                Step::Disk(Disk::Prepare(report.to_path_buf())),
+                Step::Run {
+                    command: Command::Argv(words(&["npx", "vitest"])),
+                    failure: Some(Failure::Exit {
+                        before: "TypeScript coverage exited ".to_owned(),
+                        after: " in pkg. TypeScript coverage will score 0%.".to_owned(),
+                    }),
+                },
+            ]
+        );
+    }
+
+    // MU-10: without pytest, the Python run plan is coverage check, reset, remove, then unittest.
+    #[test]
+    fn mu_10_python_run_plan_without_pytest_runs_unittest_last() {
+        let package = Path::new("pkg");
+        let data = Path::new("pkg/target/coverage/python/.coverage");
+        let report = Path::new("pkg/target/coverage/python/lcov.info");
+        let steps = python_run_plan("python3", package, false, data, report, "src");
+        let (unittest, _) =
+            python_coverage_commands("python3", PythonKind::Unittest, data, report, "src");
+        assert_eq!(steps.len(), 4);
+        assert!(matches!(steps[0], Step::Branch { .. }));
+        assert_eq!(steps[1], Step::Disk(Disk::Reset(report.to_path_buf())));
+        assert_eq!(steps[2], Step::Disk(Disk::Remove(data.to_path_buf())));
+        assert_eq!(
+            steps[3],
+            Step::Run {
+                command: Command::Argv(unittest),
+                failure: None,
+            }
+        );
+    }
+
+    // MU-10: with pytest in use, the run plan ends in a branch that picks pytest or falls back.
+    #[test]
+    fn mu_10_python_run_plan_with_pytest_branches_at_the_end() {
+        let package = Path::new("pkg");
+        let data = Path::new("pkg/target/coverage/python/.coverage");
+        let report = Path::new("pkg/target/coverage/python/lcov.info");
+        let steps = python_run_plan("python3", package, true, data, report, "src");
+        assert_eq!(steps.len(), 4);
+        assert!(matches!(steps[3], Step::Branch { .. }));
+    }
+
+    // MU-10: no data file and a zero exit records nothing and warns nothing.
+    #[test]
+    fn mu_10_python_record_plan_without_data_and_success_is_empty() {
+        let package = Path::new("pkg");
+        let lcov = argv(&["coverage", "lcov"]);
+        assert_eq!(python_record_plan(package, 0, false, lcov), Vec::new());
+    }
+
+    // MU-10: no data file and a nonzero exit reports the exit code.
+    #[test]
+    fn mu_10_python_record_plan_without_data_reports_nonzero_exit() {
+        let package = Path::new("pkg");
+        let lcov = argv(&["coverage", "lcov"]);
+        assert_eq!(
+            python_record_plan(package, 3, false, lcov),
+            vec![Step::Notice(
+                "Python coverage exited 3 in pkg. Python coverage will score 0%.".to_owned()
+            )]
+        );
+    }
+
+    // MU-10: with data, LCOV runs and a zero test exit adds no warning.
+    #[test]
+    fn mu_10_python_record_plan_with_data_and_success_records_lcov() {
+        let package = Path::new("pkg");
+        let lcov = argv(&["coverage", "lcov"]);
+        assert_eq!(
+            python_record_plan(package, 0, true, lcov.clone()),
+            vec![
+                Step::Run {
+                    command: lcov,
+                    failure: Some(Failure::Exit {
+                        before: "coverage lcov exited ".to_owned(),
+                        after: " in pkg. Python coverage will score 0%.".to_owned(),
+                    }),
+                },
+                Step::Branch {
+                    check: Check::LastRunOk,
+                    then: Vec::new(),
+                    otherwise: Vec::new(),
+                },
+            ]
+        );
+    }
+
+    // MU-10: with data and a nonzero test exit, LCOV is still recorded and the test exit is warned.
+    #[test]
+    fn mu_10_python_record_plan_with_data_warns_about_failed_tests() {
+        let package = Path::new("pkg");
+        let lcov = argv(&["coverage", "lcov"]);
+        let steps = python_record_plan(package, 2, true, lcov);
+        assert_eq!(
+            steps[1],
+            Step::Branch {
+                check: Check::LastRunOk,
+                then: vec![Step::Notice(
+                    "Python tests exited 2 in pkg. Coverage was still recorded.".to_owned()
+                )],
+                otherwise: Vec::new(),
+            }
+        );
+    }
+
+    // MU-10: failure text renders the exit code only for the Exit form.
+    #[test]
+    fn mu_10_failure_render_uses_code_only_for_exit() {
+        assert_eq!(Failure::Text("plain".to_owned()).render(9), "plain");
+        let exit = Failure::Exit {
+            before: "a ".to_owned(),
+            after: " b".to_owned(),
+        };
+        assert_eq!(exit.render(9), "a 9 b");
+    }
+
+    // MU-10: execute returns the last Run's status.
+    #[test]
+    fn mu_10_execute_returns_last_run_status() {
+        let steps = vec![
+            run(Command::Shell("exit 3".to_owned())),
+            run(Command::Shell("exit 5".to_owned())),
+        ];
+        assert_eq!(execute(&steps, Path::new(".")), Some(5));
+    }
+
+    // MU-10: a failed Require stops the plan and execute returns None.
+    #[test]
+    fn mu_10_execute_require_failure_aborts_plan() {
+        let steps = vec![
+            Step::Require {
+                check: Check::Command(Command::Shell("exit 1".to_owned())),
+                message: "missing".to_owned(),
+            },
+            Step::Notice("never printed".to_owned()),
+        ];
+        assert_eq!(execute(&steps, Path::new(".")), None);
+    }
+
+    // MU-10: a Branch runs the then-steps when its check holds and the otherwise-steps when not.
+    #[test]
+    fn mu_10_execute_branch_picks_then_or_otherwise() {
+        let branch = |exit: &str| {
+            vec![Step::Branch {
+                check: Check::Command(Command::Shell(exit.to_owned())),
+                then: vec![run(Command::Shell("exit 5".to_owned()))],
+                otherwise: vec![run(Command::Shell("exit 6".to_owned()))],
+            }]
+        };
+        assert_eq!(execute(&branch("exit 0"), Path::new(".")), Some(5));
+        assert_eq!(execute(&branch("exit 1"), Path::new(".")), Some(6));
+    }
+
+    // MU-10: Installed holds only when the last run succeeded and the directory exists.
+    #[test]
+    fn mu_10_installed_check_needs_success_and_directory() {
+        let dir = tempdir().unwrap();
+        let present = Check::Installed(dir.path().to_path_buf());
+        let absent = Check::Installed(dir.path().join("missing"));
+        assert!(holds(&present, dir.path(), 0));
+        assert!(!holds(&present, dir.path(), 2));
+        assert!(!holds(&absent, dir.path(), 0));
+    }
+
+    // MU-10: a Require over Installed aborts when the last run failed, even with the directory present.
+    #[test]
+    fn mu_10_execute_installed_require_aborts_after_failed_install() {
+        let dir = tempdir().unwrap();
+        let steps = vec![
+            run(Command::Shell("exit 2".to_owned())),
+            Step::Require {
+                check: Check::Installed(dir.path().to_path_buf()),
+                message: "missing".to_owned(),
+            },
+        ];
+        assert_eq!(execute(&steps, dir.path()), None);
+    }
+
+    // MU-10: Disk::Remove deletes the file; Disk::Reset keeps the directory but drops the report.
+    #[test]
+    fn mu_10_disk_steps_remove_and_reset_files() {
+        let dir = tempdir().unwrap();
+        let data = dir.path().join(".coverage");
+        let report = dir.path().join("lcov.info");
+        fs::write(&data, b"x").unwrap();
+        fs::write(&report, b"x").unwrap();
+        let steps = vec![
+            Step::Disk(Disk::Remove(data.clone())),
+            Step::Disk(Disk::Reset(report.clone())),
+        ];
+        assert_eq!(execute(&steps, dir.path()), Some(0));
+        assert!(!data.exists());
+        assert!(!report.exists());
+        assert!(dir.path().is_dir());
+    }
+
+    // MU-10: Disk::Prepare creates the report's directory.
+    #[test]
+    fn mu_10_disk_prepare_creates_report_directory() {
+        let dir = tempdir().unwrap();
+        let report = dir.path().join("target/lcov.info");
+        execute(&[Step::Disk(Disk::Prepare(report))], dir.path());
+        assert!(dir.path().join("target").is_dir());
+    }
+
+    // MU-10: Disk::Restore rewrites recorded manifests and removes those that were absent.
+    #[test]
+    fn mu_10_disk_restore_rewrites_or_removes_manifests() {
+        let dir = tempdir().unwrap();
+        let kept = dir.path().join("package.json");
+        let added = dir.path().join("package-lock.json");
+        fs::write(&kept, b"changed").unwrap();
+        fs::write(&added, b"new").unwrap();
+        let snapshot: ManifestSnapshot = vec![
+            (kept.clone(), Some(b"original".to_vec())),
+            (added.clone(), None),
+        ];
+        execute(&[Step::Disk(Disk::Restore(snapshot))], dir.path());
+        assert_eq!(fs::read(&kept).unwrap(), b"original");
+        assert!(!added.exists());
+    }
+
+    // MU-10: without deps.edn or bb.edn, Clojure only prints the skip notice.
+    #[test]
+    fn mu_10_clojure_plan_without_markers_only_notices() {
+        let dir = tempdir().unwrap();
+        assert_eq!(
+            clojure_plan(dir.path()),
+            vec![Step::Notice(
+                "No deps.edn or bb.edn; skipping Clojure coverage.".to_owned()
+            )]
+        );
+    }
+
+    // MU-10: with deps.edn, Clojure cleans its report, tries the lcov alias, then falls back.
+    #[test]
+    fn mu_10_clojure_plan_with_markers_cleans_then_falls_back() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("deps.edn"), b"{}").unwrap();
+        let plan = clojure_plan(dir.path());
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[0], Step::Disk(Disk::Clojure(dir.path().to_path_buf())));
+        assert_eq!(
+            plan[1],
+            Step::Branch {
+                check: Check::Command(argv(CLOJURE_LCOV)),
+                then: Vec::new(),
+                otherwise: vec![
+                    Step::Notice("clj -M:cov --lcov failed; retrying without --lcov.".to_owned()),
+                    Step::Run {
+                        command: argv(CLOJURE_PLAIN),
+                        failure: Some(Failure::Exit {
+                            before: "Clojure coverage exited ".to_owned(),
+                            after: ". Clojure coverage will score 0%.".to_owned(),
+                        }),
+                    },
+                ],
+            }
+        );
+    }
+
+    // MU-10: a Java module cleans its JaCoCo report, removes the exec file, then runs Maven.
+    #[test]
+    fn mu_10_java_module_plan_cleans_then_runs_maven() {
+        let module = Path::new("svc");
+        assert_eq!(
+            java_module_plan(module),
+            vec![
+                Step::Disk(Disk::Clean(module.join("target/site/jacoco"))),
+                Step::Disk(Disk::Remove(module.join("target/jacoco.exec"))),
+                Step::Run {
+                    command: argv(MAVEN),
+                    failure: Some(Failure::Exit {
+                        before: "Java coverage exited ".to_owned(),
+                        after: " in svc. Java coverage will score 0%.".to_owned(),
+                    }),
+                },
+            ]
+        );
+    }
+
+    // MU-10: a Go module resets its profile, then runs go test writing that profile.
+    #[test]
+    fn mu_10_go_module_plan_resets_profile_then_tests() {
+        let module = Path::new("svc");
+        let profile = module.join("target/coverage/go/coverage.out");
+        assert_eq!(
+            go_module_plan(module),
+            vec![
+                Step::Disk(Disk::Reset(profile.clone())),
+                Step::Run {
+                    command: Command::Argv(go_test_args(&profile)),
+                    failure: Some(Failure::Exit {
+                        before: "Go coverage exited ".to_owned(),
+                        after: " in svc. Go coverage will score 0%.".to_owned(),
+                    }),
+                },
+            ]
+        );
+    }
+
+    // MU-10: a Rust module resets its report, then runs the chosen coverage tool.
+    #[test]
+    fn mu_10_rust_module_plan_resets_report_then_runs_tool() {
+        let root = Path::new("/root");
+        let module = Path::new("/root/crate");
+        let report = coverage_report(root, module, Language::Rust);
+        assert_eq!(
+            rust_module_plan(root, module, RustTool::LlvmCov),
+            vec![
+                Step::Disk(Disk::Reset(report.clone())),
+                Step::Run {
+                    command: Command::Argv(rust_coverage_command(RustTool::LlvmCov, &report)),
+                    failure: Some(Failure::Exit {
+                        before: "Rust coverage exited ".to_owned(),
+                        after: " in /root/crate. Rust coverage will score 0%.".to_owned(),
+                    }),
+                },
+            ]
+        );
+    }
+
+    // MU-10: scored_exit names the language and module in its exit line.
+    #[test]
+    fn mu_10_scored_exit_names_language_and_module() {
+        assert_eq!(
+            scored_exit("Go", Path::new("svc")).render(4),
+            "Go coverage exited 4 in svc. Go coverage will score 0%."
+        );
+    }
+
+    // MU-10: cover_modules runs one plan inside each module.
+    #[test]
+    fn mu_10_cover_modules_runs_plan_in_each_module() {
+        fn prepare_out(module: &Path) -> Vec<Step> {
+            vec![Step::Disk(Disk::Prepare(module.join("out/lcov.info")))]
+        }
+        let dir = tempdir().unwrap();
+        let (a, b) = (dir.path().join("a"), dir.path().join("b"));
+        cover_modules(dir.path(), vec![a.clone(), b.clone()], "none", prepare_out);
+        assert!(a.join("out").is_dir());
+        assert!(b.join("out").is_dir());
+    }
+
+    // MU-10: with no modules, cover_modules prints the notice and plans nothing.
+    #[test]
+    fn mu_10_cover_modules_without_modules_plans_nothing() {
+        fn never(_: &Path) -> Vec<Step> {
+            panic!("no module should be planned")
+        }
+        let dir = tempdir().unwrap();
+        cover_modules(dir.path(), Vec::new(), "none", never);
+    }
+
+    // MU-10: the Clojure, Java, Go, and Rust entry points skip when their markers are absent.
+    #[test]
+    fn mu_10_entry_points_skip_without_markers() {
+        let dir = tempdir().unwrap();
+        cover_clojure(dir.path());
+        cover_java(dir.path(), &[]);
+        cover_go(dir.path(), &[]);
+        cover_rust(dir.path(), &[]);
+        assert!(!dir.path().join("target").exists());
+    }
+
+    // MU-10: Disk::Clean empties a directory and Disk::Clojure drops the top-level lcov.
+    #[test]
+    fn mu_10_disk_clean_and_clojure_remove_reports() {
+        let dir = tempdir().unwrap();
+        let cleaned = dir.path().join("jacoco");
+        fs::create_dir_all(&cleaned).unwrap();
+        fs::write(cleaned.join("index.html"), b"x").unwrap();
+        let lcov = dir.path().join("target/coverage/lcov.info");
+        fs::create_dir_all(lcov.parent().unwrap()).unwrap();
+        fs::write(&lcov, b"x").unwrap();
+        let steps = vec![
+            Step::Disk(Disk::Clean(cleaned.clone())),
+            Step::Disk(Disk::Clojure(dir.path().to_path_buf())),
+        ];
+        execute(&steps, dir.path());
+        assert!(!cleaned.join("index.html").exists());
+        assert!(!lcov.exists());
     }
 }

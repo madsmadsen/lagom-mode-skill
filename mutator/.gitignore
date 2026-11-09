@@ -1,1 +1,5 @@
 /target
+/.metrics
+/.venv
+parity/fixtures/*/target/
+parity/fixtures/*/Cargo.lock

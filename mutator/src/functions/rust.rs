@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 use regex::Regex;
 use tree_sitter::Node;
 
+use super::named_ancestors;
 use crate::model::Function;
 use crate::ts::{
     absolute_path, child_of_type, descendants, end_line, node_text, parse, start_line,
@@ -34,10 +35,6 @@ pub fn functions_in_source(source: &str, path: &str, project_root: Option<&str>)
         .collect()
 }
 
-fn ancestors<'t>(node: Node<'t>) -> impl Iterator<Item = Node<'t>> {
-    std::iter::successors(node.parent(), |current| current.parent())
-}
-
 /// A function item with a body that is not nested directly in a block.
 fn is_recordable(node: Node) -> bool {
     node.kind() == "function_item"
@@ -49,7 +46,7 @@ fn record_function(data: &[u8], node: Node, modules: &[String]) -> Option<Functi
     if !is_recordable(node) {
         return None;
     }
-    let mods = ancestor_mods(data, node);
+    let mods = named_ancestors(data, node, &["mod_item"], &["identifier"]);
     if mods.iter().any(|name| name.as_str() == "tests") {
         return None;
     }
@@ -63,17 +60,6 @@ fn record_function(data: &[u8], node: Node, modules: &[String]) -> Option<Functi
         start_byte: None,
         end_byte: None,
     })
-}
-
-/// Names of the enclosing `mod` items, outermost first.
-fn ancestor_mods(data: &[u8], node: Node) -> Vec<String> {
-    let mut names: Vec<String> = ancestors(node)
-        .filter(|ancestor| ancestor.kind() == "mod_item")
-        .filter_map(|module| child_of_type(module, &["identifier"]))
-        .map(|ident| node_text(data, ident).to_string())
-        .collect();
-    names.reverse();
-    names
 }
 
 fn impl_owner(data: &[u8], node: Node) -> Option<String> {

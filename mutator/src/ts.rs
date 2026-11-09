@@ -1,7 +1,7 @@
 //! Port of crapper languages/treesitter.py (BSD Zero Clause License, Robert C. Martin).
 
-use std::fs;
-use std::path::{Path, PathBuf};
+use crate::fs_util::resolve;
+use std::path::Path;
 use tree_sitter::{Node, Parser, Tree};
 
 /// Parses `source` with the named grammar; None for an unknown grammar or a failed parse.
@@ -80,20 +80,10 @@ fn grammar_language(grammar: &str) -> Option<tree_sitter::Language> {
     })
 }
 
-// Canonicalizes the longest existing ancestor and appends the rest, as Python's resolve() does.
-fn resolve(path: &Path) -> PathBuf {
-    if let Ok(real) = fs::canonicalize(path) {
-        return real;
-    }
-    match (path.parent(), path.file_name()) {
-        (Some(parent), Some(name)) => resolve(parent).join(name),
-        _ => std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
     const SNIPPETS: &[(&str, &str)] = &[
         ("java", "class A { int f() { return 1; } }\n"),

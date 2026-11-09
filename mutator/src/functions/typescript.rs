@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use tree_sitter::Node;
 
+use super::{named_ancestors, strip_src};
 use crate::model::Function;
 use crate::ts::{child_of_type, descendants, end_line, node_text, parse, start_line};
 
@@ -74,7 +75,7 @@ fn grammar(path: &str) -> &'static str {
 
 fn module_namespace(path: &str, project_root: Option<&str>) -> String {
     let relative = path.replace('\\', "/");
-    let relative = strip_src_dir(strip_root_prefix(&relative, project_root));
+    let relative = strip_src(strip_root_prefix(&relative, project_root));
     strip_script_suffix(relative).replace('/', ".")
 }
 
@@ -86,15 +87,6 @@ fn strip_root_prefix<'a>(relative: &'a str, project_root: Option<&str>) -> &'a s
         _ => relative.strip_prefix(&format!("{root}/")),
     };
     under_root.unwrap_or_else(|| relative.strip_prefix("./").unwrap_or(relative))
-}
-
-fn strip_src_dir(relative: &str) -> &str {
-    if let Some(rest) = relative.strip_prefix("src/") {
-        return rest;
-    }
-    relative
-        .split_once("/src/")
-        .map_or(relative, |(_, rest)| rest)
 }
 
 fn strip_script_suffix(relative: &str) -> &str {
@@ -116,22 +108,6 @@ fn inside_function(node: Node) -> bool {
 
 fn has_body(node: Node) -> bool {
     child_of_type(node, &["statement_block"]).is_some()
-}
-
-/// Class names around a method, outermost first.
-fn class_names<'a>(data: &'a [u8], node: Node) -> Vec<&'a str> {
-    let mut names: Vec<&str> = std::iter::successors(node.parent(), |ancestor| ancestor.parent())
-        .filter(|ancestor| {
-            matches!(
-                ancestor.kind(),
-                "class_declaration" | "abstract_class_declaration"
-            )
-        })
-        .filter_map(|class| child_of_type(class, &["type_identifier", "identifier"]))
-        .map(|ident| node_text(data, ident))
-        .collect();
-    names.reverse();
-    names
 }
 
 fn push(found: &mut Found, node: Node, name: &str, namespace: &str) {
@@ -164,7 +140,12 @@ fn append_method(found: &mut Found, data: &[u8], node: Node, module: &str) {
     let Some(ident) = child_of_type(node, &["property_identifier", "identifier"]) else {
         return;
     };
-    let classes = class_names(data, node);
+    let classes = named_ancestors(
+        data,
+        node,
+        &["class_declaration", "abstract_class_declaration"],
+        &["type_identifier", "identifier"],
+    );
     if classes.is_empty() {
         return;
     }

@@ -11,6 +11,7 @@ pub mod coverage;
 pub mod discover;
 pub mod edn;
 pub mod engine;
+pub mod fs_util;
 pub mod functions;
 pub mod metrics;
 pub mod model;

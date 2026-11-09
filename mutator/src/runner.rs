@@ -324,7 +324,7 @@ fn plan(language: Language, root: &Path, source: &Path) -> (Command, PathBuf) {
     }
 }
 
-fn nearest_marker(source: &Path, root: &Path, markers: &[&str]) -> PathBuf {
+pub fn nearest_marker(source: &Path, root: &Path, markers: &[&str]) -> PathBuf {
     markers
         .iter()
         .find_map(|marker| nearest(source, marker, root))

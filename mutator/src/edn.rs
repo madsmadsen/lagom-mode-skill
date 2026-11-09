@@ -18,17 +18,31 @@ pub enum Value {
 /// Renders a value as compact EDN, byte for byte like the Python `edn.dumps`.
 pub fn render(value: &Value) -> String {
     match value {
-        Value::Nil => "nil".to_string(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Int(number) => number.to_string(),
-        Value::Float(number) => render_float(*number),
-        Value::Str(text) => format!("\"{}\"", escape(text)),
-        Value::Keyword(name) => format!(":{name}"),
-        Value::Symbol(name) => name.clone(),
         Value::Vector(items) => wrap("[", items.iter().map(render).collect(), "]"),
         Value::List(items) => wrap("(", items.iter().map(render).collect(), ")"),
         Value::Set(items) => wrap("#{", items.iter().map(render).collect(), "}"),
         Value::Map(pairs) => wrap("{", pairs.iter().map(render_pair).collect(), "}"),
+        _ => render_atom(value),
+    }
+}
+
+/// Scalars render without delimiters; strings, keywords, and symbols go to `render_text`.
+fn render_atom(value: &Value) -> String {
+    match value {
+        Value::Nil => "nil".to_string(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Int(number) => number.to_string(),
+        Value::Float(number) => render_float(*number),
+        _ => render_text(value),
+    }
+}
+
+/// Text values: a string is quoted, a keyword gets a colon, and a symbol is its name.
+fn render_text(value: &Value) -> String {
+    match value {
+        Value::Str(text) => format!("\"{}\"", escape(text)),
+        Value::Keyword(name) => format!(":{name}"),
+        _ => value.as_str().unwrap_or_default().to_string(),
     }
 }
 
@@ -384,6 +398,16 @@ mod tests {
         );
         assert_eq!(render(&Value::Set(vec![Value::Int(1)])), "#{1}");
         assert_eq!(render(&Value::Map(vec![])), "{}");
+    }
+
+    #[test]
+    // MU-10: a symbol renders bare inside a map, and a set nests inside it unchanged.
+    fn mu_10_render_symbol_and_set_inside_map() {
+        let value = Value::Map(vec![(
+            Value::Symbol("x".to_string()),
+            Value::Set(vec![Value::Bool(true)]),
+        )]);
+        assert_eq!(render(&value), "{x #{true}}");
     }
 
     #[test]

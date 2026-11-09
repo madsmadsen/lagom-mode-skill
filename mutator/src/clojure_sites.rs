@@ -45,6 +45,14 @@ const CLOJURE_HEAD: &[(&str, &str, &str)] = &[
     ("some?", "nil?", "predicate"),
 ];
 
+/// Literal swaps: the `true`/`false` booleans and the `0`/`1` constants, with their category.
+const LITERAL_SWAPS: &[(&str, &str, &str)] = &[
+    ("true", "false", "boolean"),
+    ("false", "true", "boolean"),
+    ("0", "1", "constant"),
+    ("1", "0", "constant"),
+];
+
 /// Node kinds whose subtrees are never mutated.
 const SKIP_MARKERS: &[&str] = &["comment", "quot", "string", "str_lit", "char_lit"];
 
@@ -131,33 +139,28 @@ fn site_for(visit: Visit, source: &str, newlines: &[usize]) -> Option<RawSite> {
 fn mutation(kind: &str, head: bool, text: &str) -> Option<(&'static str, &'static str)> {
     match kind {
         "sym_lit" if head => head_mutation(text),
-        "bool_lit" => boolean_mutation(text),
-        "num_lit" => constant_mutation(text),
+        "bool_lit" | "num_lit" => literal_mutation(text),
         _ => None,
     }
 }
 
 fn head_mutation(text: &str) -> Option<(&'static str, &'static str)> {
-    CLOJURE_HEAD
+    lookup(CLOJURE_HEAD, text)
+}
+
+fn literal_mutation(text: &str) -> Option<(&'static str, &'static str)> {
+    lookup(LITERAL_SWAPS, text)
+}
+
+/// The mutant and category of the row whose name is `text`.
+fn lookup(
+    table: &[(&'static str, &'static str, &'static str)],
+    text: &str,
+) -> Option<(&'static str, &'static str)> {
+    table
         .iter()
         .find(|(name, _, _)| *name == text)
         .map(|&(_, mutant, category)| (mutant, category))
-}
-
-fn boolean_mutation(text: &str) -> Option<(&'static str, &'static str)> {
-    match text {
-        "true" => Some(("false", "boolean")),
-        "false" => Some(("true", "boolean")),
-        _ => None,
-    }
-}
-
-fn constant_mutation(text: &str) -> Option<(&'static str, &'static str)> {
-    match text {
-        "0" => Some(("1", "constant")),
-        "1" => Some(("0", "constant")),
-        _ => None,
-    }
 }
 
 /// 1-based line of `offset`, given the byte offsets of every newline.
@@ -290,5 +293,14 @@ mod tests {
     #[test]
     fn mu_13_metadata_symbol_is_never_a_head() {
         assert_eq!(described("(^:x + 1)"), ["1->0"]);
+    }
+
+    // MU-10: each literal swaps with its partner and keeps its category
+    #[test]
+    fn mu_10_literal_swaps_pair_booleans_and_constants() {
+        assert_eq!(
+            described("(f true false 0 1)"),
+            ["true->false", "false->true", "0->1", "1->0"]
+        );
     }
 }

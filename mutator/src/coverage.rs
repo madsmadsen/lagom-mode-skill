@@ -14,6 +14,7 @@ use std::sync::LazyLock;
 use regex::{Captures, Regex};
 
 use crate::bind::splitlines;
+use crate::fs_util::resolve;
 use crate::model::{Language, LineSet};
 
 /// Reports keyed by the path text they were written with.
@@ -60,12 +61,6 @@ pub fn covered_lines(root: &Path, source_path: &Path, language: Language) -> Opt
         }
         _ => lookup(&lcov_index(root), &path).cloned(),
     }
-}
-
-fn resolve(path: &Path) -> PathBuf {
-    fs::canonicalize(path)
-        .or_else(|_| std::path::absolute(path))
-        .unwrap_or_else(|_| path.to_path_buf())
 }
 
 fn read_lossy(path: &Path) -> Option<String> {

@@ -2,6 +2,7 @@
 
 use tree_sitter::Node;
 
+use super::{named_ancestors, strip_src};
 use crate::model::Function;
 use crate::ts::{child_of_type, descendants, end_line, node_text, parse, start_line};
 
@@ -21,7 +22,7 @@ pub fn functions_in_source(source: &str, path: &str, source_root: Option<&str>) 
 
 fn function_entry(data: &[u8], node: Node, module: &str) -> Option<Function> {
     let ident = child_of_type(node, &["identifier"])?;
-    let classes = class_names(data, node);
+    let classes = named_ancestors(data, node, &["class_definition"], &["identifier"]);
     let namespace = std::iter::once(module)
         .chain(classes.iter().map(String::as_str))
         .collect::<Vec<_>>()
@@ -47,17 +48,6 @@ fn is_nested_function(node: Node) -> bool {
         .is_some_and(|ancestor| ancestor.kind() == "function_definition")
 }
 
-/// Names of the enclosing classes, outermost first.
-fn class_names(data: &[u8], node: Node) -> Vec<String> {
-    let mut names: Vec<String> = ancestors(node)
-        .filter(|ancestor| ancestor.kind() == "class_definition")
-        .filter_map(|class| child_of_type(class, &["identifier"]))
-        .map(|ident| node_text(data, ident).to_string())
-        .collect();
-    names.reverse();
-    names
-}
-
 fn module_namespace(path: &str, source_root: Option<&str>) -> String {
     let normalized = path.replace('\\', "/");
     let relative = strip_module_suffix(strip_src(strip_root(&normalized, source_root)));
@@ -80,15 +70,6 @@ fn strip_root<'a>(relative: &'a str, source_root: Option<&str>) -> &'a str {
         return rest;
     }
     relative.strip_prefix("./").unwrap_or(relative)
-}
-
-fn strip_src(relative: &str) -> &str {
-    if let Some(rest) = relative.strip_prefix("src/") {
-        return rest;
-    }
-    relative
-        .split_once("/src/")
-        .map_or(relative, |(_, rest)| rest)
 }
 
 fn strip_module_suffix(relative: &str) -> &str {

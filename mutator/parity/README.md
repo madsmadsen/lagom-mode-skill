@@ -14,6 +14,7 @@ Options:
 
 - `--original-only`: run only the original side. The port does not need to be built.
 - `--only NAME`: run one entry. Repeatable.
+- `--show`: print the diffs of each run.
 
 Environment:
 
@@ -34,8 +35,10 @@ Both sides then run the same setup steps and the same arguments.
 - Every snapshot under `.metrics/mutate/**/*.edn` must exist on both sides with equal
   content. The original's reader parses each file, and the top-level `tested-at`
   key is dropped before the comparison.
-- stdout and stderr are not compared. Their line differences are printed as
-  information only.
+- stdout must be equal on both sides after `<ROOT>` normalization, unless the run sets `allow_stdout_diff = true`.
+- `git status --porcelain` of both trees must be equal.
+- stderr is informational. Its line differences are printed, not compared.
+- `--show` prints the diffs.
 
 Each output line is `PASS`, `FAIL`, or `DIFF-ALLOWED`. The runner exits 1 if any run is `FAIL`.
 
