@@ -41,6 +41,9 @@ const PREFIXES: &[(&str, &str, usize)] = &[
     ("#_", "dis_expr", 1),
 ];
 
+/// The wrapped-form count of a prefix that wraps exactly one form.
+const ONE_FORM: usize = 1;
+
 enum Token {
     Skip,
     Open(&'static str, u8, usize),
@@ -50,7 +53,6 @@ enum Token {
 }
 
 enum Shape {
-    Root,
     Group(u8),
     Prefix { need: usize, token_end: usize },
 }
@@ -101,20 +103,16 @@ struct Reader<'a> {
     src: &'a str,
     pos: usize,
     stack: Vec<Frame>,
+    forms: Vec<CNode>,
 }
 
 impl<'a> Reader<'a> {
     fn new(src: &'a str) -> Self {
-        let root = Frame {
-            shape: Shape::Root,
-            kind: "",
-            start: 0,
-            children: Vec::new(),
-        };
         Self {
             src,
             pos: 0,
-            stack: vec![root],
+            stack: Vec::new(),
+            forms: Vec::new(),
         }
     }
 
@@ -180,6 +178,7 @@ impl<'a> Reader<'a> {
             };
             node = frame.finish(self.pos);
         }
+        self.forms.push(node);
     }
 
     fn pop_into_parent(&mut self, end: usize) {
@@ -207,10 +206,10 @@ impl<'a> Reader<'a> {
 
     /// Closes the forms still open at the end of the source.
     fn into_forms(mut self) -> Vec<CNode> {
-        while self.stack.len() > 1 {
+        while !self.stack.is_empty() {
             self.pop_into_parent(self.src.len());
         }
-        self.stack.pop().map_or_else(Vec::new, |root| root.children)
+        self.forms
     }
 }
 
@@ -255,7 +254,7 @@ fn hash_prefix(rest: &str) -> Option<Token> {
         byte if byte.is_ascii_alphabetic() => "tagged_or_ctor_lit",
         _ => return None,
     };
-    Some(Token::Prefix(kind, 1, 1 + token_len(body)))
+    Some(Token::Prefix(kind, ONE_FORM, 1 + token_len(body)))
 }
 
 fn leaf(rest: &str) -> Token {
@@ -283,12 +282,13 @@ fn hash_leaf(rest: &str) -> (&'static str, usize) {
 
 /// Length of a string literal that starts at `rest[0]`, honouring backslash escapes.
 fn quoted_len(rest: &str) -> usize {
-    let mut escaped = false;
-    for (index, byte) in rest.bytes().enumerate().skip(1) {
-        match (escaped, byte) {
-            (true, _) => escaped = false,
-            (false, b'\\') => escaped = true,
-            (false, b'"') => return index + 1,
+    let mut bytes = rest.bytes().enumerate().skip(1);
+    while let Some((index, byte)) = bytes.next() {
+        match byte {
+            b'\\' => {
+                bytes.next();
+            }
+            b'"' => return index + 1,
             _ => {}
         }
     }
@@ -303,7 +303,7 @@ fn char_len(rest: &str) -> usize {
 }
 
 fn atom(rest: &str) -> (&'static str, usize) {
-    let len = token_len(rest).max(1);
+    let len = token_len(rest);
     (atom_kind(rest.get(..len).unwrap_or("")), len)
 }
 
@@ -443,5 +443,339 @@ mod tests {
         assert_eq!((forms[1].start, forms[1].end), (5, 11));
         let number = &forms[1].children[1];
         assert_eq!((number.kind, number.start, number.end), ("num_lit", 9, 10));
+    }
+
+    // MU-8: a comment runs to the newline, or to the source end when unterminated
+    #[test]
+    fn mu_8_comment_spans_end_at_newline_or_source_end() {
+        let forms = read("; hi\nx");
+        assert_eq!(kinds(&forms), ["comment", "sym_lit"]);
+        assert_eq!((forms[0].start, forms[0].end), (0, 4));
+        assert_eq!((forms[1].start, forms[1].end), (5, 6));
+        let open = read("; hi");
+        assert_eq!(
+            (open[0].kind, open[0].start, open[0].end),
+            ("comment", 0, 4)
+        );
+    }
+
+    // MU-8: a string ends at its first unescaped quote; an escape skips the next byte
+    #[test]
+    fn mu_8_string_spans_honour_escapes_and_empty_strings() {
+        let empty = read("\"\" x");
+        assert_eq!(kinds(&empty), ["str_lit", "sym_lit"]);
+        assert_eq!((empty[0].start, empty[0].end), (0, 2));
+        assert_eq!((empty[1].start, empty[1].end), (3, 4));
+
+        let escaped_quote = read("\"a\\\"b\" c");
+        assert_eq!(kinds(&escaped_quote), ["str_lit", "sym_lit"]);
+        assert_eq!((escaped_quote[0].start, escaped_quote[0].end), (0, 6));
+        assert_eq!((escaped_quote[1].start, escaped_quote[1].end), (7, 8));
+
+        let escaped_backslash = read("\"a\\\\\" b");
+        assert_eq!(kinds(&escaped_backslash), ["str_lit", "sym_lit"]);
+        assert_eq!(
+            (escaped_backslash[0].start, escaped_backslash[0].end),
+            (0, 5)
+        );
+        assert_eq!(
+            (escaped_backslash[1].start, escaped_backslash[1].end),
+            (6, 7)
+        );
+
+        let open = read("\"abc");
+        assert_eq!(
+            (open[0].kind, open[0].start, open[0].end),
+            ("str_lit", 0, 4)
+        );
+    }
+
+    // MU-8: a character literal is a backslash, one character, then token characters
+    #[test]
+    fn mu_8_char_literal_spans() {
+        let forms = read("\\a b");
+        assert_eq!(kinds(&forms), ["char_lit", "sym_lit"]);
+        assert_eq!((forms[0].start, forms[0].end), (0, 2));
+        assert_eq!((forms[1].start, forms[1].end), (3, 4));
+
+        let named = read("\\space x");
+        assert_eq!(
+            (named[0].kind, named[0].start, named[0].end),
+            ("char_lit", 0, 6)
+        );
+        assert_eq!((named[1].start, named[1].end), (7, 8));
+
+        let multibyte = read("\\é x");
+        assert_eq!((multibyte[0].start, multibyte[0].end), (0, 3));
+        assert_eq!((multibyte[1].start, multibyte[1].end), (4, 5));
+
+        let lone = read("\\");
+        assert_eq!(
+            (lone[0].kind, lone[0].start, lone[0].end),
+            ("char_lit", 0, 1)
+        );
+    }
+
+    // MU-8: regex, symbolic-value and lone-hash leaves end where their text ends
+    #[test]
+    fn mu_8_hash_leaf_spans() {
+        let regex = read("#\"a+\" x");
+        assert_eq!(kinds(&regex), ["regex_lit", "sym_lit"]);
+        assert_eq!((regex[0].start, regex[0].end), (0, 5));
+        assert_eq!((regex[1].start, regex[1].end), (6, 7));
+        let open_regex = read("#\"ab");
+        assert_eq!(
+            (open_regex[0].kind, open_regex[0].start, open_regex[0].end),
+            ("regex_lit", 0, 4)
+        );
+        let sym_val = read("##Inf");
+        assert_eq!(
+            (sym_val[0].kind, sym_val[0].start, sym_val[0].end),
+            ("sym_val_lit", 0, 5)
+        );
+        let other = read("#1");
+        assert_eq!(kinds(&other), ["other", "num_lit"]);
+        assert_eq!((other[0].start, other[0].end), (0, 1));
+        assert_eq!((other[1].start, other[1].end), (1, 2));
+        let lone = read("#");
+        assert_eq!((lone[0].kind, lone[0].start, lone[0].end), ("other", 0, 1));
+    }
+
+    // MU-8: #_ wraps the next form; unterminated, it ends after the marker
+    #[test]
+    fn mu_8_discard_spans() {
+        let forms = read("#_ foo bar");
+        assert_eq!(kinds(&forms), ["dis_expr", "sym_lit"]);
+        assert_eq!((forms[0].start, forms[0].end), (0, 6));
+        assert_eq!(kinds(&forms[0].children), ["sym_lit"]);
+        assert_eq!(
+            (forms[0].children[0].start, forms[0].children[0].end),
+            (3, 6)
+        );
+        assert_eq!((forms[1].start, forms[1].end), (7, 10));
+        let open = read("#_");
+        assert_eq!(
+            (open[0].kind, open[0].start, open[0].end),
+            ("dis_expr", 0, 2)
+        );
+        assert!(open[0].children.is_empty());
+    }
+
+    // MU-8: #? and #?@ hold their branches; unterminated, they end at the source end
+    #[test]
+    fn mu_8_read_conditional_spans() {
+        let forms = read("#?(:clj 1)");
+        assert_eq!(
+            (forms[0].kind, forms[0].start, forms[0].end),
+            ("read_cond_lit", 0, 10)
+        );
+        assert_eq!(kinds(&forms[0].children), ["kwd_lit", "num_lit"]);
+        assert_eq!(
+            (forms[0].children[0].start, forms[0].children[0].end),
+            (3, 7)
+        );
+        assert_eq!(
+            (forms[0].children[1].start, forms[0].children[1].end),
+            (8, 9)
+        );
+        let splice = read("#?@(1)");
+        assert_eq!(
+            (splice[0].kind, splice[0].start, splice[0].end),
+            ("read_cond_lit", 0, 6)
+        );
+        assert_eq!(
+            (splice[0].children[0].start, splice[0].children[0].end),
+            (4, 5)
+        );
+        let open = read("#?(1");
+        assert_eq!(
+            (open[0].kind, open[0].start, open[0].end),
+            ("read_cond_lit", 0, 4)
+        );
+        assert_eq!((open[0].children[0].start, open[0].children[0].end), (3, 4));
+    }
+
+    // MU-8: #:ns{} wraps a map; a tagged literal's tag is not a child
+    #[test]
+    fn mu_8_namespace_map_and_tagged_literal_spans() {
+        let ns = read("#:ns{:a 1}");
+        assert_eq!((ns[0].kind, ns[0].start, ns[0].end), ("ns_map_lit", 0, 10));
+        assert_eq!(kinds(&ns[0].children), ["map_lit"]);
+        let map = &ns[0].children[0];
+        assert_eq!((map.start, map.end), (4, 10));
+        assert_eq!(kinds(&map.children), ["kwd_lit", "num_lit"]);
+        assert_eq!((map.children[0].start, map.children[0].end), (5, 7));
+        assert_eq!((map.children[1].start, map.children[1].end), (8, 9));
+
+        let tagged = read("#inst \"2020\"");
+        assert_eq!(
+            (tagged[0].kind, tagged[0].start, tagged[0].end),
+            ("tagged_or_ctor_lit", 0, 12)
+        );
+        assert_eq!(kinds(&tagged[0].children), ["str_lit"]);
+        assert_eq!(
+            (tagged[0].children[0].start, tagged[0].children[0].end),
+            (6, 12)
+        );
+
+        let bare = read("#inst");
+        assert_eq!(
+            (bare[0].kind, bare[0].start, bare[0].end),
+            ("tagged_or_ctor_lit", 0, 5)
+        );
+        assert!(bare[0].children.is_empty());
+    }
+
+    // MU-8: metadata keeps its value children; a symbol target merges into one sym_lit
+    #[test]
+    fn mu_8_metadata_spans() {
+        let pair = read("^{:a 1} [x]");
+        assert_eq!(
+            (pair[0].kind, pair[0].start, pair[0].end),
+            ("meta_lit", 0, 11)
+        );
+        assert_eq!(kinds(&pair[0].children), ["map_lit", "vec_lit"]);
+        assert_eq!((pair[0].children[0].start, pair[0].children[0].end), (1, 7));
+        assert_eq!(
+            (pair[0].children[1].start, pair[0].children[1].end),
+            (8, 11)
+        );
+
+        let open = read("^foo");
+        assert_eq!(
+            (open[0].kind, open[0].start, open[0].end),
+            ("meta_lit", 0, 4)
+        );
+        assert_eq!(kinds(&open[0].children), ["sym_lit"]);
+
+        let bare = read("^");
+        assert_eq!(
+            (bare[0].kind, bare[0].start, bare[0].end),
+            ("meta_lit", 0, 1)
+        );
+        assert!(bare[0].children.is_empty());
+    }
+
+    // MU-8: each reader prefix wraps the one form after it, and its span stops there
+    #[test]
+    fn mu_8_prefix_family_spans() {
+        let forms = read("~@a ~b @c #'d");
+        assert_eq!(
+            kinds(&forms),
+            [
+                "unquote_splicing_lit",
+                "unquoting_lit",
+                "derefing_lit",
+                "var_quoting_lit"
+            ]
+        );
+        let spans: Vec<(usize, usize)> = forms.iter().map(|f| (f.start, f.end)).collect();
+        assert_eq!(spans, [(0, 3), (4, 6), (7, 9), (10, 13)]);
+        let inner: Vec<(usize, usize)> = forms
+            .iter()
+            .map(|f| (f.children[0].start, f.children[0].end))
+            .collect();
+        assert_eq!(inner, [(2, 3), (5, 6), (8, 9), (12, 13)]);
+    }
+
+    // MU-8: a prefix popped by a stray closer ends after its own marker
+    #[test]
+    fn mu_8_prefix_closed_by_stray_closer() {
+        let forms = read("')");
+        assert_eq!(forms.len(), 1);
+        assert_eq!(
+            (forms[0].kind, forms[0].start, forms[0].end),
+            ("quoting_lit", 0, 1)
+        );
+    }
+
+    // MU-8: a mismatched closer is dropped; lists and vectors still open at the end close there
+    #[test]
+    fn mu_8_mismatched_closers_are_dropped_and_open_forms_close_at_end() {
+        let dropped = read("(a]b)");
+        assert_eq!(
+            (dropped[0].kind, dropped[0].start, dropped[0].end),
+            ("list_lit", 0, 5)
+        );
+        assert_eq!(kinds(&dropped[0].children), ["sym_lit", "sym_lit"]);
+        assert_eq!(
+            (dropped[0].children[0].start, dropped[0].children[0].end),
+            (1, 2)
+        );
+        assert_eq!(
+            (dropped[0].children[1].start, dropped[0].children[1].end),
+            (3, 4)
+        );
+
+        let lone = read("(]");
+        assert_eq!(
+            (lone[0].kind, lone[0].start, lone[0].end),
+            ("list_lit", 0, 2)
+        );
+        assert!(lone[0].children.is_empty());
+
+        let open_string = read("(\"a");
+        assert_eq!(
+            (
+                open_string[0].kind,
+                open_string[0].start,
+                open_string[0].end
+            ),
+            ("list_lit", 0, 3)
+        );
+        assert_eq!(
+            (
+                open_string[0].children[0].start,
+                open_string[0].children[0].end
+            ),
+            (1, 3)
+        );
+
+        let open_vec = read("[1 {2");
+        assert_eq!(
+            (open_vec[0].kind, open_vec[0].start, open_vec[0].end),
+            ("vec_lit", 0, 5)
+        );
+        assert_eq!(kinds(&open_vec[0].children), ["num_lit", "map_lit"]);
+        assert_eq!(
+            (open_vec[0].children[1].start, open_vec[0].children[1].end),
+            (3, 5)
+        );
+    }
+
+    // MU-8: a comment inside a list is a child that ends at its newline
+    #[test]
+    fn mu_8_comment_inside_list_is_a_child() {
+        let forms = read("(a ; c\n)");
+        assert_eq!(
+            (forms[0].kind, forms[0].start, forms[0].end),
+            ("list_lit", 0, 8)
+        );
+        assert_eq!(kinds(&forms[0].children), ["sym_lit", "comment"]);
+        assert_eq!(
+            (forms[0].children[1].start, forms[0].children[1].end),
+            (3, 6)
+        );
+    }
+
+    // MU-8: vectors, maps and sets report their own kinds and spans
+    #[test]
+    fn mu_8_collection_spans() {
+        let forms = read("[1 2] {:a 1} #{3}");
+        assert_eq!(kinds(&forms), ["vec_lit", "map_lit", "set_lit"]);
+        let spans: Vec<(usize, usize)> = forms.iter().map(|f| (f.start, f.end)).collect();
+        assert_eq!(spans, [(0, 5), (6, 12), (13, 17)]);
+        assert_eq!(
+            (forms[0].children[1].start, forms[0].children[1].end),
+            (3, 4)
+        );
+        assert_eq!(
+            (forms[1].children[0].start, forms[1].children[0].end),
+            (7, 9)
+        );
+        assert_eq!(
+            (forms[2].children[0].start, forms[2].children[0].end),
+            (15, 16)
+        );
     }
 }

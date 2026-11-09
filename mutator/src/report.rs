@@ -87,7 +87,7 @@ pub fn format_scan(
 }
 
 fn column_width(lengths: impl Iterator<Item = usize>, floor: usize, cap: usize) -> usize {
-    lengths.max().unwrap_or(0).clamp(floor, cap)
+    lengths.fold(floor, usize::max).min(cap)
 }
 
 fn score_text(form: &FormResult) -> String {
@@ -344,6 +344,22 @@ mod tests {
             "Scan: 1 mutation sites in src/demo.py\n\
              * src/demo.py:2 > -> >= uncovered  [defn/add]\n\
              * marks a function whose text changed since the last snapshot.\n"
+        );
+    }
+
+    // MU-20: a site missing from the coverage map counts as covered, so it is not flagged.
+    #[test]
+    fn mu_20_format_scan_treats_missing_coverage_as_covered() {
+        let covered = HashMap::new();
+        let out = format_scan(
+            "src/demo.py",
+            &[site("m1")],
+            &HashSet::new(),
+            Some(&covered),
+        );
+        assert_eq!(
+            out,
+            "Scan: 1 mutation sites in src/demo.py\n  src/demo.py:2 > -> >=  [defn/add]\n"
         );
     }
 }

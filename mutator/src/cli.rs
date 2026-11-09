@@ -371,7 +371,11 @@ struct GitStatusError {
 }
 
 fn git(root: &Path, git_args: &[&str]) -> Result<Vec<u8>, GitStatusError> {
-    let output = Command::new("git")
+    git_program("git", root, git_args)
+}
+
+fn git_program(program: &str, root: &Path, git_args: &[&str]) -> Result<Vec<u8>, GitStatusError> {
+    let output = Command::new(program)
         .arg("-C")
         .arg(root)
         .args(git_args)
@@ -418,8 +422,8 @@ fn changed_files(root: &Path) -> Result<Vec<PathBuf>, GitStatusError> {
     let root_resolved = resolve(root);
     Ok(status
         .split(|byte| *byte == 0)
-        .filter(|entry| entry.len() > 3)
-        .map(|entry| resolve(&toplevel.join(&*String::from_utf8_lossy(&entry[3..]))))
+        .filter_map(|entry| entry.get(3..))
+        .map(|path| resolve(&toplevel.join(&*String::from_utf8_lossy(path))))
         .filter(|path| path.is_file() && path.starts_with(&root_resolved))
         .collect())
 }
@@ -544,19 +548,26 @@ fn run_coverage_command(options: &Options, root: &Path, command: &str) -> i32 {
         verbose: options.verbose,
     };
     let result = runner.run(&RunCommand::Shell(command.to_string()), root, None);
-    if result.code == 0 {
-        return 0;
-    }
-    eprintln!(
-        "Coverage command exited {}. Reports already on disk will not be read.",
-        result.code
-    );
-    let lines = splitlines(&result.output);
-    let tail = lines[lines.len().saturating_sub(20)..].join("\n");
-    if !tail.is_empty() {
-        eprintln!("{tail}");
+    if let Some(report) = coverage_failure_report(result.code, &result.output) {
+        eprint!("{report}");
     }
     result.code
+}
+
+/// What a failed coverage command prints: its exit code and the last 20 lines of its output.
+fn coverage_failure_report(code: i32, output: &str) -> Option<String> {
+    if code == 0 {
+        return None;
+    }
+    let lines = splitlines(output);
+    let tail = lines[lines.len().saturating_sub(20)..].join("\n");
+    let mut report =
+        format!("Coverage command exited {code}. Reports already on disk will not be read.\n");
+    if !tail.is_empty() {
+        report.push_str(&tail);
+        report.push('\n');
+    }
+    Some(report)
 }
 
 fn prepare_coverage(options: &Options, root: &Path, files: &[PathBuf]) -> i32 {
@@ -1124,5 +1135,109 @@ mod tests {
         let snapshot = dir.path().join(".metrics/mutate/demo.edn");
         let text = fs::read_to_string(snapshot).expect("snapshot written");
         assert!(text.contains(":id \"defn/add\""));
+    }
+
+    /// MU-2: the smallest accepted values are 1 for `--max-workers` and `--lines`.
+    #[test]
+    fn mu_2_one_is_the_smallest_accepted_worker_and_line() {
+        assert_eq!(
+            parse_args(&args(&["--max-workers", "1"])).max_workers,
+            Some(1)
+        );
+        let lines = parse_args(&args(&["--lines", "1"]));
+        assert_eq!(lines.exit_code, 0);
+        assert_eq!(lines.lines, Some(LineSet::from([1])));
+    }
+
+    /// MU-2: verbose is off by default, both in `Options::default` and in a bare parse.
+    #[test]
+    fn mu_2_verbose_is_off_by_default() {
+        assert!(!Options::default().verbose);
+        assert!(!parse_args(&[]).verbose);
+    }
+
+    /// MU-7: a git that cannot start makes `--changed` fail with exit code 1.
+    #[test]
+    fn mu_7_git_that_cannot_start_exits_one() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let err = git_program("/nonexistent/mutator-git", dir.path(), &["status"])
+            .expect_err("spawn fails");
+        assert_eq!(err.code, 1);
+        assert!(!err.message.is_empty());
+    }
+
+    /// MU-7: a git killed by a signal has no exit code, so the status is 1 with the default message.
+    #[test]
+    fn mu_7_git_killed_by_signal_exits_one() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().expect("temp dir");
+        let script = dir.path().join("fake-git");
+        write(&script, "#!/bin/sh\nkill -9 $$\n");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).expect("chmod");
+        let err = git_program(
+            script.to_str().expect("utf-8 path"),
+            dir.path(),
+            &["status"],
+        )
+        .expect_err("git is killed");
+        assert_eq!(err.code, 1);
+        assert_eq!(err.message, "git status failed");
+    }
+
+    /// MU-3: a coverage command that exits 0 gives 0 and reports nothing.
+    #[test]
+    fn mu_3_successful_coverage_command_returns_zero() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        assert_eq!(
+            run_coverage_command(&Options::default(), dir.path(), "true"),
+            0
+        );
+        assert_eq!(coverage_failure_report(0, "noise"), None);
+    }
+
+    /// MU-3: a failed coverage report names the exit code and keeps only the last 20 lines.
+    #[test]
+    fn mu_3_coverage_failure_report_names_code_and_tail() {
+        let output: String = (0..25).map(|n| format!("l{n}\n")).collect();
+        let report = coverage_failure_report(3, &output).expect("failure reported");
+        assert!(
+            report.starts_with(
+                "Coverage command exited 3. Reports already on disk will not be read.\n"
+            )
+        );
+        assert!(report.contains("l5\n"));
+        assert!(!report.contains("l4\n"));
+        assert!(report.ends_with("l24\n"));
+    }
+
+    /// MU-3: a failed coverage command with no output reports only its exit code.
+    #[test]
+    fn mu_3_coverage_failure_without_output_has_no_tail() {
+        assert_eq!(
+            coverage_failure_report(2, ""),
+            Some(
+                "Coverage command exited 2. Reports already on disk will not be read.\n"
+                    .to_string()
+            )
+        );
+    }
+
+    /// MU-3: `--no-coverage`, `--use-existing-coverage`, and `--scan` each skip the coverage command on their own.
+    #[test]
+    fn mu_3_prepare_coverage_skips_when_any_skip_flag_is_set() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let flags: [fn(&mut Options); 3] = [
+            |o| o.no_coverage = true,
+            |o| o.use_existing_coverage = true,
+            |o| o.scan = true,
+        ];
+        for set in flags {
+            let mut options = Options {
+                coverage_command: Some("exit 3".to_string()),
+                ..Options::default()
+            };
+            set(&mut options);
+            assert_eq!(prepare_coverage(&options, dir.path(), &[]), 0);
+        }
     }
 }

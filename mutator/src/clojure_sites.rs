@@ -165,7 +165,10 @@ fn lookup(
 
 /// 1-based line of `offset`, given the byte offsets of every newline.
 fn line_of(newlines: &[usize], offset: usize) -> usize {
-    newlines.partition_point(|&newline| newline < offset) + 1
+    newlines
+        .binary_search(&offset)
+        .unwrap_or_else(|index| index)
+        + 1
 }
 
 #[cfg(test)]
