@@ -1,0 +1,264 @@
+// upstream: https://github.com/unclebob/crapper
+// upstream-commit: 6fd92c4c9bcc56efb64a2f8743d5a2993bcfd42d
+// upstream-path: tests/test_cli.py, tests/test_edges.py
+// license: MIT
+
+//! Black-box tests of the `crapper` binary's command-line behavior.
+
+use std::fs;
+use std::path::Path;
+use std::process::{Command, Output};
+
+const CHOOSE_SOURCE: &str = "def choose(x):\n    if x > 0:\n        return 1\n    elif x < 0:\n        return -1\n    return 0\n";
+
+fn dial_source() -> String {
+    let mut source = String::from("def dial(x):\n");
+    for n in 1..=9 {
+        source.push_str(&format!("    if x == {n}:\n        return {n}\n"));
+    }
+    source.push_str("    return 0\n");
+    source
+}
+
+fn crapper(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_crapper"))
+        .args(args)
+        .output()
+        .expect("crapper binary runs")
+}
+
+fn crapper_in(root: &Path, args: &[&str]) -> Output {
+    let root = root.to_str().expect("utf-8 temp path");
+    let mut full = vec!["--root", root];
+    full.extend_from_slice(args);
+    crapper(&full)
+}
+
+fn stdout(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+fn stderr(output: &Output) -> String {
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+fn exit_code(output: &Output) -> i32 {
+    output.status.code().expect("process exits normally")
+}
+
+fn write_file(root: &Path, relative: &str, content: &str) {
+    let path = root.join(relative);
+    fs::create_dir_all(path.parent().expect("file has parent")).expect("create dirs");
+    fs::write(path, content).expect("write file");
+}
+
+fn lcov_record(path: &str, lines: u32, hits: u32) -> String {
+    let mut record = format!("SF:{path}\n");
+    for line in 1..=lines {
+        record.push_str(&format!("DA:{line},{hits}\n"));
+    }
+    record.push_str("end_of_record\n");
+    record
+}
+
+fn write_lcov(root: &Path, records: &str) {
+    write_file(root, "target/coverage/python/lcov.info", records);
+}
+
+fn git(root: &Path, args: &[&str]) {
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+        .args(args)
+        .status()
+        .expect("git runs");
+    assert!(status.success(), "git {args:?} failed");
+}
+
+// CR-1, AC-13
+#[test]
+fn cr_1_ac_13_help_exits_zero_and_prints_usage() {
+    let output = crapper(&["--help"]);
+    assert_eq!(exit_code(&output), 0);
+    assert!(stdout(&output).contains("Usage: crapper [options] [path-or-filter ...]"));
+}
+
+// CR-2, AC-9
+#[test]
+fn cr_2_ac_9_unknown_flag_exits_1_with_help_on_stderr() {
+    let output = crapper(&["--bogus"]);
+    assert_eq!(exit_code(&output), 1);
+    let err = stderr(&output);
+    assert!(err.contains("Unknown option: --bogus"));
+    assert!(err.contains("Usage: crapper"));
+}
+
+// CR-2, AC-9
+#[test]
+fn cr_2_ac_9_flag_missing_its_value_exits_1() {
+    let output = crapper(&["--root"]);
+    assert_eq!(exit_code(&output), 1);
+    assert!(stderr(&output).contains("--root requires a value"));
+}
+
+// CR-2, AC-9
+#[test]
+fn cr_2_ac_9_bad_threshold_exits_1() {
+    let output = crapper(&["--threshold", "abc"]);
+    assert_eq!(exit_code(&output), 1);
+    assert!(stderr(&output).contains("--threshold requires a number"));
+}
+
+// CR-2, AC-9
+#[test]
+fn cr_2_ac_9_no_coverage_with_coverage_command_exits_1() {
+    let output = crapper(&["--no-coverage", "--coverage-command", "true"]);
+    assert_eq!(exit_code(&output), 1);
+}
+
+// CR-17, AC-3
+#[test]
+fn cr_17_ac_3_threshold_below_worst_score_exits_2() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_lcov(root, &lcov_record("src/app.py", 6, 0));
+
+    let output = crapper_in(root, &["--use-existing-coverage", "--threshold", "10"]);
+    assert_eq!(exit_code(&output), 2);
+    assert!(stderr(&output).contains("CRAP threshold exceeded: 12.0 > 10.0"));
+}
+
+// CR-17, AC-3
+#[test]
+fn cr_17_ac_3_threshold_at_worst_score_exits_0() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_lcov(root, &lcov_record("src/app.py", 6, 0));
+
+    let output = crapper_in(root, &["--use-existing-coverage", "--threshold", "12"]);
+    assert_eq!(exit_code(&output), 0);
+}
+
+// CR-17, AC-3
+#[test]
+fn cr_17_ac_3_exact_score_10_0_exceeds_9_99_and_passes_10() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/dial.py", &dial_source());
+    write_lcov(root, &lcov_record("src/dial.py", 21, 1));
+
+    let exceeded = crapper_in(root, &["--use-existing-coverage", "--threshold", "9.99"]);
+    assert_eq!(exit_code(&exceeded), 2);
+    assert!(stderr(&exceeded).contains("CRAP threshold exceeded: 10.0 > 10.0"));
+
+    let passes = crapper_in(root, &["--use-existing-coverage", "--threshold", "10"]);
+    assert_eq!(exit_code(&passes), 0);
+}
+
+// CR-7, AC-4
+#[test]
+fn cr_7_ac_4_changed_selects_modified_staged_and_untracked() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    git(root, &["init", "-q"]);
+    write_file(root, "committed.py", "def kept_fn(x):\n    return x\n");
+    write_file(root, "modified.py", "def before_fn(x):\n    return x\n");
+    git(root, &["add", "."]);
+    git(root, &["commit", "-q", "-m", "init"]);
+
+    write_file(root, "modified.py", "def changed_fn(x):\n    return x\n");
+    write_file(root, "staged.py", "def staged_fn(x):\n    return x\n");
+    git(root, &["add", "staged.py"]);
+    write_file(root, "untracked.py", "def untracked_fn(x):\n    return x\n");
+
+    let output = crapper_in(root, &["--changed", "--no-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+    let out = stdout(&output);
+    assert!(out.contains("changed_fn"));
+    assert!(out.contains("staged_fn"));
+    assert!(out.contains("untracked_fn"));
+    assert!(!out.contains("kept_fn"));
+    assert!(!out.contains("before_fn"));
+}
+
+// CR-3
+#[test]
+fn cr_3_no_source_files_prints_message_and_exits_0() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let output = crapper_in(temp.path(), &["--no-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+    assert_eq!(stdout(&output), "No source files to analyze.\n");
+}
+
+// CR-4
+#[test]
+fn cr_4_snapshot_written_at_root_metrics_crap_edn() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_lcov(root, &lcov_record("src/app.py", 6, 0));
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+    assert!(root.join(".metrics/crap.edn").is_file());
+}
+
+// CR-NFR-1, AC-10
+#[test]
+fn cr_nfr_1_ac_10_two_runs_write_identical_snapshots() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(root, "src/dial.py", &dial_source());
+    write_lcov(
+        root,
+        &format!(
+            "{}{}",
+            lcov_record("src/app.py", 6, 0),
+            lcov_record("src/dial.py", 21, 1)
+        ),
+    );
+
+    crapper_in(root, &["--use-existing-coverage"]);
+    let first = fs::read(root.join(".metrics/crap.edn")).expect("first snapshot");
+    crapper_in(root, &["--use-existing-coverage"]);
+    let second = fs::read(root.join(".metrics/crap.edn")).expect("second snapshot");
+    assert_eq!(first, second);
+}
+
+// CR-16
+#[test]
+fn cr_16_report_first_row_is_worst_score() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(root, "src/dial.py", &dial_source());
+    write_lcov(
+        root,
+        &format!(
+            "{}{}",
+            lcov_record("src/app.py", 6, 0),
+            lcov_record("src/dial.py", 21, 1)
+        ),
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+    let out = stdout(&output);
+    let first_row = out
+        .lines()
+        .skip_while(|line| !line.starts_with("---"))
+        .nth(1)
+        .expect("report has a first data row");
+    assert!(
+        first_row.starts_with("choose"),
+        "first row was: {first_row}"
+    );
+    assert!(
+        first_row.trim_end().ends_with("12.0"),
+        "first row was: {first_row}"
+    );
+}
