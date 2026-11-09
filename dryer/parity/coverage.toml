@@ -1,0 +1,238 @@
+# Parity cases. Each case copies fixtures/<fixture>/ into a fresh temp directory,
+# once for the original and once for the port. The runner prepends
+# `--root <copy>` to `args` and runs with cwd set to the copy.
+#
+# git_setup = "changed" commits the fixture, then appends a comment to the first
+# two sorted source files (the second is staged), and adds an untracked copy of
+# the first file named changed_new.<ext>. --changed then has a known selection.
+#
+# covers names the README "What each language compares" row, or the flag or
+# behavior, that the case exercises. Left-out names are the README exclusions.
+#
+# Threshold fixture (fixtures/threshold): the pair scores 0.88 with the original.
+# The default run (0.82) reports it, --threshold 0.8 reports it, and
+# --threshold 0.9 reports nothing.
+
+[[case]]
+name = "default-clojure"
+fixture = "clojure"
+args = []
+covers = [
+  "row:clojure:candidate",
+  "row:clojure:ns-excluded",
+  "row:clojure:reader-conditional-left-out",
+  "row:clojure:syntax-quote",
+  "row:clojure:keyword-call",
+]
+
+[[case]]
+name = "default-java"
+fixture = "java"
+args = []
+covers = [
+  "row:java:candidate",
+  "row:java:constructor-left-out",
+  "row:java:abstract-method-left-out",
+  "row:java:anonymous-class-method-left-out",
+  "row:java:local-class-method-left-out",
+]
+
+[[case]]
+name = "default-go"
+fixture = "go"
+args = []
+covers = [
+  "row:go:candidate",
+  "row:go:method",
+  "row:go:function-literal-left-out",
+]
+
+[[case]]
+name = "default-typescript"
+fixture = "typescript"
+args = []
+covers = [
+  "row:typescript:candidate",
+  "row:typescript:top-level-arrow",
+  "row:typescript:class-method",
+  "row:typescript:nested-callback-left-out",
+  "row:typescript:tsx-file",
+]
+
+[[case]]
+name = "default-rust"
+fixture = "rust"
+args = []
+covers = [
+  "row:rust:candidate",
+  "row:rust:impl-method",
+  "row:rust:mod-tests-left-out",
+  "row:rust:closure-left-out",
+]
+
+[[case]]
+name = "default-python"
+fixture = "python"
+args = []
+covers = [
+  "row:python:candidate",
+  "row:python:method",
+  "row:python:nested-function-left-out",
+]
+
+[[case]]
+name = "help-long"
+fixture = "python"
+args = ["--help"]
+covers = ["--help"]
+
+[[case]]
+name = "help-short"
+fixture = "python"
+args = ["-h"]
+covers = ["-h"]
+
+[[case]]
+name = "root-flag"
+fixture = "python"
+args = ["--root", "."]
+covers = ["--root"]
+
+[[case]]
+name = "source-root-short"
+fixture = "java"
+args = ["-s", "src/billing"]
+covers = ["-s"]
+
+[[case]]
+name = "source-root-long"
+fixture = "java"
+args = ["--source-root", "src/billing"]
+covers = ["--source-root"]
+
+[[case]]
+name = "source-root-repeated"
+fixture = "java"
+args = ["-s", "src/billing", "--source-root", "src/shipping"]
+covers = ["-s repeated", "--source-root repeated"]
+
+[[case]]
+name = "changed"
+fixture = "go"
+git_setup = "changed"
+args = ["--changed"]
+covers = ["--changed"]
+
+[[case]]
+name = "threshold-0.8"
+fixture = "threshold"
+args = ["--threshold", "0.8"]
+covers = ["--threshold"]
+
+[[case]]
+name = "threshold-0.9"
+fixture = "threshold"
+args = ["--threshold", "0.9"]
+covers = ["--threshold", "above-pair-score"]
+
+[[case]]
+name = "threshold-missing-value"
+fixture = "python"
+args = ["--threshold"]
+covers = ["--threshold missing-value"]
+
+[[case]]
+name = "threshold-bad-number"
+fixture = "python"
+args = ["--threshold", "abc"]
+covers = ["--threshold bad-number"]
+
+[[case]]
+name = "min-lines"
+fixture = "python"
+args = ["--min-lines", "2"]
+covers = ["--min-lines"]
+
+[[case]]
+name = "min-lines-negative"
+fixture = "python"
+args = ["--min-lines", "-1"]
+covers = ["--min-lines negative-value"]
+
+[[case]]
+name = "min-nodes"
+fixture = "python"
+args = ["--min-nodes", "5"]
+covers = ["--min-nodes"]
+
+[[case]]
+name = "min-nodes-bad-number"
+fixture = "python"
+args = ["--min-nodes", "x"]
+covers = ["--min-nodes bad-number"]
+
+[[case]]
+name = "format-text"
+fixture = "python"
+args = ["--format", "text"]
+covers = ["--format text"]
+
+[[case]]
+name = "format-edn"
+fixture = "python"
+args = ["--format", "edn"]
+covers = ["--format edn"]
+
+[[case]]
+name = "format-unknown"
+fixture = "python"
+args = ["--format", "xml"]
+covers = ["--format unknown-format"]
+
+[[case]]
+name = "text-flag"
+fixture = "python"
+args = ["--text"]
+covers = ["--text"]
+
+[[case]]
+name = "edn-flag"
+fixture = "python"
+args = ["--edn"]
+covers = ["--edn"]
+
+[[case]]
+name = "positional-path"
+fixture = "clojure"
+args = ["src/billing/invoice.clj", "src/billing/receipt.clj"]
+covers = ["positional-path"]
+
+[[case]]
+name = "positional-directory"
+fixture = "clojure"
+args = ["src/billing"]
+covers = ["positional-directory"]
+
+[[case]]
+name = "positional-filter"
+fixture = "clojure"
+args = ["billing"]
+covers = ["positional-filter"]
+
+[[case]]
+name = "no-candidates"
+fixture = "clojure"
+args = ["--threshold", "0.95"]
+covers = ["no-candidates"]
+
+[[case]]
+name = "unknown-flag"
+fixture = "python"
+args = ["--nope"]
+covers = ["--nope"]
+
+[[case]]
+name = "no-source-files"
+fixture = "python"
+args = ["-s", "nothing-here"]
+covers = ["no-source-files"]

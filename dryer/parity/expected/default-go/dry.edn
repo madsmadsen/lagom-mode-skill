@@ -1,0 +1,8 @@
+{:candidates [
+ {:score 1.0
+  :language "go"
+  :left {:file "src/billing/invoice.go", :start-line 3, :end-line 14}
+  :right {:file "src/billing/receipt.go", :start-line 3, :end-line 14}
+  :left-nodes 144
+  :right-nodes 144}
+]}

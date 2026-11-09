@@ -1,0 +1,8 @@
+{:candidates [
+ {:score 0.846153846154
+  :language "java"
+  :left {:file "src/billing/Invoice.java", :start-line 6, :end-line 17}
+  :right {:file "src/billing/Receipt.java", :start-line 6, :end-line 18}
+  :left-nodes 149
+  :right-nodes 172}
+]}

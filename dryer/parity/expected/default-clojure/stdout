@@ -1,0 +1,3 @@
+DUPLICATE score=0.89
+  src/billing/invoice.clj:3-13
+  src/billing/receipt.clj:3-14

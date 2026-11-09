@@ -1,0 +1,8 @@
+{:candidates [
+ {:score 1.0
+  :language "typescript"
+  :left {:file "src/billing/invoice.ts", :start-line 1, :end-line 12}
+  :right {:file "src/billing/receipt.ts", :start-line 1, :end-line 12}
+  :left-nodes 123
+  :right-nodes 123}
+]}

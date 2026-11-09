@@ -1,0 +1,3 @@
+DUPLICATE score=0.85
+  src/billing/Invoice.java:6-17
+  src/billing/Receipt.java:6-18

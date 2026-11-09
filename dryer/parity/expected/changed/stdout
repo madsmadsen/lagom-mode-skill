@@ -1,0 +1,11 @@
+DUPLICATE score=1.00
+  src/billing/changed_new.go:3-14
+  src/billing/invoice.go:3-14
+
+DUPLICATE score=1.00
+  src/billing/changed_new.go:3-14
+  src/billing/receipt.go:3-14
+
+DUPLICATE score=1.00
+  src/billing/invoice.go:3-14
+  src/billing/receipt.go:3-14

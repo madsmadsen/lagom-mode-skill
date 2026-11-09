@@ -1,0 +1,8 @@
+{:candidates [
+ {:score 1.0
+  :language "python"
+  :left {:file "src/billing/invoice.py", :start-line 1, :end-line 9}
+  :right {:file "src/billing/receipt.py", :start-line 1, :end-line 9}
+  :left-nodes 102
+  :right-nodes 102}
+]}

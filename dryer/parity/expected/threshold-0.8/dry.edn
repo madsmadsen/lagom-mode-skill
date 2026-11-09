@@ -1,0 +1,8 @@
+{:candidates [
+ {:score 0.880952380952
+  :language "python"
+  :left {:file "src/a.py", :start-line 1, :end-line 9}
+  :right {:file "src/b.py", :start-line 1, :end-line 11}
+  :left-nodes 102
+  :right-nodes 128}
+]}

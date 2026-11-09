@@ -1,0 +1,13 @@
+# Accepted differences between the Python original and the Rust port (DR-PB-3).
+# Empty until a difference is reviewed and approved.
+#
+# Each entry is a [[fix]] table with these keys:
+#   id                    short unique name, for example "fix-001"
+#   fixture               name of the [[case]] in coverage.toml whose difference is accepted
+#   upstream              the original behavior, quoted from the original output
+#   changed_behavior      what the port does instead, and why
+#   approved_by           reviewer name; Mads Madsen approves every entry (DR-PB-6)
+#   uml_viewer_commit     uml viewer commit checked against the change
+#   uml_viewer_checked_on date of that check, YYYY-MM-DD
+# The runner reports a difference for a listed case as ACCEPTED. It requires
+# id, fixture, and approved_by.

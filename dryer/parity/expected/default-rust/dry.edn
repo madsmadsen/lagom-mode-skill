@@ -1,0 +1,8 @@
+{:candidates [
+ {:score 0.857142857143
+  :language "rust"
+  :left {:file "src/billing/invoice.rs", :start-line 1, :end-line 12}
+  :right {:file "src/billing/receipt.rs", :start-line 1, :end-line 13}
+  :left-nodes 130
+  :right-nodes 149}
+]}

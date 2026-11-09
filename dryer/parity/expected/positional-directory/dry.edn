@@ -1,0 +1,8 @@
+{:candidates [
+ {:score 0.890909090909
+  :language "clojure"
+  :left {:file "src/billing/invoice.clj", :start-line 3, :end-line 13}
+  :right {:file "src/billing/receipt.clj", :start-line 3, :end-line 14}
+  :left-nodes 158
+  :right-nodes 166}
+]}

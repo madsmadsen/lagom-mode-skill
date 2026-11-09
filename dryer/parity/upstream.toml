@@ -1,0 +1,4 @@
+# Pinned upstream Python dryer. The parity suite runs against this exact commit (DR-PB-1).
+# Changing repository or commit requires a new parity run (DR-PB-2).
+repository = "https://github.com/unclebob/dryer"
+commit = "66ff6d21a42c04afcad89c78a80066176d1294b0"
