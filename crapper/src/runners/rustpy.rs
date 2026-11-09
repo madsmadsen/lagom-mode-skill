@@ -75,29 +75,33 @@ fn make_report_dir(report: &Path) {
 }
 
 fn remove_if_present(path: &Path) {
-    match fs::remove_file(path) {
-        Ok(()) => {}
-        Err(err) if err.kind() == ErrorKind::NotFound => {}
-        Err(err) => panic!("cannot remove {}: {err}", path.display()),
+    if let Err(err) = fs::remove_file(path) {
+        if err.kind() != ErrorKind::NotFound {
+            panic!("cannot remove {}: {err}", path.display());
+        }
     }
 }
 
 /// Run each step in order. Announcements go to stderr before the command they describe.
 /// Returns the status of the last command, which decides whether the install worked.
-fn execute(steps: &[Step], cwd: &Path) -> i32 {
+fn execute(steps: &[Step], cwd: &Path, exec: &mut dyn FnMut(&Cmd, &Path) -> i32) -> i32 {
     let mut code = 0;
     for step in steps {
         match step {
             Step::Announce(message) => warn(message),
             Step::Run { cmd, on_failure } => {
-                code = run_shell(cmd, cwd);
-                if let (true, Some(message)) = (code != 0, on_failure) {
-                    warn(message);
-                }
+                code = exec(cmd, cwd);
+                warn_failure(code, *on_failure);
             }
         }
     }
     code
+}
+
+fn warn_failure(code: i32, on_failure: Option<&str>) {
+    if let (true, Some(message)) = (code != 0, on_failure) {
+        warn(message);
+    }
 }
 
 fn rust_modules(root: &Path, files: &[PathBuf]) -> Vec<PathBuf> {
@@ -139,16 +143,26 @@ fn rust_kind_after_install(code: i32, llvm_on_path: bool) -> Option<&'static str
     (code == 0 && llvm_on_path).then_some("llvm-cov")
 }
 
-fn rust_kind() -> Option<&'static str> {
-    if let Some(kind) = detected_rust_kind(on_path("cargo-llvm-cov"), on_path("cargo-tarpaulin")) {
-        return Some(kind);
-    }
-    let code = execute(&rust_install_plan(on_path("rustup")), &home());
-    let kind = rust_kind_after_install(code, on_path("cargo-llvm-cov"));
+fn install_rust_kind(
+    has_tool: &dyn Fn(&str) -> bool,
+    home: &Path,
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) -> Option<&'static str> {
+    let code = execute(&rust_install_plan(has_tool("rustup")), home, exec);
+    let kind = rust_kind_after_install(code, has_tool("cargo-llvm-cov"));
     if kind.is_none() {
         warn("Rust coverage will score 0%.");
     }
     kind
+}
+
+fn rust_kind(
+    has_tool: &dyn Fn(&str) -> bool,
+    home: &Path,
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) -> Option<&'static str> {
+    detected_rust_kind(has_tool("cargo-llvm-cov"), has_tool("cargo-tarpaulin"))
+        .or_else(|| install_rust_kind(has_tool, home, exec))
 }
 
 fn rust_coverage_command(kind: &str, report: &Path) -> Cmd {
@@ -273,16 +287,21 @@ fn module_install_steps(py: &str, module: &str) -> Vec<Step> {
     ]
 }
 
-fn ensure_python_module(py: &str, package: &Path, module: &str) -> bool {
-    run_shell(&module_probe(py, module), package) == 0
-        || execute(&module_install_steps(py, module), package) == 0
+fn ensure_python_module(
+    py: &str,
+    package: &Path,
+    module: &str,
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) -> bool {
+    exec(&module_probe(py, module), package) == 0
+        || execute(&module_install_steps(py, module), package, exec) == 0
 }
 
-fn python_kind(py: &str, package: &Path) -> &'static str {
+fn python_kind(py: &str, package: &Path, exec: &mut dyn FnMut(&Cmd, &Path) -> i32) -> &'static str {
     if !uses_pytest(package) {
         return "unittest";
     }
-    if ensure_python_module(py, package, "pytest") {
+    if ensure_python_module(py, package, "pytest", exec) {
         return "pytest";
     }
     warn(&format!(
@@ -310,67 +329,106 @@ fn python_run_warning(package: &Path, test_code: i32, lcov_code: Option<i32>) ->
     }
 }
 
-fn record_python_lcov(package: &Path, code: i32, data_file: &Path, lcov: &Cmd) {
-    let lcov_code = data_file.exists().then(|| run_shell(lcov, package));
+fn record_python_lcov(
+    package: &Path,
+    code: i32,
+    data_file: &Path,
+    lcov: &Cmd,
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) {
+    let lcov_code = data_file.exists().then(|| exec(lcov, package));
     if let Some(message) = python_run_warning(package, code, lcov_code) {
         warn(&message);
     }
 }
 
-pub(crate) fn cover_python(root: &Path, files: &[PathBuf]) {
+fn cover_python_package(
+    root: &Path,
+    files: &[PathBuf],
+    package: &Path,
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) {
+    let report = coverage_report(root, package, "python");
+    let py = python_executable(package);
+    if !ensure_python_module(&py, package, "coverage", exec) {
+        warn(&format!(
+            "coverage is missing in {}. Python coverage will score 0%.",
+            package.display()
+        ));
+        return;
+    }
+    let data_file = report_dir(&report).join(".coverage");
+    make_report_dir(&report);
+    remove_if_present(&report);
+    remove_if_present(&data_file);
+    let kind = python_kind(&py, package, exec);
+    let (run_cmd, lcov_cmd) = python_coverage_commands(
+        &py,
+        kind,
+        &data_file,
+        &report,
+        &python_sources(package, files),
+    );
+    let code = exec(&run_cmd, package);
+    record_python_lcov(package, code, &data_file, &lcov_cmd, exec);
+}
+
+fn cover_python_with(root: &Path, files: &[PathBuf], exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
     for package in python_roots(root, files) {
-        let report = coverage_report(root, &package, "python");
-        let py = python_executable(&package);
-        if !ensure_python_module(&py, &package, "coverage") {
-            warn(&format!(
-                "coverage is missing in {}. Python coverage will score 0%.",
-                package.display()
-            ));
-            continue;
-        }
-        let data_file = report_dir(&report).join(".coverage");
-        make_report_dir(&report);
-        remove_if_present(&report);
-        remove_if_present(&data_file);
-        let kind = python_kind(&py, &package);
-        let (run_cmd, lcov_cmd) = python_coverage_commands(
-            &py,
-            kind,
-            &data_file,
-            &report,
-            &python_sources(&package, files),
-        );
-        let code = run_shell(&run_cmd, &package);
-        record_python_lcov(&package, code, &data_file, &lcov_cmd);
+        cover_python_package(root, files, &package, exec);
     }
 }
 
-pub(crate) fn cover_rust(root: &Path, files: &[PathBuf]) {
+pub(crate) fn cover_python(root: &Path, files: &[PathBuf]) {
+    cover_python_with(root, files, &mut run_shell);
+}
+
+fn run_rust_module(
+    root: &Path,
+    module: &Path,
+    kind: &str,
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) {
+    let report = coverage_report(root, module, "rust");
+    make_report_dir(&report);
+    remove_if_present(&report);
+    let code = exec(&rust_coverage_command(kind, &report), module);
+    if code != 0 {
+        warn(&format!(
+            "Rust coverage exited {code} in {}. Rust coverage will score 0%.",
+            module.display()
+        ));
+    }
+}
+
+fn cover_rust_with(
+    root: &Path,
+    files: &[PathBuf],
+    has_tool: &dyn Fn(&str) -> bool,
+    home: &Path,
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) {
     let modules = rust_modules(root, files);
     if modules.is_empty() {
         warn("No Cargo.toml; skipping Rust coverage.");
         return;
     }
-    let Some(kind) = rust_kind() else {
+    let Some(kind) = rust_kind(has_tool, home, exec) else {
         return;
     };
-    for module in modules {
-        let report = coverage_report(root, &module, "rust");
-        make_report_dir(&report);
-        remove_if_present(&report);
-        let code = run_shell(&rust_coverage_command(kind, &report), &module);
-        if code != 0 {
-            warn(&format!(
-                "Rust coverage exited {code} in {}. Rust coverage will score 0%.",
-                module.display()
-            ));
-        }
+    for module in &modules {
+        run_rust_module(root, module, kind, exec);
     }
+}
+
+pub(crate) fn cover_rust(root: &Path, files: &[PathBuf]) {
+    cover_rust_with(root, files, &on_path, &home(), &mut run_shell);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::os::unix::fs::PermissionsExt;
     use tempfile::tempdir;
 
@@ -554,7 +612,8 @@ mod tests {
     #[test]
     fn cr_13_python_kind_is_unittest_without_pytest_configuration() {
         let bare = tempdir().unwrap();
-        assert_eq!(python_kind("python3", bare.path()), "unittest");
+        let mut exec = |_: &Cmd, _: &Path| -> i32 { panic!("no command expected") };
+        assert_eq!(python_kind("python3", bare.path(), &mut exec), "unittest");
     }
 
     // CR-13
@@ -702,5 +761,306 @@ mod tests {
         assert!(on_path_in(path_var, "cargo-llvm-cov"));
         assert!(!on_path_in(path_var, "cargo-tarpaulin"));
         assert!(!on_path_in(path_var, "missing"));
+    }
+
+    fn is_coverage_run(cmd: &Cmd) -> bool {
+        matches!(cmd, Cmd::Argv(parts) if parts.iter().any(|part| part.as_str() == "run"))
+    }
+
+    // CR-13
+    #[test]
+    fn cr_13_remove_if_present_deletes_an_existing_file() {
+        let tmp = tempdir().unwrap();
+        let file = write(tmp.path(), "lcov.info", "");
+        remove_if_present(&file);
+        assert!(!file.exists());
+    }
+
+    // CR-13
+    #[test]
+    fn cr_13_remove_if_present_ignores_a_missing_file() {
+        let tmp = tempdir().unwrap();
+        remove_if_present(&tmp.path().join("absent.info"));
+    }
+
+    // CR-13
+    #[test]
+    #[should_panic(expected = "cannot remove")]
+    fn cr_13_remove_if_present_panics_on_any_other_failure() {
+        let tmp = tempdir().unwrap();
+        let dir = tmp.path().join("report");
+        fs::create_dir(&dir).unwrap();
+        remove_if_present(&dir);
+    }
+
+    // CR-13
+    #[test]
+    fn cr_13_execute_runs_each_command_in_order_and_returns_the_last_status() {
+        let tmp = tempdir().unwrap();
+        let steps = vec![
+            Step::Announce("Installing demo.".to_string()),
+            Step::Run {
+                cmd: argv(&["a"]),
+                on_failure: None,
+            },
+            Step::Run {
+                cmd: argv(&["b"]),
+                on_failure: Some("b failed."),
+            },
+        ];
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            if *cmd == argv(&["b"]) {
+                3
+            } else {
+                0
+            }
+        };
+        assert_eq!(execute(&steps, tmp.path(), &mut exec), 3);
+        assert_eq!(
+            calls,
+            vec![
+                (argv(&["a"]), tmp.path().to_path_buf()),
+                (argv(&["b"]), tmp.path().to_path_buf()),
+            ]
+        );
+    }
+
+    // CR-14
+    #[test]
+    fn cr_14_rust_kind_uses_a_tool_already_on_path_without_installing() {
+        let home = tempdir().unwrap();
+        let has_tool = |name: &str| name == "cargo-tarpaulin";
+        let mut exec = |_: &Cmd, _: &Path| -> i32 { panic!("no install expected") };
+        assert_eq!(
+            rust_kind(&has_tool, home.path(), &mut exec),
+            Some("tarpaulin")
+        );
+    }
+
+    // CR-14
+    #[test]
+    fn cr_14_rust_kind_installs_cargo_llvm_cov_when_no_tool_is_present() {
+        let home = tempdir().unwrap();
+        let installed = Cell::new(false);
+        let has_tool =
+            |name: &str| name == "rustup" || (name == "cargo-llvm-cov" && installed.get());
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            installed.set(true);
+            0
+        };
+        assert_eq!(
+            rust_kind(&has_tool, home.path(), &mut exec),
+            Some("llvm-cov")
+        );
+        let at_home = home.path().to_path_buf();
+        assert_eq!(
+            calls,
+            vec![
+                (
+                    argv(&["rustup", "component", "add", "llvm-tools-preview"]),
+                    at_home.clone()
+                ),
+                (
+                    argv(&["cargo", "install", "cargo-llvm-cov", "--locked"]),
+                    at_home
+                ),
+            ]
+        );
+    }
+
+    // CR-14
+    #[test]
+    fn cr_14_rust_kind_is_none_when_the_install_fails() {
+        let home = tempdir().unwrap();
+        let has_tool = |name: &str| name == "rustup";
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, _cwd: &Path| {
+            calls.push(cmd.clone());
+            1
+        };
+        assert_eq!(rust_kind(&has_tool, home.path(), &mut exec), None);
+        assert_eq!(
+            calls,
+            vec![
+                argv(&["rustup", "component", "add", "llvm-tools-preview"]),
+                argv(&["cargo", "install", "cargo-llvm-cov", "--locked"]),
+            ]
+        );
+    }
+
+    // CR-13
+    #[test]
+    fn cr_13_rust_coverage_runs_the_tool_in_each_module_and_clears_the_old_report() {
+        let tmp = tempdir().unwrap();
+        write(
+            tmp.path(),
+            "src-tauri/Cargo.toml",
+            "[package]\nname = \"bookwriter\"\n",
+        );
+        let lib = write(
+            tmp.path(),
+            "src-tauri/src/lib.rs",
+            "pub fn read_text() {}\n",
+        );
+        let module = resolve(&tmp.path().join("src-tauri"));
+        let report = coverage_report(tmp.path(), &module, "rust");
+        write(
+            tmp.path(),
+            "target/coverage/rust/src-tauri/lcov.info",
+            "stale",
+        );
+        let has_tool = |name: &str| name == "cargo-llvm-cov";
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            2
+        };
+        cover_rust_with(tmp.path(), &[lib], &has_tool, tmp.path(), &mut exec);
+        assert_eq!(
+            calls,
+            vec![(rust_coverage_command("llvm-cov", &report), module)]
+        );
+        assert!(!report.exists());
+        assert!(report.parent().unwrap().is_dir());
+    }
+
+    // CR-13
+    #[test]
+    fn cr_13_rust_coverage_without_a_cargo_manifest_runs_nothing() {
+        let tmp = tempdir().unwrap();
+        let lib = write(tmp.path(), "scripts/lib.rs", "");
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, _cwd: &Path| {
+            calls.push(cmd.clone());
+            0
+        };
+        cover_rust_with(tmp.path(), &[lib], &|_: &str| true, tmp.path(), &mut exec);
+        assert!(calls.is_empty());
+    }
+
+    // CR-14
+    #[test]
+    fn cr_14_rust_coverage_stops_when_no_tool_can_be_installed() {
+        let tmp = tempdir().unwrap();
+        write(tmp.path(), "Cargo.toml", "[package]\nname = \"demo\"\n");
+        let lib = write(tmp.path(), "src/lib.rs", "");
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, _cwd: &Path| {
+            calls.push(cmd.clone());
+            1
+        };
+        cover_rust_with(tmp.path(), &[lib], &|_: &str| false, tmp.path(), &mut exec);
+        assert_eq!(
+            calls,
+            vec![argv(&["cargo", "install", "cargo-llvm-cov", "--locked"])]
+        );
+    }
+
+    // CR-13
+    #[test]
+    fn cr_13_python_coverage_runs_pytest_and_records_lcov_once_data_is_written() {
+        let tmp = tempdir().unwrap();
+        let root = resolve(tmp.path());
+        write(
+            &root,
+            "pyproject.toml",
+            "[tool.pytest.ini_options]\ntestpaths = ['tests']\n",
+        );
+        let source = write(&root, "src/demo/box.py", "def choose(x):\n    return x\n");
+        let test = write(
+            &root,
+            "tests/test_box.py",
+            "def test_choose():\n    assert True\n",
+        );
+        let report = coverage_report(&root, &root, "python");
+        let data = report_dir(&report).join(".coverage");
+        let (run, lcov) = python_coverage_commands("python3", "pytest", &data, &report, "src");
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            if is_coverage_run(cmd) {
+                write(cwd, "target/coverage/python/.coverage", "");
+            }
+            0
+        };
+        cover_python_with(&root, &[source, test], &mut exec);
+        assert_eq!(
+            calls,
+            vec![
+                (argv(&["python3", "-c", "import coverage"]), root.clone()),
+                (argv(&["python3", "-c", "import pytest"]), root.clone()),
+                (run, root.clone()),
+                (lcov, root.clone()),
+            ]
+        );
+    }
+
+    // CR-13
+    #[test]
+    fn cr_13_python_coverage_without_a_data_file_skips_lcov_and_uses_unittest() {
+        let tmp = tempdir().unwrap();
+        let root = resolve(tmp.path());
+        let source = write(&root, "demo/app.py", "def run():\n    return 1\n");
+        let report = coverage_report(&root, &root, "python");
+        let data = report_dir(&report).join(".coverage");
+        let (run, _lcov) = python_coverage_commands("python3", "unittest", &data, &report, "demo");
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            0
+        };
+        cover_python_with(&root, &[source], &mut exec);
+        assert_eq!(
+            calls,
+            vec![
+                (argv(&["python3", "-c", "import coverage"]), root.clone()),
+                (run, root.clone()),
+            ]
+        );
+    }
+
+    // CR-14
+    #[test]
+    fn cr_14_python_coverage_is_skipped_when_coverage_cannot_be_installed() {
+        let tmp = tempdir().unwrap();
+        let root = resolve(tmp.path());
+        let source = write(&root, "demo/app.py", "");
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            1
+        };
+        cover_python_with(&root, &[source], &mut exec);
+        assert_eq!(
+            calls,
+            vec![
+                (argv(&["python3", "-c", "import coverage"]), root.clone()),
+                (
+                    argv(&[
+                        "python3",
+                        "-m",
+                        "pip",
+                        "install",
+                        "--disable-pip-version-check",
+                        "coverage",
+                    ]),
+                    root.clone()
+                ),
+            ]
+        );
+    }
+
+    // CR-14
+    #[test]
+    fn cr_14_python_kind_falls_back_to_unittest_when_pytest_cannot_be_installed() {
+        let tmp = tempdir().unwrap();
+        let root = resolve(tmp.path());
+        write(&root, "pytest.ini", "[pytest]\n");
+        let mut exec = |_: &Cmd, _: &Path| 1;
+        assert_eq!(python_kind("python3", &root, &mut exec), "unittest");
     }
 }

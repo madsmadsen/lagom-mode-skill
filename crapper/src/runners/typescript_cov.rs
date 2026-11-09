@@ -35,52 +35,96 @@ type ManifestSnapshot = Vec<(PathBuf, Option<Vec<u8>>)>;
 struct PackageJsonError(String);
 
 pub(crate) fn cover_typescript(root: &Path, files: &[PathBuf]) {
+    cover_typescript_with(root, files, &mut run_shell);
+}
+
+fn cover_typescript_with(root: &Path, files: &[PathBuf], exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
     let packages = typescript_packages(root, files);
     if packages.is_empty() {
         warn("No package.json; skipping TypeScript coverage.");
         return;
     }
     for package in &packages {
-        cover_package(root, package, files);
+        cover_package_with(root, package, files, exec);
     }
 }
 
-fn cover_package(root: &Path, package: &Path, files: &[PathBuf]) {
-    let report = coverage_report(root, package, "typescript");
-    let Some(report_dir) = report.parent() else {
+fn cover_package_with(
+    root: &Path,
+    package: &Path,
+    files: &[PathBuf],
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) {
+    let Some((report_dir, command)) = plan_package(root, package, files) else {
         return;
     };
-    let command = match typescript_command(package, files, report_dir) {
-        Ok(Some(command)) => command,
+    if let Some(command) = ready_for_run(package, &report_dir, command, exec) {
+        run_report(package, command, exec);
+    }
+}
+
+/// The report directory and command for one package; `None` when the package is skipped.
+fn plan_package(root: &Path, package: &Path, files: &[PathBuf]) -> Option<(PathBuf, Vec<String>)> {
+    let report = coverage_report(root, package, "typescript");
+    let report_dir = report.parent()?.to_path_buf();
+    let command = planned_command(package, files, &report_dir)?;
+    Some((report_dir, command))
+}
+
+fn planned_command(package: &Path, files: &[PathBuf], report_dir: &Path) -> Option<Vec<String>> {
+    match typescript_command(package, files, report_dir) {
+        Ok(Some(command)) => Some(command),
         Ok(None) => {
             warn(&format!(
                 "No package.json test script in {}; skipping TypeScript coverage.",
                 package.display()
             ));
-            return;
+            None
         }
         Err(error) => {
             warn(&error.0);
-            return;
+            None
         }
-    };
-    if needs_vitest_provider(&command) && !ensure_vitest_coverage(package) {
-        return;
+    }
+}
+
+/// Makes the package ready for `command`: provider installed and report directory empty.
+/// `None` skips the package.
+fn ready_for_run(
+    package: &Path,
+    report_dir: &Path,
+    command: Vec<String>,
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) -> Option<Vec<String>> {
+    if !provider_ready(package, &command, exec) {
+        return None;
     }
     if let Err(error) = prepare_report(report_dir) {
         warn(&format!(
             "Could not prepare {}: {error}",
             report_dir.display()
         ));
-        return;
+        return None;
     }
-    let code = run_shell(&Cmd::Argv(command), package);
+    Some(command)
+}
+
+fn run_report(package: &Path, command: Vec<String>, exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
+    let code = exec(&Cmd::Argv(command), package);
     if code != 0 {
         warn(&format!(
             "TypeScript coverage exited {code} in {}. TypeScript coverage will score 0%.",
             package.display()
         ));
     }
+}
+
+fn provider_ready(
+    package: &Path,
+    command: &[String],
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) -> bool {
+    !needs_vitest_provider(command) || ensure_vitest_coverage_with(package, exec)
 }
 
 fn prepare_report(report_dir: &Path) -> io::Result<()> {
@@ -99,42 +143,51 @@ fn needs_vitest_provider(command: &[String]) -> bool {
         .any(|part| Path::new(part).file_name() == Some(OsStr::new("vitest")))
 }
 
-fn ensure_vitest_coverage(package: &Path) -> bool {
-    let provider = package.join("node_modules/@vitest/coverage-v8");
-    if provider.is_dir() {
+fn ensure_vitest_coverage_with(package: &Path, exec: &mut dyn FnMut(&Cmd, &Path) -> i32) -> bool {
+    if provider_installed(package) {
         return true;
     }
     let spec = vitest_provider_spec(vitest_version(package).as_deref());
     warn(&vitest_install_notice(&spec));
-    let install = vitest_install_command(&spec);
-    let code = restoring_manifests(package, || run_shell(&Cmd::Argv(install), package));
-    let ready = code == Some(0) && provider.is_dir();
+    install_provider(package, &spec, exec)
+}
+
+fn install_provider(package: &Path, spec: &str, exec: &mut dyn FnMut(&Cmd, &Path) -> i32) -> bool {
+    let install = vitest_install_command(spec);
+    let code = restoring_manifests(package, || exec(&Cmd::Argv(install), package));
+    let ready = code == Some(0) && provider_installed(package);
     if !ready {
         warn("Vitest's coverage provider is missing. TypeScript coverage will score 0%.");
     }
     ready
 }
 
+fn provider_installed(package: &Path) -> bool {
+    package.join("node_modules/@vitest/coverage-v8").is_dir()
+}
+
 /// Runs `install` and then puts every manifest back the way it was before it ran.
 /// Returns `None` (without running `install`) when the manifests cannot be read.
 fn restoring_manifests<T>(package: &Path, install: impl FnOnce() -> T) -> Option<T> {
-    let snapshot = match manifest_snapshot(package) {
-        Ok(snapshot) => snapshot,
-        Err(error) => {
+    let snapshot = manifest_snapshot(package)
+        .map_err(|error| {
             warn(&format!(
                 "Could not read package manifests in {}: {error}",
                 package.display()
             ));
-            return None;
-        }
-    };
+        })
+        .ok()?;
     let result = install();
-    for (path, content) in &snapshot {
+    restore_all(&snapshot);
+    Some(result)
+}
+
+fn restore_all(snapshot: &ManifestSnapshot) {
+    for (path, content) in snapshot {
         if let Err(error) = restore_one(path, content) {
             warn(&format!("Could not restore {}: {error}", path.display()));
         }
     }
-    Some(result)
 }
 
 fn manifest_snapshot(package: &Path) -> io::Result<ManifestSnapshot> {
@@ -154,12 +207,24 @@ fn manifest_snapshot(package: &Path) -> io::Result<ManifestSnapshot> {
 
 fn restore_one(path: &Path, content: &Option<Vec<u8>>) -> io::Result<()> {
     match content {
-        None if path.is_file() => fs::remove_file(path),
-        None => Ok(()),
-        Some(bytes) if fs::read(path).ok().as_deref() != Some(bytes.as_slice()) => {
-            fs::write(path, bytes)
-        }
-        Some(_) => Ok(()),
+        None => remove_if_present(path),
+        Some(bytes) => write_if_changed(path, bytes),
+    }
+}
+
+fn remove_if_present(path: &Path) -> io::Result<()> {
+    if path.is_file() {
+        fs::remove_file(path)
+    } else {
+        Ok(())
+    }
+}
+
+fn write_if_changed(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    if fs::read(path).ok().as_deref() == Some(bytes) {
+        Ok(())
+    } else {
+        fs::write(path, bytes)
     }
 }
 
@@ -243,13 +308,18 @@ fn package_json(package: &Path) -> Result<Option<Map<String, Value>>, PackageJso
     }
     let text = fs::read_to_string(&path)
         .map_err(|error| PackageJsonError(format!("{}: {error}", path.display())))?;
-    match serde_json::from_str::<Value>(&text) {
-        Ok(Value::Object(data)) => Ok(Some(data)),
-        Ok(_) => Err(PackageJsonError(format!(
+    parse_object(&path, &text).map(Some)
+}
+
+fn parse_object(path: &Path, text: &str) -> Result<Map<String, Value>, PackageJsonError> {
+    let value: Value = serde_json::from_str(text)
+        .map_err(|error| PackageJsonError(format!("{}: {error}", path.display())))?;
+    match value {
+        Value::Object(data) => Ok(data),
+        _ => Err(PackageJsonError(format!(
             "{}: expected a JSON object",
             path.display()
         ))),
-        Err(error) => Err(PackageJsonError(format!("{}: {error}", path.display()))),
     }
 }
 
@@ -326,11 +396,18 @@ fn strings(parts: &[&str]) -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// Every command the fake executor saw, with the directory it was asked to run in.
+    type Calls = Vec<(Cmd, PathBuf)>;
+
     fn write(root: &Path, relative: &str, text: &str) -> PathBuf {
         let path = root.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, text).unwrap();
         path
+    }
+
+    fn is_install(cmd: &Cmd) -> bool {
+        matches!(cmd, Cmd::Argv(parts) if parts.iter().any(|part| part == "install"))
     }
 
     // CR-13 vitest owns its coverage; c8 is not used and test files are not included
@@ -454,6 +531,229 @@ mod tests {
         assert!(!report_dir.join("old.info").exists());
     }
 
+    // CR-13 a typescript package with a test script runs its command in the package directory
+    #[test]
+    fn cr_13_typescript_package_runs_its_test_command_in_the_package() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(
+            root,
+            "web/package.json",
+            r#"{"scripts":{"test":"node --test"}}"#,
+        );
+        let source = write(root, "web/src/app.ts", "export const n = 1\n");
+        let mut calls: Calls = Vec::new();
+        cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            0
+        });
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].1, fs::canonicalize(root.join("web")).unwrap());
+        let Cmd::Argv(parts) = &calls[0].0 else {
+            panic!("expected an argv command");
+        };
+        assert_eq!(parts.first().map(String::as_str), Some("npx"));
+        assert!(parts.ends_with(&strings(&["npm", "test"])));
+    }
+
+    // CR-13 no typescript source file means no package and no command
+    #[test]
+    fn cr_13_only_non_typescript_files_run_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(
+            root,
+            "package.json",
+            r#"{"scripts":{"test":"node --test"}}"#,
+        );
+        let source = write(root, "src/app.py", "print(1)\n");
+        let mut calls: Calls = Vec::new();
+        cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            0
+        });
+        assert!(calls.is_empty());
+    }
+
+    // CR-13 a package without a test or coverage script runs nothing
+    #[test]
+    fn cr_13_package_without_a_test_script_runs_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(root, "package.json", r#"{"scripts":{"build":"tsc"}}"#);
+        let source = write(root, "src/app.ts", "export const n = 1\n");
+        let mut calls: Calls = Vec::new();
+        cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            0
+        });
+        assert!(calls.is_empty());
+    }
+
+    // CR-13 an unreadable package.json runs nothing
+    #[test]
+    fn cr_13_unreadable_package_json_runs_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(root, "package.json", "{");
+        let source = write(root, "src/app.ts", "export const n = 1\n");
+        let mut calls: Calls = Vec::new();
+        cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            0
+        });
+        assert!(calls.is_empty());
+    }
+
+    // CR-13 a failing package does not stop the packages after it
+    #[test]
+    fn cr_13_a_failed_package_does_not_stop_the_next_package() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(
+            root,
+            "api/package.json",
+            r#"{"scripts":{"test":"node --test"}}"#,
+        );
+        write(
+            root,
+            "web/package.json",
+            r#"{"scripts":{"test":"node --test"}}"#,
+        );
+        let api = write(root, "api/src/a.ts", "export const a = 1\n");
+        let web = write(root, "web/src/w.ts", "export const w = 1\n");
+        let mut calls: Calls = Vec::new();
+        cover_typescript_with(root, &[api, web], &mut |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            1
+        });
+        let cwds: Vec<PathBuf> = calls.iter().map(|(_, cwd)| cwd.clone()).collect();
+        assert_eq!(
+            cwds,
+            vec![
+                fs::canonicalize(root.join("api")).unwrap(),
+                fs::canonicalize(root.join("web")).unwrap(),
+            ]
+        );
+    }
+
+    // CR-13 the stale report directory is cleared before the coverage command runs
+    #[test]
+    fn cr_13_stale_report_is_cleared_before_the_coverage_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(
+            root,
+            "package.json",
+            r#"{"scripts":{"test":"node --test"}}"#,
+        );
+        let source = write(root, "src/app.ts", "export const n = 1\n");
+        let report_dir = coverage_report(root, root, "typescript")
+            .parent()
+            .unwrap()
+            .to_path_buf();
+        fs::create_dir_all(&report_dir).unwrap();
+        let stale = report_dir.join("stale.info");
+        fs::write(&stale, "old").unwrap();
+        let mut ran = false;
+        let mut stale_present_at_run = true;
+        cover_typescript_with(root, &[source], &mut |_: &Cmd, _: &Path| {
+            ran = true;
+            stale_present_at_run = stale.exists();
+            0
+        });
+        assert!(ran);
+        assert!(!stale_present_at_run);
+    }
+
+    // CR-14 a vitest package without its coverage provider installs it, then runs vitest
+    #[test]
+    fn cr_14_vitest_provider_is_installed_before_the_vitest_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(root, "package.json", r#"{"scripts":{"test":"vitest run"}}"#);
+        write(root, "vitest.config.ts", "export default {}\n");
+        let source = write(root, "src/book.ts", "export const n = 1\n");
+        let mut calls: Calls = Vec::new();
+        cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            if is_install(cmd) {
+                fs::create_dir_all(cwd.join("node_modules/@vitest/coverage-v8")).unwrap();
+            }
+            0
+        });
+        assert_eq!(calls.len(), 2);
+        assert!(is_install(&calls[0].0));
+        assert_eq!(
+            calls[0].0,
+            Cmd::Argv(strings(&[
+                "npm",
+                "install",
+                "--no-save",
+                "--no-package-lock",
+                "@vitest/coverage-v8",
+            ]))
+        );
+        let Cmd::Argv(run) = &calls[1].0 else {
+            panic!("expected an argv command");
+        };
+        assert!(run.contains(&"run".to_string()));
+    }
+
+    // CR-14 a failed provider install skips the vitest run
+    #[test]
+    fn cr_14_failed_provider_install_skips_the_vitest_run() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(root, "package.json", r#"{"scripts":{"test":"vitest run"}}"#);
+        write(root, "vitest.config.ts", "export default {}\n");
+        let source = write(root, "src/book.ts", "export const n = 1\n");
+        let mut calls: Calls = Vec::new();
+        cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            1
+        });
+        assert_eq!(calls.len(), 1);
+        assert!(is_install(&calls[0].0));
+    }
+
+    // CR-14 an installed coverage provider is not installed again
+    #[test]
+    fn cr_14_installed_provider_is_not_reinstalled() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(root, "package.json", r#"{"scripts":{"test":"vitest run"}}"#);
+        write(root, "vitest.config.ts", "export default {}\n");
+        fs::create_dir_all(root.join("node_modules/@vitest/coverage-v8")).unwrap();
+        let source = write(root, "src/book.ts", "export const n = 1\n");
+        let mut calls: Calls = Vec::new();
+        cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            0
+        });
+        assert_eq!(calls.len(), 1);
+        assert!(!is_install(&calls[0].0));
+    }
+
+    // CR-14 package.json is put back after the provider install even when the install rewrites it
+    #[test]
+    fn cr_14_manifests_are_restored_after_the_provider_install() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let original = "{\"scripts\":{\"test\":\"vitest run\"}}";
+        let package_json = write(root, "package.json", original);
+        write(root, "vitest.config.ts", "export default {}\n");
+        let source = write(root, "src/book.ts", "export const n = 1\n");
+        cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
+            if is_install(cmd) {
+                fs::write(&package_json, "{\"name\":\"changed\"}\n").unwrap();
+                fs::create_dir_all(cwd.join("node_modules/@vitest/coverage-v8")).unwrap();
+            }
+            0
+        });
+        assert_eq!(fs::read_to_string(&package_json).unwrap(), original);
+    }
+
     // CR-14 package.json, the lockfile, and the shrinkwrap are put back after an install
     #[test]
     fn cr_14_manifests_are_restored_after_a_coverage_install() {
@@ -472,6 +772,20 @@ mod tests {
         assert_eq!(fs::read(&package_json).unwrap(), b"{\"name\":\"demo\"}\n");
         assert_eq!(fs::read(&lock).unwrap(), b"{\"lockfileVersion\":3}\n");
         assert!(!shrink.exists());
+    }
+
+    // CR-14 a lockfile that an install creates is removed again
+    #[test]
+    fn cr_14_lockfile_created_by_an_install_is_removed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let lock = root.join("package-lock.json");
+        let result = restoring_manifests(root, || {
+            fs::write(&lock, "{}").unwrap();
+            0
+        });
+        assert_eq!(result, Some(0));
+        assert!(!lock.exists());
     }
 
     // CR-14 the installed vitest version is read from node_modules
@@ -496,7 +810,10 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         fs::create_dir_all(root.join("node_modules/@vitest/coverage-v8")).unwrap();
-        assert!(ensure_vitest_coverage(root));
+        let ready = ensure_vitest_coverage_with(root, &mut |_: &Cmd, _: &Path| -> i32 {
+            panic!("no install expected when the provider is installed")
+        });
+        assert!(ready);
     }
 
     // CR-14 the provider is pinned to the installed vitest version

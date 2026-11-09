@@ -212,12 +212,18 @@ fn outside_language_dirs(coverage: &Path, path: &Path) -> bool {
         .is_ok_and(|relative| !relative.components().any(is_coverage_component))
 }
 
+fn is_cloverage_html(coverage: &Path, path: &Path) -> bool {
+    path.extension() == Some(OsStr::new("html"))
+        && !path.is_dir()
+        && outside_language_dirs(coverage, path)
+}
+
 fn remove_cloverage_html(coverage: &Path) {
-    for path in walk(coverage) {
-        let is_html = path.extension() == Some(OsStr::new("html"));
-        if is_html && !path.is_dir() && outside_language_dirs(coverage, &path) {
-            unlink(&path);
-        }
+    for path in walk(coverage)
+        .into_iter()
+        .filter(|path| is_cloverage_html(coverage, path))
+    {
+        unlink(&path);
     }
 }
 
@@ -254,18 +260,17 @@ fn clojure_commands() -> [Cmd; 2] {
     [argv(&["clj", "-M:cov", "--lcov"]), argv(&["clj", "-M:cov"])]
 }
 
-fn cover_clojure(root: &Path) {
-    if !root.join("deps.edn").is_file() && !root.join("bb.edn").is_file() {
+fn cover_clojure(root: &Path, files: &[PathBuf]) {
+    cover_clojure_with(root, files, &mut run_shell);
+}
+
+fn cover_clojure_with(root: &Path, _files: &[PathBuf], exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
+    if !has_clojure_config(root) {
         warn("No deps.edn or bb.edn; skipping Clojure coverage.");
         return;
     }
     clean_clojure(root);
-    let [with_lcov, plain] = clojure_commands();
-    let mut code = run_shell(&with_lcov, root);
-    if code != 0 {
-        warn("clj -M:cov --lcov failed; retrying without --lcov.");
-        code = run_shell(&plain, root);
-    }
+    let code = run_clojure(root, exec);
     if code != 0 {
         warn(&format!(
             "Clojure coverage exited {code}. Clojure coverage will score 0%."
@@ -273,29 +278,51 @@ fn cover_clojure(root: &Path) {
     }
 }
 
+fn has_clojure_config(root: &Path) -> bool {
+    root.join("deps.edn").is_file() || root.join("bb.edn").is_file()
+}
+
+/// Tries the `--lcov` alias, then the plain alias, and returns the status of the last run.
+fn run_clojure(root: &Path, exec: &mut dyn FnMut(&Cmd, &Path) -> i32) -> i32 {
+    let [with_lcov, plain] = clojure_commands();
+    if exec(&with_lcov, root) == 0 {
+        return 0;
+    }
+    warn("clj -M:cov --lcov failed; retrying without --lcov.");
+    exec(&plain, root)
+}
+
 fn maven_command() -> Cmd {
     argv(MAVEN)
 }
 
 fn cover_java(root: &Path, files: &[PathBuf]) {
+    cover_java_with(root, files, &mut run_shell);
+}
+
+fn cover_java_with(root: &Path, files: &[PathBuf], exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
     let modules = modules_with(files, ".java", "pom.xml", root);
     if modules.is_empty() {
         warn("No pom.xml; skipping Java coverage.");
         return;
     }
     for module in &modules {
-        clean_dir(&module.join("target").join("site").join("jacoco"));
-        let exec_file = module.join("target").join("jacoco.exec");
-        if exec_file.exists() {
-            unlink(&exec_file);
-        }
-        let code = run_shell(&maven_command(), module);
+        clean_jacoco(module);
+        let code = exec(&maven_command(), module);
         if code != 0 {
             warn(&format!(
                 "Java coverage exited {code} in {}. Java coverage will score 0%.",
                 module.display()
             ));
         }
+    }
+}
+
+fn clean_jacoco(module: &Path) {
+    clean_dir(&module.join("target").join("site").join("jacoco"));
+    let exec_file = module.join("target").join("jacoco.exec");
+    if exec_file.exists() {
+        unlink(&exec_file);
     }
 }
 
@@ -317,6 +344,10 @@ fn go_command(profile: &Path) -> Cmd {
 }
 
 fn cover_go(root: &Path, files: &[PathBuf]) {
+    cover_go_with(root, files, &mut run_shell);
+}
+
+fn cover_go_with(root: &Path, files: &[PathBuf], exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
     let modules = modules_with(files, ".go", "go.mod", root);
     if modules.is_empty() {
         warn("No go.mod; skipping Go coverage.");
@@ -324,22 +355,26 @@ fn cover_go(root: &Path, files: &[PathBuf]) {
     }
     for module in &modules {
         let profile = go_profile(module);
-        if let Some(dir) = profile.parent() {
-            attempt(
-                &format!("Could not create {}", dir.display()),
-                fs::create_dir_all(dir),
-            );
-        }
-        if profile.exists() {
-            unlink(&profile);
-        }
-        let code = run_shell(&go_command(&profile), module);
+        prepare_profile(&profile);
+        let code = exec(&go_command(&profile), module);
         if code != 0 {
             warn(&format!(
                 "Go coverage exited {code} in {}. Go coverage will score 0%.",
                 module.display()
             ));
         }
+    }
+}
+
+fn prepare_profile(profile: &Path) {
+    if let Some(dir) = profile.parent() {
+        attempt(
+            &format!("Could not create {}", dir.display()),
+            fs::create_dir_all(dir),
+        );
+    }
+    if profile.exists() {
+        unlink(profile);
     }
 }
 
@@ -353,29 +388,28 @@ fn run_custom(root: &Path, text: &str) -> i32 {
     code
 }
 
+type CoverFn = fn(&Path, &[PathBuf]);
+
+/// Each language's cover function, in the order they run.
+const COVERAGE_RUNNERS: &[(&str, CoverFn)] = &[
+    ("clojure", cover_clojure),
+    ("java", cover_java),
+    ("go", cover_go),
+    ("typescript", typescript_cov::cover_typescript),
+    ("python", rustpy::cover_python),
+    ("rust", rustpy::cover_rust),
+];
+
 pub fn run_coverage(root: &Path, files: &[PathBuf], command: Option<&str>) -> Option<i32> {
     let root = resolved(root);
     if let Some(text) = command.filter(|text| !text.is_empty()) {
         return Some(run_custom(&root, text));
     }
     let languages: HashSet<&str> = files.iter().filter_map(|file| language_of(file)).collect();
-    if languages.contains("clojure") {
-        cover_clojure(&root);
-    }
-    if languages.contains("java") {
-        cover_java(&root, files);
-    }
-    if languages.contains("go") {
-        cover_go(&root, files);
-    }
-    if languages.contains("typescript") {
-        typescript_cov::cover_typescript(&root, files);
-    }
-    if languages.contains("python") {
-        rustpy::cover_python(&root, files);
-    }
-    if languages.contains("rust") {
-        rustpy::cover_rust(&root, files);
+    for (language, cover) in COVERAGE_RUNNERS {
+        if languages.contains(language) {
+            cover(&root, files);
+        }
     }
     Some(0)
 }
@@ -551,5 +585,149 @@ mod tests {
     fn cr_13_empty_command_is_no_command() {
         let dir = tempdir().unwrap();
         assert_eq!(run_coverage(dir.path(), &[], Some("")), Some(0));
+    }
+
+    type Calls = Vec<(String, PathBuf)>;
+
+    /// Records each command as (text, cwd) and answers with the scripted exit codes in order, then 0.
+    fn scripted<'a>(calls: &'a mut Calls, codes: &'a [i32]) -> impl FnMut(&Cmd, &Path) -> i32 + 'a {
+        let mut codes = codes.iter().copied();
+        move |cmd: &Cmd, cwd: &Path| {
+            calls.push((show(cmd), cwd.to_path_buf()));
+            codes.next().unwrap_or(0)
+        }
+    }
+
+    // CR-13 Clojure without deps.edn or bb.edn runs no command
+    #[test]
+    fn cr_13_clojure_without_config_runs_nothing() {
+        let dir = tempdir().unwrap();
+        let mut calls = Calls::new();
+        cover_clojure_with(dir.path(), &[], &mut scripted(&mut calls, &[0]));
+        assert!(calls.is_empty());
+    }
+
+    // CR-13 Clojure retries the plain alias when the --lcov alias fails
+    #[test]
+    fn cr_13_clojure_retries_plain_alias_after_lcov_fails() {
+        let dir = tempdir().unwrap();
+        let root = resolved(dir.path());
+        touch(&root, "deps.edn", "{}");
+        let mut calls = Calls::new();
+        cover_clojure_with(&root, &[], &mut scripted(&mut calls, &[1, 0]));
+        assert_eq!(
+            calls,
+            vec![
+                ("clj -M:cov --lcov".to_string(), root.clone()),
+                ("clj -M:cov".to_string(), root.clone()),
+            ]
+        );
+    }
+
+    // CR-13 Clojure runs only the --lcov alias when it succeeds
+    #[test]
+    fn cr_13_clojure_stops_after_lcov_succeeds() {
+        let dir = tempdir().unwrap();
+        let root = resolved(dir.path());
+        touch(&root, "bb.edn", "{}");
+        let mut calls = Calls::new();
+        cover_clojure_with(&root, &[], &mut scripted(&mut calls, &[0]));
+        assert_eq!(calls, vec![("clj -M:cov --lcov".to_string(), root.clone())]);
+    }
+
+    // CR-13 Java without a pom.xml runs no Maven command
+    #[test]
+    fn cr_13_java_without_pom_runs_nothing() {
+        let dir = tempdir().unwrap();
+        let root = resolved(dir.path());
+        let files = vec![touch(&root, "src/Board.java", "class Board {}")];
+        let mut calls = Calls::new();
+        cover_java_with(&root, &files, &mut scripted(&mut calls, &[0]));
+        assert!(calls.is_empty());
+    }
+
+    // CR-13 Java runs Maven in each module and clears its stale JaCoCo output first
+    #[test]
+    fn cr_13_java_runs_maven_in_each_module_after_clearing_jacoco() {
+        let dir = tempdir().unwrap();
+        let root = resolved(dir.path());
+        touch(&root, "pom.xml", "<project/>");
+        touch(&root, "svc/pom.xml", "<project/>");
+        touch(&root, "target/jacoco.exec", "stale");
+        touch(&root, "target/site/jacoco/index.html", "stale");
+        let files = vec![
+            touch(&root, "src/Board.java", "class Board {}"),
+            touch(&root, "svc/App.java", "class App {}"),
+        ];
+        let mut calls = Calls::new();
+        cover_java_with(&root, &files, &mut scripted(&mut calls, &[0, 1]));
+        let maven = show(&maven_command());
+        assert_eq!(
+            calls,
+            vec![(maven.clone(), root.clone()), (maven, root.join("svc"))]
+        );
+        assert!(!root.join("target/jacoco.exec").exists());
+        assert!(!root.join("target/site/jacoco").exists());
+    }
+
+    // CR-13 Go without a go.mod runs no go test command
+    #[test]
+    fn cr_13_go_without_go_mod_runs_nothing() {
+        let dir = tempdir().unwrap();
+        let root = resolved(dir.path());
+        let files = vec![touch(&root, "main.go", "package main")];
+        let mut calls = Calls::new();
+        cover_go_with(&root, &files, &mut scripted(&mut calls, &[0]));
+        assert!(calls.is_empty());
+    }
+
+    // CR-13 Go writes a fresh profile under the module's target/coverage/go
+    #[test]
+    fn cr_13_go_writes_profile_under_module() {
+        let dir = tempdir().unwrap();
+        let root = resolved(dir.path());
+        touch(&root, "go.mod", "module demo");
+        let files = vec![touch(&root, "main.go", "package main")];
+        touch(&root, "target/coverage/go/coverage.out", "stale");
+        let mut calls = Calls::new();
+        cover_go_with(&root, &files, &mut scripted(&mut calls, &[0]));
+        let profile = root.join("target/coverage/go/coverage.out");
+        assert_eq!(calls, vec![(show(&go_command(&profile)), root.clone())]);
+        assert!(!profile.exists());
+    }
+
+    // CR-13 run_coverage with source files but no project markers runs nothing and returns 0
+    #[test]
+    fn cr_13_run_coverage_without_markers_returns_zero() {
+        let dir = tempdir().unwrap();
+        let root = resolved(dir.path());
+        let files = vec![
+            root.join("src/Board.java"),
+            root.join("main.go"),
+            root.join("a.clj"),
+        ];
+        assert_eq!(run_coverage(&root, &files, None), Some(0));
+    }
+
+    // CR-13 nearest checks a directory start first, and the directory itself counts
+    #[test]
+    fn cr_13_nearest_checks_a_directory_start_first() {
+        let dir = tempdir().unwrap();
+        let root = resolved(dir.path());
+        touch(&root, "pom.xml", "<project/>");
+        let inner = root.join("a");
+        fs::create_dir_all(&inner).unwrap();
+        assert_eq!(nearest(&root, "pom.xml", &root), Some(root.clone()));
+        assert_eq!(nearest(&inner, "pom.xml", &root), Some(root.clone()));
+    }
+
+    // CR-13 nearest returns None when the stop directory is not above the start
+    #[test]
+    fn cr_13_nearest_gives_none_when_stop_is_not_an_ancestor() {
+        let dir = tempdir().unwrap();
+        let other = tempdir().unwrap();
+        let start = resolved(dir.path());
+        let stop = resolved(other.path());
+        assert_eq!(nearest(&start, "crapper-no-such-marker", &stop), None);
     }
 }
