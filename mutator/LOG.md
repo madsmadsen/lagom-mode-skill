@@ -62,3 +62,25 @@ Method: ub-mode. Orchestrator plans and verifies; implementer agents
 - Not re-run after the fixes (scratch dir /tmp/mu was lost when the host reset): cli, report, model, clojure_reader, clojure_sites, edn (second pass),
   and a first pass of functions/clojure.rs (80 sites, its run never finished). Those files have fixes but no confirming rerun.
 - Final: cargo test 461 passed, clippy clean; original crapper max CRAP 9.0; original dryer no candidates.
+
+## Mutation gate closed (rerun of the open files)
+- Rebuilt the scratch setup under `/tmp/mgc`: original mutator (a5a0cb8) and crapper (6fd92c4) in a Python 3.12 venv for parity; the gate itself ran the
+  port's release binary on per-file scratch copies of this crate, with `--use-existing-coverage` (lcov from `cargo llvm-cov`, paths rewritten to the copy),
+  per-slot `CARGO_TARGET_DIR`, `ulimit -t 120`, at most 2 runs x 2 workers, each run in its own session and killed by group after it ended.
+  cli.rs was gated with `cargo test --lib --test cli_exit --test changed --test overlay` and a lcov from the same tests, since its printing code is only
+  reachable through the binary; other files used `cargo test --lib`.
+- Timeout kill check (asked after orphan test binaries were seen): the port sends SIGKILL to the whole process group of a timed-out command
+  (`runner.rs` `kill_group_and_reap`, child spawned with `process_group(0)`), like the original (`start_new_session` + `killpg`). Tests
+  `mu_15_timeout_kills_the_process_group` and `..._background_grandchildren` cover it. No leak found; the orphans came from many parallel runs.
+  `pgrep` after each run showed no mutator test binary left.
+- First rerun: model.rs, clojure_reader.rs, report.rs, edn.rs: 0 survivors. cli.rs: 6 survivors + 1 uncovered (only reachable through the binary).
+  sites.rs: 2 (`visit_negation` and `visit_constant` `&&` -> `||`). clojure_sites.rs: `line_of` `+ 1` shown as uncovered (multi-line expression).
+  functions/clojure.rs first full pass: 80 sites, 12 survivors.
+- Fixes: exact-pair tests for unary minus and numbers other than 0/1 (MU-12); `line_of` as one `match` plus a direct test; direct tests of
+  `string_end`, `char_end`, `form_end`, `skip_reader`, `blank`, `strip_root`, `keyword_ends`, empty string (MU-9); two e2e tests that the summary
+  table is printed only when forms were mutated (MU-4).
+- Final reruns: cli.rs 58 killed, functions/clojure.rs 80 killed, sites.rs, clojure_sites.rs, model.rs (4), report.rs, edn.rs, clojure_reader.rs
+  (34): 0 survivors, 0 uncovered.
+- Parity: `parity/run.py` against the pinned original gives 38 PASS. `flag-help-short` and `flag-help-long` now carry `allow_stdout_diff = true`
+  in `coverage.toml`, because e6b7084 (half the cores) changed the help text on purpose. `fixes.toml` is unchanged.
+- cargo test 477 passed, clippy --all-targets clean.

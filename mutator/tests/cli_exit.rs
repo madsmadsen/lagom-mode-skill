@@ -272,3 +272,43 @@ fn mu_6_scan_skips_test_spec_vendor_node_modules_and_target() {
         out.stdout
     );
 }
+
+/// MU-4: a run that kills a mutant prints the summary table on stdout, with a Killed column and a Total row.
+#[test]
+fn mu_4_run_prints_summary_table_on_stdout() {
+    let dir = ge_project();
+    let out = run(
+        dir.path(),
+        &[
+            "--no-coverage",
+            "--test-command",
+            "grep -q 'a >= b' src/m.py",
+        ],
+    );
+    assert_eq!(
+        out.code, 0,
+        "stdout: {}\nstderr: {}",
+        out.stdout, out.stderr
+    );
+    assert!(out.stdout.contains("Killed"), "stdout: {}", out.stdout);
+    assert!(out.stdout.contains("Total"), "stdout: {}", out.stdout);
+}
+
+/// MU-4: a run that mutates no form prints no summary table and no "No functions" line.
+#[test]
+fn mu_4_run_without_forms_prints_no_summary_table() {
+    let dir = project();
+    write(dir.path(), "src/m.py", "x = 'a'\n");
+    let out = run(dir.path(), &["--no-coverage", "--test-command", "true"]);
+    assert_eq!(
+        out.code, 0,
+        "stdout: {}\nstderr: {}",
+        out.stdout, out.stderr
+    );
+    assert!(!out.stdout.contains("Total"), "stdout: {}", out.stdout);
+    assert!(
+        !out.stdout.contains("No functions to mutate"),
+        "stdout: {}",
+        out.stdout
+    );
+}

@@ -692,4 +692,12 @@ mod tests {
         assert_eq!(defn_name(&chars("(defn-")), None);
         assert_eq!(defn_name(&chars("(defn f)")), Some("f".to_string()));
     }
+
+    // MU-9: an empty string closes at its second quote, so the next defn is still found.
+    #[test]
+    fn mu_9_string_end_of_empty_string() {
+        assert_eq!(string_end(&chars("\"\" x"), 0), 2);
+        assert_eq!(string_end(&chars("\"a\" x"), 0), 3);
+        assert_eq!(names("(defn a [] \"\")\n(defn b [] 1)\n"), ["a", "b"]);
+    }
 }
