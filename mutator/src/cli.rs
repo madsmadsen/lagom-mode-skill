@@ -59,9 +59,9 @@ Options:
   --mutation-warning <number>   Warn when a file selects more covered sites
                                 than this. Default: 50.
   --max-workers <number>        Run at most this many mutants of one file at
-                                once. Default: one per core. The run uses the
-                                smaller of this limit, the cores, and the
-                                number of selected sites.
+                                once. Default: half the cores, at least one.
+                                The run uses the smaller of this limit, half
+                                the cores, and the number of selected sites.
   --verbose                     Print each test command and each mutant.
 
 Arguments:
@@ -75,8 +75,8 @@ named {skipped} are skipped.
 The default, once a snapshot exists, reruns survivors and sites in functions
 whose text changed. Killed mutants in unchanged functions are kept.
 
-Selected mutants of one file run at the same time, one worker per core unless
---max-workers says otherwise. A worker is a symlink overlay under
+Selected mutants of one file run at the same time, at most one worker per two
+cores, even when --max-workers asks for more. A worker is a symlink overlay under
 target/mutation-workers with its own copy of the mutated file. The project
 tree is left unchanged. A copy left under target/mutator-backup/ by an
 interrupted older run is restored before a non-scan run.

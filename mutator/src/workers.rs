@@ -118,11 +118,16 @@ fn processors() -> usize {
         .unwrap_or_default()
 }
 
-/// The smaller of the sites, the cores, and an explicit --max-workers.
+/// Half the cores, at least one. No run uses more workers than this.
+fn worker_cap() -> usize {
+    (processors() / 2).max(1)
+}
+
+/// The smaller of the sites, half the cores, and an explicit --max-workers.
 pub fn worker_count(site_count: usize, requested: Option<usize>) -> usize {
-    let cores = processors();
-    let limit = requested.unwrap_or(cores);
-    site_count.min(cores).min(limit).max(1)
+    let cap = worker_cap();
+    let limit = requested.unwrap_or(cap);
+    site_count.min(cap).min(limit).max(1)
 }
 
 /// Creates a fresh `target/mutation-workers/run-<unique>` directory under `root`.
@@ -596,13 +601,15 @@ mod tests {
         }
     }
 
-    // MU-17: worker count is the minimum of sites, cores, and the requested cap.
+    // MU-17: worker count is the minimum of sites, half the cores, and the requested cap.
     #[test]
-    fn mu_17_worker_count_follows_sites_cores_and_the_requested_cap() {
-        let cores = processors();
-        assert_eq!(worker_count(10, None), cores.min(10));
-        assert_eq!(worker_count(10, Some(3)), 3.min(cores));
-        assert_eq!(worker_count(2, Some(8)), cores.min(2));
+    fn mu_17_worker_count_follows_sites_half_the_cores_and_the_requested_cap() {
+        let cap = (processors() / 2).max(1);
+        assert_eq!(worker_cap(), cap);
+        assert_eq!(worker_count(1000, None), cap);
+        assert_eq!(worker_count(1000, Some(10_000)), cap);
+        assert_eq!(worker_count(10, Some(1)), 1);
+        assert_eq!(worker_count(2, Some(8)), cap.min(2));
         assert_eq!(worker_count(0, None), 1);
     }
 
