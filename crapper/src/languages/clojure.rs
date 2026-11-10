@@ -136,43 +136,40 @@ fn balanced_end(source: &[char], start: usize) -> usize {
     let opener = source[start];
     let closer = closer_of(opener);
     let mut depth = 0u32;
-    let mut index = start;
-    while index < source.len() {
-        if let Some(next) = skip_reader_token(source, index) {
-            index = next;
+    let mut resume = start;
+    for (index, &ch) in source.iter().enumerate().skip(start) {
+        if index < resume {
             continue;
         }
-        let ch = source[index];
-        index += 1;
+        if let Some(next) = skip_reader_token(source, index) {
+            resume = next;
+            continue;
+        }
         if ch == opener {
             depth += 1;
         } else if ch == closer {
             depth -= 1;
             if depth == 0 {
-                return index;
+                return index + 1;
             }
         }
     }
-    index
+    source.len()
 }
 
-fn skip_space_and_comment(source: &[char], index: usize) -> usize {
-    let after_space = skip_space(source, index);
-    if source.get(after_space) == Some(&';') {
-        line_end(source, after_space)
-    } else {
-        after_space
-    }
-}
-
-fn skip_ignorable(source: &[char], mut index: usize) -> usize {
-    loop {
-        let next = skip_space_and_comment(source, index);
-        if next == index {
-            return index;
+fn skip_ignorable(source: &[char], index: usize) -> usize {
+    let mut resume = index;
+    for (i, &ch) in source.iter().enumerate().skip(index) {
+        if i < resume {
+            continue;
         }
-        index = next;
+        if ch == ';' {
+            resume = line_end(source, i);
+        } else if !ch.is_whitespace() {
+            return i;
+        }
     }
+    source.len()
 }
 
 fn end_of_one_form(source: &[char], index: usize) -> usize {
@@ -201,12 +198,14 @@ fn blank_span(start: usize, end: usize, out: &mut String) {
     out.extend(std::iter::repeat_n(' ', end - start));
 }
 
-/// Copies or blanks the token at `index` into `out`; returns the index after it.
-fn blank_or_copy(source: &[char], index: usize, out: &mut String) -> usize {
+/// Blanks the string, character literal, comment, or `#_` form at `index` into
+/// `out` and returns the index after it. A plain character is copied to `out`
+/// and returns `None`.
+fn blank_or_copy(source: &[char], index: usize, out: &mut String) -> Option<usize> {
     if starts_with_at(source, index, "#_") {
         let end = form_end(source, index + 2);
         blank_span(index, end, out);
-        return end;
+        return Some(end);
     }
     let end = match source[index] {
         '"' => string_end(source, index),
@@ -214,11 +213,11 @@ fn blank_or_copy(source: &[char], index: usize, out: &mut String) -> usize {
         ';' => line_end(source, index),
         ch => {
             out.push(ch);
-            return index + 1;
+            return None;
         }
     };
     blank_span(index, end, out);
-    end
+    Some(end)
 }
 
 /// Blanks strings, comments, character literals, and `#_` discarded forms.
@@ -227,9 +226,14 @@ fn blank_or_copy(source: &[char], index: usize, out: &mut String) -> usize {
 /// not open a string and `\;` does not open a comment.
 fn without_strings_and_comments(source: &[char]) -> String {
     let mut out = String::with_capacity(source.len());
-    let mut index = 0;
-    while index < source.len() {
-        index = blank_or_copy(source, index, &mut out);
+    let mut resume = 0;
+    for index in 0..source.len() {
+        if index < resume {
+            continue;
+        }
+        if let Some(end) = blank_or_copy(source, index, &mut out) {
+            resume = end;
+        }
     }
     out
 }
@@ -364,14 +368,15 @@ fn skip_metadata(form: &[char], caret: usize) -> usize {
     skip_to_name_stop(form, index)
 }
 
-fn skip_leading_metadata(form: &[char], mut index: usize) -> usize {
-    loop {
-        index = skip_space(form, index);
+fn skip_leading_metadata(form: &[char], index: usize) -> usize {
+    let mut index = skip_space(form, index);
+    for _ in form {
         if form.get(index) != Some(&'^') {
-            return index;
+            break;
         }
-        index = skip_metadata(form, index);
+        index = skip_space(form, skip_metadata(form, index));
     }
+    index
 }
 
 fn keyword_ends(form: &[char], after: usize) -> bool {
@@ -443,11 +448,14 @@ impl TopLevelScan {
 
 fn extract_top_level_defns(source: &[char]) -> Vec<Found> {
     let mut scan = TopLevelScan::default();
-    let mut index = 0;
+    let mut resume = 0;
     let mut line = 1;
-    while index < source.len() {
+    for index in 0..source.len() {
+        if index < resume {
+            continue;
+        }
         if let Some((next, next_line)) = skip_reader(source, index, line) {
-            index = next;
+            resume = next;
             line = next_line;
             continue;
         }
@@ -457,7 +465,6 @@ fn extract_top_level_defns(source: &[char]) -> Vec<Found> {
             '\n' => line += 1,
             _ => {}
         }
-        index += 1;
     }
     scan.found
 }
@@ -1021,5 +1028,96 @@ mod tests {
             namespace_from_path("/proj/demo/core.clj", "/proj"),
             "demo.core"
         );
+    }
+
+    // CR-11: a string ends just after its closing quote, skipping escaped quotes.
+    #[test]
+    fn cr_11_string_end_returns_index_after_closing_quote() {
+        assert_eq!(string_end(&chars_of("\"ab\" x"), 0), 4);
+        assert_eq!(string_end(&chars_of("xx \"ab\" y"), 3), 7);
+        assert_eq!(string_end(&chars_of("\"a\\\"b\" z"), 0), 6);
+        assert_eq!(string_end(&chars_of("\"abc"), 0), 4);
+    }
+
+    // CR-11: blanking keeps every character position and newline.
+    #[test]
+    fn cr_11_blanks_strings_and_comments_in_place() {
+        let input = "a \"bc\" d ; note\nz";
+        let out = without_strings_and_comments(&chars_of(input));
+        assert_eq!(out, "a      d       \nz");
+        assert_eq!(out.chars().count(), input.chars().count());
+    }
+
+    // CR-11: a string that does not start at index 0 is blanked to its exact width.
+    #[test]
+    fn cr_11_blanks_a_string_that_starts_mid_text() {
+        assert_eq!(
+            without_strings_and_comments(&chars_of("x \"ab\" y")),
+            "x      y"
+        );
+    }
+
+    // CR-11: a `#_` discard is blanked along with the form it discards.
+    #[test]
+    fn cr_11_blanks_discarded_form() {
+        assert_eq!(
+            without_strings_and_comments(&chars_of("#_(foo) bar")),
+            "        bar"
+        );
+    }
+
+    // CR-11: an escaped quote in a character literal does not open a string.
+    #[test]
+    fn cr_11_char_literal_quote_does_not_open_a_string() {
+        assert_eq!(without_strings_and_comments(&chars_of("\\\" z")), "   z");
+    }
+
+    // CR-11: brackets inside strings and comments do not close a form.
+    #[test]
+    fn cr_11_balanced_end_skips_brackets_in_strings_and_comments() {
+        assert_eq!(balanced_end(&chars_of("(a \"b)\" (c)) z"), 0), 12);
+        assert_eq!(balanced_end(&chars_of("[a ; )\n b] z"), 0), 10);
+        assert_eq!(balanced_end(&chars_of("(a b"), 0), 4);
+    }
+
+    // CR-11: whitespace and `;` comments are skipped up to the next form character.
+    #[test]
+    fn cr_11_skip_ignorable_passes_comments_and_space() {
+        assert_eq!(skip_ignorable(&chars_of("  ; c1\n ; c2\n  x"), 0), 15);
+        assert_eq!(skip_ignorable(&chars_of("  \n\t"), 0), 4);
+    }
+
+    // CR-11: metadata before a defn name, including `^{...}` maps, is skipped.
+    #[test]
+    fn cr_11_defn_name_skips_metadata_chains() {
+        assert_eq!(
+            defn_name(&chars_of("(defn ^:private ^{:a 1} name [] 1)")),
+            Some("name".to_string())
+        );
+        assert_eq!(
+            defn_name(&chars_of("(defn name [] 1)")),
+            Some("name".to_string())
+        );
+    }
+
+    // CR-11: strings, comments, and discards hide their brackets from the top-level scan.
+    #[test]
+    fn cr_11_top_level_scan_keeps_exact_lines_past_hidden_brackets() {
+        let source = "(defn real-a [] \"(\" 1)\n; )\n#_(defn hidden [])\n(defn real-b [] 1)\n";
+        let expected = vec![
+            Found {
+                name: "real-a".to_string(),
+                start_line: 1,
+                end_line: 1,
+                complexity: 1,
+            },
+            Found {
+                name: "real-b".to_string(),
+                start_line: 4,
+                end_line: 4,
+                complexity: 1,
+            },
+        ];
+        assert_eq!(extract_functions(source), expected);
     }
 }

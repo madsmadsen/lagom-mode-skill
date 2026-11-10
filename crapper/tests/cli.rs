@@ -69,7 +69,14 @@ fn git(root: &Path, args: &[&str]) {
     let status = Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["-c", "user.name=test", "-c", "user.email=test@example.com"])
+        .args([
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "commit.gpgsign=false",
+        ])
         .args(args)
         .status()
         .expect("git runs");

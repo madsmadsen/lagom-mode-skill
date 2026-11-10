@@ -62,9 +62,22 @@ Round results (survivors found -> killed):
 
 Total survivors found across rounds: about 112. All were killed with a behaviour test or removed as equivalent code.
 
-The last two fixes (`clojure.rs`, `cli.rs` `--coverage-command` tests) were verified by `cargo test` only. The mutator was not re-run on them. Re-run on the other files after their fixes was also not repeated.
+### Gate closure (re-mutation of every file after the fixes)
 
-Runaway mutants: a clojure.rs mutant spun CPU in worker test processes (macOS shows about 400 GB virtual for any process, so that figure is not a leak). The mutator timeout kills such mutants; `ps` is blocked in the sandbox so the exact mutant was not named. The gate now runs with `ulimit -t` as a hard CPU cap and a prior test-only allocator guard was tried and removed (it would itself be mutated). After the kill step `pgrep` shows no gate or `crapper-*` process left.
+Same tool and flags as above, one scratch copy per group under /tmp, at most 4 runs at once. Test command: `cargo test -- --skip ac_4_ --skip ac_5_` (`cargo test --lib --test cli` for `cli.rs`), `ulimit -t 120`, git `commit.gpgsign` forced off through `GIT_CONFIG_*` env.
+
+| Step | Action | Reason |
+| --- | --- | --- |
+| G1 | `tests/cli.rs` `git` helper now passes `-c commit.gpgsign=false`. | `git commit` in the test repos failed once in a few runs because the user's global config signs commits (flaky red test). |
+| G2 | Re-mutated `cli.rs` (52 sites), `discover.rs` (21), `report.rs` (1), `analyze.rs` (0), `languages/python.rs` (11), `rust.rs` (25), `typescript.rs` (44), `coverage/formats.rs` (49), `coverage/mod.rs` (7), `coverage/paths.rs` (46), `runners/mod.rs` (23), `runners/rustpy.rs` (38), `runners/typescript_cov.rs` (20). | Every fixed file was never re-mutated. Result: 0 survivors in all of them. |
+| G3 | Re-mutated `languages/clojure.rs`: 94 sites, 1 survivor (`blank_span` `end - start` -> `end + start`: no test compared the blanked text exactly). | Added exact-output tests for `without_strings_and_comments`. |
+| G4 | Found the runaway mutant. Diagnostic test script: build under `ulimit -t 120`, run tests under `ulimit -t 15`, and log the mutated diff when the test binary dies with a signal. 12 mutants hung (`string_end` `start + 2 + offset` -> `start - 2 + offset` is the one that spun with no memory growth: `string_end` returns `start`, so `without_strings_and_comments` never advances; others: l.68/69/84/111 `skip_while` operators, l.146 and l.460 `index += 1` -> `+= 0`, l.171, l.217, l.360, l.370). | A hang is only "killed" by the mutator timeout. |
+| G5 | Replaced the five hand-advanced `while`/`loop` scans (`balanced_end`, `without_strings_and_comments`/`blank_or_copy` (now `Option<usize>`), `extract_top_level_defns`, `skip_ignorable`, `skip_leading_metadata`) by bounded `for` loops with a `resume` index; deleted `skip_space_and_comment`. 9 new `cr_11_*` tests with exact values. | A wrong skip index now gives wrong output (fast assertion failure), never an endless loop. Behaviour on valid input is identical. |
+| G6 | Re-ran `clojure.rs`: 1 survivor (`0..form.len()` bound -> `1..`), fixed with `for _ in form`. Final: 95 killed, 0 survived, no hung mutant (hang detector found none). | Equivalent bound removed, not kept. |
+
+Files with no mutation sites: `lib.rs`, `main.rs`, `model.rs`, `languages/mod.rs`. `crap.rs`, `golang.rs`, `java.rs`, `ts.rs`, `metrics.rs` were already clean and were not changed.
+
+Final: every `src` file has 0 survivors. `cargo test`: 321 pass. `cargo clippy --all-targets`: clean. `parity/run.py` (scratch copy, release binary): 33 runs, 29 pass, 4 skip (`clj`, `mvn`, `go`), 0 diffs.
 
 Lint: `cargo clippy --all-targets` reports no issues (fixed `cloned_ref_to_slice_refs` in `rustpy.rs` and `unnecessary_map_or` in `clojure.rs`).
 
@@ -78,7 +91,7 @@ Lint: `cargo clippy --all-targets` reports no issues (fixed `cloned_ref_to_slice
 
 ## Not reachable here (blockers)
 
-- Mutation gate: final fixes not re-mutated. Earlier note: `rust.rs`, `ts.rs`, `typescript.rs`, `clojure.rs`, `runners/*`, `coverage/*` were not mutated to completion, and the survivor fixes were not re-mutated. Next step: `sh /tmp/crapper-work/mut.sh` pattern (per file, `--timeout-factor 30`, scratch copy with `src/coverage` renamed).
+- Mutation gate: closed (see Gate closure).
 - AC-18 CI matrix (macOS x86_64, Linux x86_64 and arm64): only macOS arm64 is available. No CI file was written because CI lives outside `crapper/`.
 - AC-17 on the named CI runner (Ubuntu 22.04): timing was measured on macOS arm64 only.
 - AC-19 `cargo install --git <repo>`: the private repository URL is unknown. `cargo install --path crapper` succeeded and the installed binary printed `--help` with exit 0.
