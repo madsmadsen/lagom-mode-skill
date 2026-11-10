@@ -206,14 +206,29 @@ pub fn go_percent(
     Some(coverage_percent(covered, total))
 }
 
+static DOCTYPE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)<!DOCTYPE[^>]*>").expect("valid DOCTYPE regex"));
+static XML_TARGET: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\x{feff}?<\?xml\s").expect("valid XML target regex"));
+static XML_DECL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"^\x{feff}?<\?xml\s+version\s*=\s*(?:"[A-Za-z0-9_.:-]+"|'[A-Za-z0-9_.:-]+')(?:\s+encoding\s*=\s*(?:"[A-Za-z][A-Za-z0-9._-]*"|'[A-Za-z][A-Za-z0-9._-]*'))?(?:\s+standalone\s*=\s*(?:"(?:yes|no)"|'(?:yes|no)'))?\s*\?>"#)
+        .expect("valid XML declaration regex")
+});
+
+/// True when the text starts with an XML declaration that is not well-formed.
+fn bad_declaration(text: &str) -> bool {
+    XML_TARGET.is_match(text) && !XML_DECL.is_match(text)
+}
+
 /// Python `_parse_jacoco_index`: JaCoCo methods keyed by `class#method`.
+/// Like the original, DOCTYPE text is removed with a regex before parsing, and a
+/// malformed XML declaration is rejected.
 pub fn parse_jacoco_index(text: &str) -> Result<Keyed<Vec<JacocoMethod>>, String> {
-    let options = roxmltree::ParsingOptions {
-        allow_dtd: true,
-        ..Default::default()
-    };
-    let document = roxmltree::Document::parse_with_options(text, options)
-        .map_err(|error| error.to_string())?;
+    let cleaned = DOCTYPE.replace_all(text, "");
+    if bad_declaration(&cleaned) {
+        return Err("XML declaration not well-formed".to_string());
+    }
+    let document = roxmltree::Document::parse(&cleaned).map_err(|error| error.to_string())?;
     let mut found: Keyed<Vec<JacocoMethod>> = Keyed::default();
     for class in document
         .descendants()
@@ -631,5 +646,105 @@ mod tests {
             jacoco_percent(&index, &["demo.Board"], "place", 1),
             Some(100.0)
         );
+    }
+
+    const JACOCO_BODY: &str = r#"<report><class name="a/B"><method name="f" line="1"><counter type="INSTRUCTION" missed="1" covered="1"/></method></class></report>"#;
+
+    // CR-3: DOCTYPE text is removed with the original's regex before parsing, so junk in it is ignored.
+    #[test]
+    fn cr_3_jacoco_doctype_text_is_removed_like_the_original() {
+        let xml = format!("<!DOCTYPE r\"&\\=2[eport PUBLIC \"x\">\n{}", JACOCO_BODY);
+        let index = parse_jacoco_index(&xml).expect("valid jacoco");
+        assert_eq!(index.get("a.B#f").map(Vec::len), Some(1));
+    }
+
+    // CR-3: the DOCTYPE match ignores case, as the original's IGNORECASE regex does.
+    #[test]
+    fn cr_3_jacoco_doctype_is_matched_without_regard_to_case() {
+        let xml = format!("<!doctype x>\n{}", JACOCO_BODY);
+        let index = parse_jacoco_index(&xml).expect("valid jacoco");
+        assert_eq!(index.get("a.B#f").map(Vec::len), Some(1));
+    }
+
+    // CR-3: a DOCTYPE with an internal subset leaves its tail behind, and the parse fails.
+    #[test]
+    fn cr_3_jacoco_doctype_with_an_internal_subset_leaves_junk_and_is_an_error() {
+        let xml = format!("<!DOCTYPE a [<!ENTITY x \"y\">]>\n{}", JACOCO_BODY);
+        assert!(parse_jacoco_index(&xml).is_err());
+    }
+
+    // CR-3: a declaration standalone value other than yes or no is an error that names the value.
+    #[test]
+    fn cr_3_jacoco_standalone_must_be_yes_or_no() {
+        let bad = format!(
+            "<?xml version=\"1.0\" standalone=\"yeses\"?>\n{}",
+            JACOCO_BODY
+        );
+        let Err(message) = parse_jacoco_index(&bad) else {
+            panic!("expected an error")
+        };
+        assert_eq!(message, "XML declaration not well-formed");
+        let maybe = format!(
+            "<?xml version=\"1.0\" standalone=\"maybe\"?>\n{}",
+            JACOCO_BODY
+        );
+        assert!(parse_jacoco_index(&maybe).is_err());
+        let bom = format!(
+            "\u{feff}<?xml version=\"1.0\" standalone=\"yeses\"?>\n{}",
+            JACOCO_BODY
+        );
+        assert!(parse_jacoco_index(&bom).is_err());
+    }
+
+    // CR-3: standalone yes or no in either quote style, or no standalone at all, is accepted.
+    #[test]
+    fn cr_3_jacoco_standalone_yes_or_no_is_accepted() {
+        for declaration in [
+            "<?xml version=\"1.0\" standalone='no'?>",
+            "<?xml version=\"1.0\" standalone = \"yes\"?>",
+            "<?xml version=\"1.0\"?>",
+        ] {
+            let xml = format!("{}\n{}", declaration, JACOCO_BODY);
+            let index = parse_jacoco_index(&xml).expect("valid jacoco");
+            assert_eq!(index.get("a.B#f").map(Vec::len), Some(1));
+        }
+    }
+
+    // CR-3: the standalone check reads only the declaration, so an attribute that mentions it is ignored.
+    #[test]
+    fn cr_3_jacoco_standalone_text_in_an_attribute_is_ignored() {
+        let xml = r#"<report note="standalone='x'"><class name="a/B"><method name="f" line="1"><counter type="INSTRUCTION" missed="1" covered="1"/></method></class></report>"#;
+        let index = parse_jacoco_index(xml).expect("valid jacoco");
+        assert_eq!(index.get("a.B#f").map(Vec::len), Some(1));
+    }
+
+    // CR-3: a malformed XML declaration is an error; any version, any encoding name, a BOM, and xml-stylesheet are fine.
+    #[test]
+    fn cr_3_jacoco_declaration_must_be_well_formed() {
+        for declaration in [
+            "<?xml version=\"1.0\" encoding=\"é&.UTF-8\"?>",
+            "<?xml encoding=\"UTF-8\"?>",
+            "<?xml version=\"1.0\" standalone=\"no\" encoding=\"UTF-8\"?>",
+            "<?xml version=\"1.0\" foo=\"x\"?>",
+            "<?xml version=\"1.0\" standalone=\"maybe\"?>",
+        ] {
+            let xml = format!("{}\n{}", declaration, JACOCO_BODY);
+            let Err(message) = parse_jacoco_index(&xml) else {
+                panic!("expected an error for {declaration}")
+            };
+            assert_eq!(message, "XML declaration not well-formed");
+        }
+        for declaration in [
+            "<?xml version=\"2.0\"?>",
+            "<?xml version='1.0' encoding='bogus-1.2' standalone = 'no' ?>",
+            "\u{feff}<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        ] {
+            let xml = format!("{}\n{}", declaration, JACOCO_BODY);
+            let index = parse_jacoco_index(&xml).expect("valid jacoco");
+            assert_eq!(index.get("a.B#f").map(Vec::len), Some(1));
+        }
+        let stylesheet = format!("<?xml-stylesheet href=\"a\"?>\n{}", JACOCO_BODY);
+        let index = parse_jacoco_index(&stylesheet).expect("valid jacoco");
+        assert_eq!(index.get("a.B#f").map(Vec::len), Some(1));
     }
 }

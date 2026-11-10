@@ -775,3 +775,36 @@ fn cr_3_ac_26_a_python_package_outside_the_root_exits_1_with_one_stderr_line() {
     let output = crapper_in(&root, &[]);
     assert_crash_exit_1(&output, &root, "is not in the subpath of");
 }
+
+// CR-3
+#[test]
+fn cr_3_a_jacoco_report_with_garbage_in_the_doctype_is_accepted() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/site/jacoco/jacoco.xml",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE r\"&\\=2[eport PUBLIC \"x\">\n<report/>\n",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_eq!(exit_code(&output), 0, "stderr was: {}", stderr(&output));
+    assert!(root.join(".metrics/crap.edn").is_file());
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_jacoco_xml_declaration_with_a_bad_standalone_value_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/site/jacoco/jacoco.xml",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yeses\"?>\n<report/>\n",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_crash_exit_1(&output, root, "jacoco.xml");
+}
