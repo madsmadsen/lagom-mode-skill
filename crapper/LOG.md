@@ -96,7 +96,7 @@ Lint: `cargo clippy --all-targets` reports no issues (fixed `cloned_ref_to_slice
 
 ## Differences from the original and decisions of Mads Madsen
 
-- `parity/fixes.toml` has no entries. The port found no bug in the original to fix. The owner decided two points (next section). Both make the port equal to the original, so neither needs an entry.
+- Until the upstream-fix work (section "Upstream fixes CR-18 to CR-24"), `parity/fixes.toml` had no entries. The owner decided two points (next section). Both make the port equal to the original, so neither needed an entry. Now it has seven entries, all unapproved.
 - Still open (not copied, decision for Mads Madsen): `float()` in `--threshold` and `int()` in Go and JaCoCo numbers accept non-ASCII digits in Python; the port accepts ASCII only. The other open items are in the list at the end of the next section.
 
 ## Owner decisions: CR-10 and crash behavior (CR-3, AC-26)
@@ -182,3 +182,34 @@ arm64 guest: qemu with HVF (native speed). x86_64 guest: qemu with TCG (emulated
 | L4 | AC-17 (CR-NFR-2): `parity/run.py --only <the six *-existing runs> --timing` with the pinned original (Python 3.12.16 from uv, tree-sitter 0.26.1, tree-sitter-language-pack 1.25.0), release port, median of 5. All six runs matched the original. | arm64 (native): original 0.027 to 0.039 s, port 0.001 to 0.002 s. x86_64 (TCG, emulated): original 0.335 to 0.498 s, port 0.015 to 0.023 s. The port is lower on all six fixtures on both. |
 
 The x86_64 times are not comparable with a real Ubuntu 22.04 runner (both sides are slowed by the emulator, the ratio is about 20 to 30 times as on arm64). The AC-17 relation (port median lower than original median) holds in the guest; the absolute numbers say nothing about a real runner.
+
+## Upstream fixes CR-18 to CR-24 (PRD commits 8f31773 and bc91fc4)
+
+Orchestrated by `CrapperOrchestrator`. Implementer agents (`implementer`) wrote the production code, at most 3 at a time: TsInstall, TsShapes, PyRoutes, DoctypeRule, GitEnv, SplitAnalyze. The orchestrator wrote every test first, ran every build, test, clippy, fmt, and gate, and wrote the fixtures, the parity runner changes, and this log.
+
+Read first: `git diff 4384d65 HEAD -- docs/prd/crapper.md`. The new items are CR-18 to CR-24 and AC-27 to AC-33. CR-3, CR-9, CR-12, and AC-26 were already met by commits 8465981 to 4384d65 and c97b1be. No parity or `upstream.toml` change is needed (CR-PB-1, pinned commit unchanged).
+
+| Step | Action | Reason |
+| --- | --- | --- |
+| U1 | Fetched issue 20 and PRs 27, 30, 34 of the original (diffs). | The PRD says "copy the rules of PR 30" and names exact commands. The diffs give the order of flags (`--ignore-scripts` before the spec) and the Python reference for the route rules. |
+| U2 | Wrote the red tests. Ran them. CR-24: `cr_24_jacoco_doctype_with_an_internal_subset_is_deleted` and `cr_24_ac_33_*` panicked at `expect("valid jacoco")` (the old regex left `]>` behind, the XML parser failed). CR-20: `cr_20_ac_29_*` failed because `--changed` read the decoy repository (no `untracked_fn` in stdout). CR-18/19/23: 7 tests failed (`left: [npm, install, --no-save, --no-package-lock, ...]` for pnpm, yarn, bun, packageManager, a lockfile not restored, and `@vitest/coverage-v8@file:../untrusted`). CR-21: 4 tests failed (`left: [plain, method]`, 2 of 7 entries). CR-22: 3 tests failed (`left: [build_router]` with CC 6, handlers had no entries). | TDD: see each test fail for the expected reason before the code. |
+| U3 | Fixed a wrong expectation of my own: the guard test `cr_21_shapes_inside_a_function_stay_inside_it` expected CC 4 but a class inside a function is skipped by the counter (CC 3). | The test is a regression guard, not a new behavior. It passed before and after. |
+| U4 | Briefed implementer agents (CR-18/19/23 in `typescript_cov.rs`, CR-21 in `typescript.rs`, CR-22 in `python.rs` and `ts.rs`, then CR-24 in `formats.rs` and CR-20 in `cli.rs`). `cargo fmt`, `cargo test` (394 pass), clippy clean. Five commits, one for each requirement group. | One owner for each file. |
+| U5 | The old DOCTYPE tests used junk with a `[`. The CR-24 rule does not delete an unclosed `[`, so the original and the port differ there. Removed the `[` from the junk in `tests/cli.rs`, `coverage.toml` (`lenient-jacoco-doctype`), and the formats test. Added `cr_24_jacoco_doctype_with_an_unclosed_internal_subset_is_an_error`. | The PRD replaces the DOCTYPE rule (CR-24). The lenient parity run must stay a run where both agree. |
+| U6 | Seven `fixes.toml` entries (`vitest-package-manager`, `vitest-npm-lockfile`, `vitest-untrusted-install`, `git-env`, `ts-shapes`, `python-routes`, `jacoco-doctype-subset`). None has `approved_by`. | CR-PB-3, CR-PB-6: only Mads Madsen approves. |
+| U7 | Seven fixtures: `vitest-pnpm`, `vitest-npm-locked`, `vitest-untrusted`, `changed-git-env`, `ts-shapes`, `python-routes`, `jacoco-subset`. The three Vitest fixtures have stub package managers in `.stubs/` (shell scripts: npm, pnpm) and a stub `node_modules/.bin/vitest`. The stub npm fails the way the real npm fails (a tree made by pnpm, a `file:` spec, an install that would run scripts, `--no-package-lock` that ignores the lock). Real `pnpm` and `yarn` installs are not run in the repository tests. | A real install needs the network and changes with time. The stubs give a fixed, fast, offline result for both the original and the port. |
+| U8 | Runs in `coverage.toml` can now have `env` (`NAME=VALUE`, `{project}` is the project path) and a fixture `.stubs` directory goes first on PATH. Changed `run.py`, `record_original.py`, and `tests/recorded.rs`. Runs with `fix` are not part of the offline replay of `tests/recorded.rs`. | The `git-env` fix needs `GIT_DIR`. The install fixes need stub tools. One mechanism for both. |
+| U9 | Recorded the original for the seven `fix-*` runs with `record_original.py` (pinned original, tree-sitter 0.26.1, tree-sitter-language-pack 1.25.0). The original: `big` has 0.0% (pnpm), 40.0% (npm lock ignored), 0.0% (untrusted version), selects all files with `GIT_DIR` set, lists 2 TypeScript entries, lists `build_router` with CC 5 and no handlers, exits 1 on the internal subset. | CR-PB-4: a test must fail on the recorded output. |
+| U10 | `tests/fixes.rs`: one test for each entry. Each test asserts a property that is false for the recorded original and true for the port. `tests/meta.rs`: `ac_24_fixes_entries_approved` is `#[ignore]` (it fails by design until Mads Madsen approves). New test `ac_24_fixes_entries_name_no_other_approver`. `python3.12 parity/run.py --check-meta` still fails on the 7 entries. | AGENTS.md: do not approve. `cargo test` must stay clean. The strict check is kept and is one flag away. |
+| U11 | Gate: `crapper -s src --threshold 9.99` found `cli::analyze` at CC 10, CRAP 10.0. Split it into `scored_entries` and `report`. | Our own source must pass our own gate. |
+| U12 | Mutation: `cli.rs:238` `code: 1` was uncovered (the line had no region in the LCOV). Added `GitError::new`, so the literal sits on a line with a region. Now 0 uncovered. | Cover the uncovered. |
+
+### Decisions and open points
+
+- `last-run.toml` is NOT rewritten. A full parity run now fails by design: the seven runs `fix-*` differ and no entry is approved (AC-24, AC-1). The file still says `pass` for the last full run at the pinned commit (49 runs, before the fix runs). AC-22 in CI stays green on that file. After Mads Madsen approves the entries, run `python3.12 parity/run.py` and the file is rewritten.
+- CR-23 regex: Python `$` also matches before a trailing newline, so PR 27 accepts `4.1.11\n`. The port uses the Rust `$` (end of text only) and so rejects it. The PRD says "valid SemVer version". The test `cr_23_ac_32_a_version_that_is_not_semver_is_not_pinned` pins this.
+- AC-26 says the port and the original give the same result for "odd DOCTYPE text", but CR-24 replaces the DOCTYPE rule of the original. They differ on a DOCTYPE with a `[` and no `]`, and on a DOCTYPE with an internal subset. Tracked by the entry `jacoco-doctype-subset`. The PRD should say that AC-26 means DOCTYPE text without `[`. Not changed (PRDs are read-only for this task).
+- The CR-18 order for `packageManager` is pnpm, yarn, bun, as in PR 34. A lockfile or `node_modules/.pnpm` always wins over the field.
+- The install notice (CR-15) still says "package.json and the lockfile are restored afterward". The command itself is on stderr from `run_shell` (`+ (cwd) pnpm add ...`), which is what AC-27 asks for.
+- `yarn add --no-lockfile` and `bun add --no-save` flags are as the PRD states. The repository tests use stub tools, not live installs.
+
