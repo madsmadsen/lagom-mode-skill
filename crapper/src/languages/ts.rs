@@ -3,6 +3,7 @@
 // upstream-path: src/crapper/languages/treesitter.py
 // license: MIT
 
+use std::collections::HashSet;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -66,7 +67,7 @@ pub fn end_line(node: Node) -> u32 {
     end.row as u32 + 1
 }
 
-fn children(node: Node) -> Vec<Node> {
+pub fn children(node: Node) -> Vec<Node> {
     let mut cursor = node.walk();
     let kids: Vec<Node> = node.children(&mut cursor).collect();
     kids
@@ -183,6 +184,18 @@ pub fn binary_logic(node: Node) -> bool {
             .any(|child| matches!(child.kind(), "&&" | "||"))
 }
 
+/// `name`, or `name#2`, `name#3`, ... for the first one not in `used`. The result joins `used`.
+pub fn claim(used: &mut HashSet<String>, name: String) -> String {
+    let mut candidate = name.clone();
+    let mut suffix = 2;
+    while used.contains(&candidate) {
+        candidate = format!("{name}#{suffix}");
+        suffix += 1;
+    }
+    used.insert(candidate.clone());
+    candidate
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,5 +278,15 @@ mod tests {
             .join("a.go");
         let got = absolute_path("pkg/../pkg/a.go", Some(root.path().to_str().unwrap()));
         assert_eq!(got, expected.to_str().unwrap());
+    }
+
+    // CR-22
+    #[test]
+    fn cr_22_claim_gives_numbered_suffixes() {
+        let mut used = HashSet::new();
+        assert_eq!(claim(&mut used, "GET /a".to_string()), "GET /a");
+        assert_eq!(claim(&mut used, "GET /a".to_string()), "GET /a#2");
+        assert_eq!(claim(&mut used, "GET /a".to_string()), "GET /a#3");
+        assert_eq!(claim(&mut used, "GET /b".to_string()), "GET /b");
     }
 }
