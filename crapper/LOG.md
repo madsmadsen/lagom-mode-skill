@@ -94,12 +94,68 @@ Final: every `src` file has 0 survivors. `cargo test`: 321 pass. `cargo clippy -
 
 Lint: `cargo clippy --all-targets` reports no issues (fixed `cloned_ref_to_slice_refs` in `rustpy.rs` and `unnecessary_map_or` in `clojure.rs`).
 
-## Differences from the PRD text (need an owner decision)
+## Differences from the original and decisions of Mads Madsen
 
-- `parity/fixes.toml` has no entries. The port found no bug in the original to fix, and the only Python-only difference found (`1_0` in `--threshold`) is copied, not fixed. Candidate differences that are not copied (a decision for Mads Madsen):
-  - A broken symlink or an unreadable source file stops the original with a Python traceback (exit 1) and the port with a Rust panic (exit 101).
-  - A malformed Go profile or JaCoCo XML does the same.
-  - `float()` accepts non-ASCII digits in `--threshold`; the port does not.
+- `parity/fixes.toml` has no entries. The port found no bug in the original to fix. The owner decided two points (next section). Both make the port equal to the original, so neither needs an entry.
+- Still open (not copied, decision for Mads Madsen): `float()` in `--threshold` and `int()` in Go and JaCoCo numbers accept non-ASCII digits in Python; the port accepts ASCII only. The other open items are in the list at the end of the next section.
+
+## Owner decisions: CR-10 and crash behavior (CR-3, AC-26)
+
+Orchestrated by `CrapperDecisions`. 19 `implementer` tasks (never more than 2 at once). The orchestrator ran every build, test, clippy, fmt, fuzz and gate step.
+
+### Item 1: CR-10 and AC-25 say 0.0, not nil
+
+Decision: the original is right. A function that the coverage report does not mention gets `:coverage 0.0` and `:crap` for coverage 0. The port already did this. `docs/prd/crapper.md` (CR-10, AC-25) now says 0.0, and nil stays for `--no-coverage`. New test `cr_10_ac_25_function_missing_from_the_report_scores_coverage_0_0` (tests/cli.rs) names CR-10 and AC-25 and asserts the whole snapshot for a function the report does not mention. The open question is removed from this log. No [ASSUMPTION] label depended on it. Commit 9d61a8f.
+
+### Item 2: crash behavior, original vs port
+
+Decision: the port behaves like the original. Exit code 1, nothing on stdout, no snapshot, one line on stderr (the text need not match the Python traceback). Reproduced against the pinned original (`6fd92c4`, scratch venv `/tmp/orig-venv`, Python 3.12.16, tree-sitter 0.26.1, tree-sitter-language-pack 1.25.0, run in scratch copies under /tmp). In every row the original wrote 0 bytes on stdout and wrote no `.metrics/crap.edn`.
+
+| Case | Original: exit, last stderr line | Port before | Port now |
+| --- | --- | --- | --- |
+| Broken symlink `src/broken.py` -> `/nonexistent/missing.py` | 1, `FileNotFoundError: [Errno 2] No such file or directory: '/nonexistent/missing.py'` | 101 (panic) | 1 |
+| Source file with mode 000 | 1, `PermissionError: [Errno 13] Permission denied: '<root>/src/secret.py'` | 101 | 1 |
+| Symlink loop `src/loop.py` -> `loop.py` | 1, `RuntimeError: Symlink loop from '<root>/src/loop.py'` | 101 | 1 |
+| Go profile line with 2 fields | 1, `ValueError: invalid coverage segment on line 2: 'foo.go:1.1,2.2 1'` | 101 | 1 |
+| Go profile, start line `a.1` | 1, `ValueError: invalid literal for int() with base 10: 'a'` | 101 | 1 |
+| Go profile block without a comma | 1, `ValueError: not enough values to unpack (expected 2, got 1)` | 101 | 1 |
+| Go profile line without a colon | 1, `ValueError: invalid coverage segment on line 2: 'foo.go 1 1'` | 101 | 1 |
+| Go profile statements `x` | 1, `ValueError: invalid literal for int() with base 10: 'x'` | 101 | 1 |
+| JaCoCo XML unclosed tag | 1, `xml.etree.ElementTree.ParseError: unclosed token: line 1, column 8` | 101 | 1 |
+| JaCoCo counter `missed="x"` | 1, `ValueError: invalid literal for int() with base 10: 'x'` | 101 | 1 |
+| JaCoCo `standalone="yeses"` in the XML declaration | 1, `ParseError: XML declaration not well-formed` | 0 (accepted) | 1 |
+| Report without read permission (lcov.info, coverage.out, jacoco.xml, Cloverage .html) | 1, `PermissionError: [Errno 13] Permission denied: '<root>/coverage/lcov.info'` | 0 (ignored the file) | 1 |
+| Source symlinked from outside the root, package marker (pyproject.toml) outside the root, no flags | 1, `ValueError: '<ext>' is not in the subpath of '<root>'` (before any tool starts) | 101 | 1 |
+
+Cases where the original does NOT crash (exit 0) and the port did not match, now equal: Go numbers and JaCoCo numbers with a sign, underscores between digits (`1_0`, `0_4`) or more than 64 bits (port before: exit 1 or an overflow risk); a garbage or lowercase DOCTYPE in the JaCoCo XML (port before: exit 1). Same in both from the start: a JaCoCo `line="zz"` (read as 0); a broken symlink whose target has no source extension (skipped).
+
+How: every fallible reader returns `Result<_, String>` up to `cli::analyze`, which prints the message through one `fail()` helper and returns 1. New `src/pynum.rs` holds `python_float` (moved) and `python_int` (sign, underscores between digits, magnitude clamped at i64::MAX). `parse_jacoco_index` removes DOCTYPE text with the original's regex and checks the XML declaration. Order of work, as in the original: coverage reports first (Go, JaCoCo, LCOV, forms), then source files.
+
+Parity: 16 new runs in `parity/coverage.toml` (`crash-*` x 12, `lenient-*` x 4) with the original's recorded exit code and stdout, compared by `parity/run.py` (exit code, stdout, snapshot) and replayed offline by `tests/recorded.rs` (`ac_26_crashes_exit_1_like_the_recorded_original`, AC-8 group for `lenient-*`). Each fixture state is built by `setup` shell commands in the copy (symlinks, `chmod 000`, report files), so nothing odd is checked in.
+
+Commits (all red tests first, then code): 1112a57 (source files), 6fc8f33 (Go profile, JaCoCo XML, unreadable report), 92af57e (Python int rules), aa762e3 (package outside root, report directory errors), ab23eef (JaCoCo DOCTYPE and XML declaration).
+
+### Other panic paths (audit)
+
+Method: read every `unwrap`, `expect`, `panic!`, index and slice in non-test code; then differential fuzzing against the original (random edits of the fixture sources and reports, both tools run in scratch copies): 4150 mutated sources (all six languages), 2100 mutated report sets of all four formats, 2100 mutated JaCoCo XML files, 900 mutated Go profiles.
+
+Fixed (reachable from a file or a report): `analyze::read_source` panic; `coverage::merge_go` and `merge_jacoco` panics; `read_text` ignoring an unreadable report; `runners::coverage_report` `expect` (source outside the root); `rustpy::make_report_dir` and `remove_if_present` panics; possible i64 overflow in `span_totals`, `go_percent`, `method_percent` and `jacoco_percent` (made safe together with the Python int clamp).
+
+Checked, not reachable from input, left as is: `ts::node_text` (source is lossy UTF-8, tree-sitter offsets sit on character boundaries); `golang::package_namespace` (absolute path has a parent, go.mod directory is an ancestor); `expect` on static regex patterns and on `crap.rs` number formatting; indexing in `languages/clojure.rs` (bounded loops since step G5). The fuzz found no panic in any source file.
+
+Result of the fuzz after the fixes: no exit-code difference and no panic. Open differences (not fixed, decisions for Mads Madsen):
+
+- About 1 in 100 mutated sources differ in output, all on invalid syntax where tree-sitter error recovery differs (for example a NUL byte inside a Rust file gives another tree). Not a crash.
+- The XML parser of the port (roxmltree) accepts an invalid processing-instruction target that Python's expat rejects (2 of 1200 fuzzed JaCoCo reports). The port exits 0 where the original exits 1.
+- Numbers above 2^63 - 1 in a Go profile or JaCoCo report are clamped; Python ints are unbounded. A sum of two such numbers can score differently from the original. This is a difference from the original that is not in `fixes.toml` (an entry needs approval, CR-PB-6). CR-12 in the PRD states the clamp.
+- Live coverage run only: when creating or removing a report directory fails for Clojure, Java, Go and TypeScript (`attempt`, `prepare_report`), the port warns and goes on; the original raises (exit 1). Not reproduced here, no panic.
+- Non-ASCII digits, see the section above.
+
+### Results
+
+`cargo test`: 375 pass. `cargo clippy --all-targets`: clean. `parity/run.py` (pinned original in a scratch venv, `clj`, `mvn`, `go`, `java`, `npm`, `cargo-llvm-cov` live): 49 runs, 49 pass, 0 skip, 0 diffs (33 earlier + 16 new); `last-run.toml` rewritten.
+
+Mutation gate re-run on every touched `src` file (scratch copy of the committed tree, `ulimit -t 120`, 2 workers, at most 2 runs at once, process groups killed after each run, `pgrep` empty): `analyze.rs` 0 sites; `coverage/mod.rs` 7 killed, 0 survived; `coverage/formats.rs` 40 killed, 0 survived; `pynum.rs` 24 killed, 0 survived; `runners/mod.rs` 23 and `runners/rustpy.rs` 38 and `runners/typescript_cov.rs` 20 and `cli.rs` 38: all killed, 0 survived. No test-only code in `src`.
 
 ## Not reachable here (blockers)
 
