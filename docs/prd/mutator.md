@@ -31,7 +31,7 @@ mutator makes small changes to the code and runs the tests after each change. A 
 
 ## 4. Non-goals
 
-1. The port does not add languages, mutation rules, or flags that the original does not have. The upstream fixes in section 5.4 are the only exception.
+1. The port does not add languages, mutation rules, or flags that the original does not have. The upstream fixes in section 5.4 and the `--max-memory-mb` flag of MU-25 are the only exceptions.
 2. The port does not change the mutation rules or the outcome rules of the original. A bug fix is not a change of rules. The upstream fixes in section 5.4 are the only exception.
 3. The port is private. It is not published to crates.io.
 
@@ -68,6 +68,7 @@ The original imports code from a crapper checkout for the work in this section. 
 - MU-19: If a snapshot exists, the port runs differentially. It reruns the survivors and every site in a function whose text changed. `--mutate-all` reruns all sites.
 - MU-20: The port exits `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives.
 - MU-21: When a mutant times out, or its test time is within 10% of its timeout, the port runs that mutant once more with 2 times the timeout. The outcome of this second run is the outcome of the mutant. This behavior differs from the original, and `mutator/parity/fixes.toml` lists it.
+- MU-25: The port limits the memory of each mutant test run. The limit is the total resident memory of all processes in the process group of the test command. The default limit is 4096 MiB. The flag `--max-memory-mb N` sets the limit to `N` MiB, and `--max-memory-mb 0` turns the limit off. The port rejects a value that is not a whole number of 0 or more, with exit code `1`. While a mutant test run waits, the port reads the memory of the process group at least once each second. If the memory is over the limit, the port kills the process group with `SIGKILL`, and the mutant counts as killed. The baseline run has no memory limit. MU-21 does not run a mutant again because of the memory limit. This behavior differs from the original, and `mutator/parity/fixes.toml` lists it.
 
 ### 5.4 Upstream fixes
 
@@ -122,6 +123,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 14. AC-14 (MU-22): On the TypeScript fixture of issue 29, where `src/calc/index.test.ts` imports `big` from `'.'`, the mutant `>` to `>=` on line 2 of `src/calc/index.ts` is killed.
 15. AC-15 (MU-23): A scan run on the file `src/demo/ops2.py` from issue 10 lists a site for each of the operators `is`, `in`, `@`, `//`, `%`, `**`, `+=`, and `+`. A scan run on a file with `is not`, `not in`, `-=`, `*=`, and `/=` lists a site for each of them.
 16. AC-16 (MU-24): On the fixture of issue 9, where the tests cover line 2 and do not cover lines 4 and 5, the two sites on line 4 are uncovered sites and the site on line 2 runs. The same rule holds for a site in an `except` clause and in a `case` guard whose line no test runs.
+17. AC-17 (MU-25): A fixture has a mutant that makes the tests allocate memory without end, and a timeout of more than 60 seconds. The port, run with `--max-memory-mb 256`, counts the mutant as killed within 10 seconds of the start of its test run, and runs it only once. A run with `--max-memory-mb 0` has no memory limit. `--max-memory-mb -1` and `--max-memory-mb abc` exit `1`.
 
 ## 9. Risks
 
@@ -131,6 +133,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 | The port copies the crapper code that the original imports. | The function names or the coverage of the port drift from the crapper code. | AC-1 compares with the original, which uses the pinned crapper code. |
 | A tree-sitter grammar version in Rust differs from the one in Python. | Different parse trees give different sites or names. | Pin the grammar versions. AC-1 detects a difference. |
 | Two mutator runs at the same time on one host slow each other down. | A survivor can time out and count as killed. | MU-21 runs each mutant near its timeout a second time with 2 times the timeout. AC-13 checks the outcome. |
+| A mutant makes the tests allocate memory without end. | The host runs out of memory before the timeout kills the mutant. | MU-25 kills the test run when its memory goes over the limit. AC-17 checks it. |
 | A backup from an old run is restored. | Before each run that is not a scan run, the original restores every file under `target/mutator-backup/`. The restore overwrites later edits to the source files. | The port copies the behavior of the original. A fix needs an entry in `fixes.toml`. |
 | A run on a large project takes a long time. | The run can hit the command timeout of an agent. | Use `--changed` or a list of files. |
 
