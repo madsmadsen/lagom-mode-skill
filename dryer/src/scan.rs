@@ -134,12 +134,17 @@ fn group_by_language(entries: &[Entry]) -> Vec<Vec<&Entry>> {
     groups
 }
 
+/// Every unordered pair of the group, each pair once, in order of first member.
+/// `split_first` walks the group so that no start index is a mutation site that
+/// the same-span rule makes equivalent.
 fn pairs_in(group: &[&Entry], threshold: f64) -> Vec<Duplicate> {
     let mut found = Vec::new();
-    for (index, left) in group.iter().enumerate() {
-        for right in &group[index + 1..] {
+    let mut rest = group;
+    while let Some((left, tail)) = rest.split_first() {
+        for right in tail {
             found.extend(pair(left, right, threshold));
         }
+        rest = tail;
     }
     found
 }
@@ -273,6 +278,35 @@ mod tests {
                 &["x", "z"],
                 Language::Rust,
             ),
+        ];
+        let found = find_duplicates(&entries, 0.3);
+        let scores: Vec<f64> = found.iter().map(|item| item.score).collect();
+        assert_eq!(scores, vec![1.0, 1.0 / 3.0]);
+    }
+
+    // DR-10: higher scores come first even when the lower score is found first.
+    #[test]
+    fn dr10_the_higher_score_is_reported_first_when_found_last() {
+        let mut interner = Interner::new();
+        let entries = vec![
+            entry(
+                &mut interner,
+                "a.rs",
+                (1, 4),
+                20,
+                &["x", "y"],
+                Language::Rust,
+            ),
+            entry(
+                &mut interner,
+                "b.rs",
+                (10, 14),
+                20,
+                &["x", "z"],
+                Language::Rust,
+            ),
+            py(&mut interner, "a.py", (1, 4), &["only"]),
+            py(&mut interner, "b.py", (1, 4), &["only"]),
         ];
         let found = find_duplicates(&entries, 0.3);
         let scores: Vec<f64> = found.iter().map(|item| item.score).collect();

@@ -581,7 +581,7 @@ fn map_form(line: usize, items: Vec<Form>) -> Result<Form, ReadError> {
     if items.len() % 2 == 1 {
         return Err(err(line, "map literal has an odd number of forms"));
     }
-    let mut pairs = Vec::with_capacity(items.len() / 2);
+    let mut pairs = Vec::with_capacity(items.len().div_ceil(2));
     let mut iter = items.into_iter();
     while let (Some(key), Some(value)) = (iter.next(), iter.next()) {
         pairs.push((key, value));
@@ -693,9 +693,6 @@ enum Task<'a> {
 /// dry4clj's `normalize-form` with `head = false`. Post-order over an explicit
 /// task stack; child results are moved, never copied, so cost is linear.
 pub fn normalize(form: &Form) -> Norm {
-    if !matches!(form, Form::Coll { .. }) {
-        return atom_norm(form, false);
-    }
     let mut tasks = vec![Task::Visit(form, false)];
     let mut done: Vec<Norm> = Vec::new();
     while let Some(task) = tasks.pop() {
@@ -1141,6 +1138,13 @@ mod tests {
             !printed.contains("foo") && !printed.contains("bar"),
             "printed: {printed}"
         );
+    }
+
+    // DR-9: a bare symbol that is not at the head of a list is erased.
+    #[test]
+    fn dr9_a_bare_symbol_form_is_erased() {
+        let forms = read_clean("foo\n");
+        assert_eq!(normalize(&forms[0]), Norm::Kw("symbol"));
     }
 
     // DR-9: set members are erased.

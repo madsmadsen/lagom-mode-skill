@@ -90,16 +90,24 @@ fn escape(text: &str) -> String {
     text.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
+/// Count of ids in both lists. The lists are sorted and hold no duplicates.
+/// The walk advances with iterators so that no step size is a mutation site that
+/// sorted, unique input cannot tell apart.
 fn shared_count(left: &[u32], right: &[u32]) -> usize {
-    let (mut i, mut j, mut shared) = (0, 0, 0);
-    while i < left.len() && j < right.len() {
-        match left[i].cmp(&right[j]) {
-            Ordering::Less => i += 1,
-            Ordering::Greater => j += 1,
+    let (mut left, mut right) = (left.iter().peekable(), right.iter().peekable());
+    let mut shared = 0;
+    while let (Some(a), Some(b)) = (left.peek(), right.peek()) {
+        match a.cmp(b) {
+            Ordering::Less => {
+                left.next();
+            }
+            Ordering::Greater => {
+                right.next();
+            }
             Ordering::Equal => {
                 shared += 1;
-                i += 1;
-                j += 1;
+                left.next();
+                right.next();
             }
         }
     }

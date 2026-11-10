@@ -126,3 +126,19 @@ Scripts: `ci/linux-vm/`. arm64 guest: qemu with HVF. x86_64 guest: qemu with TCG
 | DR-NFR-2: port time below original time per case | 32 of 32 (original 0.02 s and up, port at most 0.01 s) | 32 of 32 (original 0.24 s and up, port at most 0.04 s; TCG, emulated, absolute times not comparable with a real runner) |
 
 No Linux-only failure found. No source change.
+
+## Mutation cleanup of `src` (16 survivors to 0)
+
+Start: the mutator port found 16 survivors: `astnorm.rs` (6), `clojure.rs` (3), `scan.rs` (2), `select.rs` (3), `shape.rs` (2). Scratch copy in `/tmp/dm`, `--max-workers 2`, `--timeout-factor 3`.
+
+1. `astnorm.rs` 278, 310 (equivalent): the callee mode and the path mode ignore `head`. Call `callee_value` and `assemble_path` directly. The path mode had no other caller, so I removed `Mode::Path`.
+2. `astnorm.rs` 109, 281, 284, 312 (the `head` flag on `normalize` and three more calls): the three calls now use `normalize`, so one site is left. Test `dr9_a_lone_identifier_normalizes_to_the_symbol_marker` fails when that flag is `true`.
+3. `clojure.rs` 584 (equivalent): the capacity only. Use `len().div_ceil(2)`, which is the same value for an even length and has no operator.
+4. `clojure.rs` 697, 699: the early return for atoms was the same as the first task of the loop. I removed it. Test `dr9_a_bare_symbol_form_is_erased` fails when the flag is `true`.
+5. `scan.rs` 140 (equivalent): a pair of a form with itself is dropped by the same-span rule. `pairs_in` now walks with `split_first`, with no start index.
+6. `scan.rs` 149: test `dr10_the_higher_score_is_reported_first_when_found_last` finds the lower score first. The old test found the higher score first, so a broken order passed.
+7. `select.rs` 34, 40: `git` calls `run_program` (program name as an argument) and `failure` (builds the error from the output). Tests `dr7_a_program_that_cannot_start_gives_code_1`, `dr7_a_run_killed_by_a_signal_gives_code_1`, `dr7_a_failed_run_reports_its_code_and_stderr`.
+8. `select.rs` 79 (equivalent): an entry of exactly 3 bytes has an empty name, and an empty name is not a file. `entry.get(3..)` replaces the length check, and `entry_path` takes the name bytes.
+9. `shape.rs` 101, 102 (equivalent for sorted, unique ids): `shared_count` now steps with iterator `next()`, with no step literal.
+10. A mutant at `Reader::get` in `clojure.rs` (`pos += 1` to `pos += 0`) makes the reader loop and allocate without end. The mutator ends it as a timeout and counts it as killed. No code change.
+11. Result in the scratch copy: 197 sites, 197 killed, 0 survivors, 0 uncovered. `cargo test` 215 pass, clippy clean. crapper `--threshold 9.99` exit 0. dryer `--threshold 0.8` exit 0. `parity/run_parity.py` (venv with tree-sitter-language-pack): 33 cases, 0 failed, 1 awaiting approval (`js-read-as-typescript`, unchanged).

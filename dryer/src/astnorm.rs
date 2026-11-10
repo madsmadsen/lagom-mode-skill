@@ -90,12 +90,11 @@ const SCOPED: &[&str] = &["scoped_identifier", "scoped_type_identifier"];
 const ARG_LISTS: &[&str] = &["argument_list", "arguments"];
 const TYPE_ARGS: &[&str] = &["type_arguments", "type_parameters"];
 
-/// Which rule a node is normalized under. Python modes: "norm", "callee", "path".
+/// Which rule a node is normalized under. Python modes: "norm", "callee".
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Norm,
     Callee,
-    Path,
 }
 
 /// Outcome of the leaf rules. `Pending` means the node needs its children assembled.
@@ -145,7 +144,6 @@ fn value(node: Node, mode: Mode, head: bool, data: &[u8]) -> Option<Norm> {
 fn try_leaf(node: Node, mode: Mode, head: bool, data: &[u8]) -> Leaf {
     match mode {
         Mode::Callee => callee_leaf(node, data),
-        Mode::Path => Leaf::Pending,
         Mode::Norm => norm_leaf(node, head, data),
     }
 }
@@ -205,7 +203,6 @@ fn is_literal(node: Node) -> bool {
 fn assemble(node: Node, mode: Mode, head: bool, data: &[u8]) -> Option<Norm> {
     match mode {
         Mode::Callee => callee_value(node, data),
-        Mode::Path => Some(assemble_path(node, data)),
         Mode::Norm => assemble_norm(node, head, data),
     }
 }
@@ -275,13 +272,14 @@ fn assemble_call(node: Node, data: &[u8]) -> Norm {
         for child in receivers {
             push_some(&mut out, value(*child, Mode::Norm, false, data));
         }
-        push_some(&mut out, value(*callee, Mode::Callee, false, data));
+        // `callee_value` is the callee rule: the callee mode ignores `head`.
+        push_some(&mut out, callee_value(*callee, data));
     }
     for child in type_args {
-        push_some(&mut out, value(child, Mode::Norm, false, data));
+        push_some(&mut out, normalize(child, data));
     }
     if let Some(args) = args {
-        push_some(&mut out, value(args, Mode::Norm, false, data));
+        push_some(&mut out, normalize(args, data));
     }
     Norm::List(out)
 }
@@ -307,9 +305,9 @@ fn assemble_path(node: Node, data: &[u8]) -> Norm {
         if IDENTIFIERS.contains(&child.kind()) {
             parts.push(symbol_named(child, data));
         } else if is_path(child) {
-            push_some(&mut parts, value(child, Mode::Path, false, data));
+            parts.push(assemble_path(child, data));
         } else {
-            push_some(&mut parts, value(child, Mode::Norm, false, data));
+            push_some(&mut parts, normalize(child, data));
         }
     }
     Norm::List(parts)
@@ -356,6 +354,13 @@ mod tests {
             Norm::List(items) => items.iter().any(|item| contains_subtree(item, needle)),
             _ => false,
         }
+    }
+
+    // DR-9: a lone identifier that is not a call name is erased to the symbol marker.
+    #[test]
+    fn dr9_a_lone_identifier_normalizes_to_the_symbol_marker() {
+        let norm = first_norm("java", "identifier", "class A { int a; }");
+        assert_eq!(norm, Some(Norm::Kw("symbol")));
     }
 
     // DR-9: two Java methods that differ only in local names normalize identically.

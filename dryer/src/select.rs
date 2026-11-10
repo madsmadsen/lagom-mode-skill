@@ -6,7 +6,7 @@ use crate::args::Options;
 use crate::discover::{is_test_file, iter_source_files, language_of, posix, resolve, SKIP_DIRS};
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Command, Output, Stdio};
 
 /// git status could not be read. `code` is git's own status.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,7 +24,12 @@ impl fmt::Display for GitStatusError {
 impl std::error::Error for GitStatusError {}
 
 fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>, GitStatusError> {
-    let output = Command::new("git")
+    run_program("git", root, args)
+}
+
+/// Runs `program -C root args`. A program that cannot start gives code 1.
+fn run_program(program: &str, root: &Path, args: &[&str]) -> Result<Vec<u8>, GitStatusError> {
+    let output = Command::new(program)
         .arg("-C")
         .arg(root)
         .args(args)
@@ -32,11 +37,17 @@ fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>, GitStatusError> {
         .output()
         .map_err(|err| GitStatusError {
             code: 1,
-            message: format!("git: {err}"),
+            message: format!("{program}: {err}"),
         })?;
     if output.status.success() {
         return Ok(output.stdout);
     }
+    Err(failure(&output))
+}
+
+/// The error for a failed run. A run that ends without an exit code, such as
+/// one killed by a signal, gives code 1.
+fn failure(output: &Output) -> GitStatusError {
     let code = output.status.code().unwrap_or(1);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let trimmed = stderr.trim();
@@ -45,13 +56,12 @@ fn git(root: &Path, args: &[&str]) -> Result<Vec<u8>, GitStatusError> {
     } else {
         trimmed.to_string()
     };
-    Err(GitStatusError { code, message })
+    GitStatusError { code, message }
 }
 
-/// Path for one `git status --porcelain -z` entry (`XY PATH`), relative to the repo top.
-fn entry_path(toplevel: &Path, entry: &[u8]) -> PathBuf {
-    let name = String::from_utf8_lossy(&entry[3..]);
-    resolve(&toplevel.join(&*name))
+/// Path for the name part of one `git status --porcelain -z` entry (`XY PATH`), relative to the repo top.
+fn entry_path(toplevel: &Path, name: &[u8]) -> PathBuf {
+    resolve(&toplevel.join(&*String::from_utf8_lossy(name)))
 }
 
 /// Added and modified files under `root`, as paths from the repo root.
@@ -76,8 +86,8 @@ pub fn changed_files(root: &Path) -> Result<Vec<PathBuf>, GitStatusError> {
     let root_resolved = resolve(root);
     Ok(status
         .split(|byte| *byte == 0)
-        .filter(|entry| entry.len() > 3)
-        .map(|entry| entry_path(&toplevel, entry))
+        .filter_map(|entry| entry.get(3..))
+        .map(|name| entry_path(&toplevel, name))
         .filter(|path| path.is_file() && path.starts_with(&root_resolved))
         .collect())
 }
@@ -454,5 +464,46 @@ mod tests {
         let root = root_arg(&dir);
         let found = select_files(&options(&["--root", &root, "tests/test_a.py"])).unwrap();
         assert_eq!(relative(&found, &dir), vec!["tests/test_a.py"]);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod failure_tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+    use std::process::ExitStatus;
+
+    // DR-7: a program that cannot start reports code 1 and names the program.
+    #[test]
+    fn dr7_a_program_that_cannot_start_gives_code_1() {
+        let err = run_program("dryer-no-such-program-xyz", Path::new("."), &[]).unwrap_err();
+        assert_eq!(err.code, 1);
+        assert!(err.message.starts_with("dryer-no-such-program-xyz: "));
+    }
+
+    // DR-7: a run killed by a signal has no exit code and reports code 1.
+    #[test]
+    fn dr7_a_run_killed_by_a_signal_gives_code_1() {
+        let output = Output {
+            status: ExitStatus::from_raw(9),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        };
+        let err = failure(&output);
+        assert_eq!(err.code, 1);
+        assert_eq!(err.message, "git status failed");
+    }
+
+    // DR-7: a run with an exit code reports that code and its trimmed stderr.
+    #[test]
+    fn dr7_a_failed_run_reports_its_code_and_stderr() {
+        let output = Output {
+            status: ExitStatus::from_raw(3 << 8),
+            stdout: Vec::new(),
+            stderr: b" boom \n".to_vec(),
+        };
+        let err = failure(&output);
+        assert_eq!(err.code, 3);
+        assert_eq!(err.message, "boom");
     }
 }
