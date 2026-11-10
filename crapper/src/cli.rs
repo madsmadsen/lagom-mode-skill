@@ -216,6 +216,12 @@ struct GitError {
     message: String,
 }
 
+impl GitError {
+    fn new(code: i32, message: String) -> Self {
+        Self { code, message }
+    }
+}
+
 /// Removes every `GIT_*` variable from `command`. A run inside a Git hook
 /// must read the repository of the project (CR-20), not the repository
 /// that set these variables, such as `GIT_DIR` or `GIT_INDEX_FILE`.
@@ -234,10 +240,7 @@ fn git(root: &Path, args: &[&str]) -> Result<Output, GitError> {
         .arg(root)
         .args(args)
         .output()
-        .map_err(|error| GitError {
-            code: 1,
-            message: error.to_string(),
-        })
+        .map_err(|error| GitError::new(1, error.to_string()))
 }
 
 fn git_stdout(output: Output) -> Result<String, GitError> {
@@ -250,10 +253,7 @@ fn git_stdout(output: Output) -> Result<String, GitError> {
     } else {
         stderr
     };
-    Err(GitError {
-        code: exit_code(output.status),
-        message,
-    })
+    Err(GitError::new(exit_code(output.status), message))
 }
 
 fn exit_code(status: ExitStatus) -> i32 {
