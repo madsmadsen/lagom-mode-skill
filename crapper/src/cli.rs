@@ -426,34 +426,47 @@ fn fail(message: &str) -> i32 {
     1
 }
 
-fn analyze(options: &Options) -> i32 {
-    let root = resolve(&options.project_root);
+/// Selects the files, runs coverage, and scores them. `Ok(None)` means there was nothing to analyze.
+fn scored_entries(options: &Options, root: &Path) -> Result<Option<Vec<Entry>>, i32> {
     let files = match select_files(options) {
         Ok(files) => files,
         Err(error) => {
             eprintln!("{}", error.message);
-            return error.code;
+            return Err(error.code);
         }
     };
     if files.is_empty() {
         println!("No source files to analyze.");
-        return 0;
+        return Ok(None);
     }
-    let mut bundle = match coverage_bundle(options, &root, &files) {
+    let mut bundle = match coverage_bundle(options, root, &files) {
         Ok(bundle) => bundle,
-        Err(message) => return fail(&message),
+        Err(message) => return Err(fail(&message)),
     };
-    let entries = match analyze_files(&files, &root, bundle.as_mut()) {
-        Ok(entries) => entries,
-        Err(error) => return fail(&error),
-    };
-    let metrics = match write_metrics(&entries, &root) {
+    match analyze_files(&files, root, bundle.as_mut()) {
+        Ok(entries) => Ok(Some(entries)),
+        Err(error) => Err(fail(&error)),
+    }
+}
+
+/// Writes the metrics file, prints the report, and returns the threshold exit status.
+fn report(options: &Options, root: &Path, entries: &[Entry]) -> i32 {
+    let metrics = match write_metrics(entries, root) {
         Ok(path) => path,
         Err(error) => return fail(&error.to_string()),
     };
-    print!("{}", format_report(&entries));
+    print!("{}", format_report(entries));
     eprintln!("Wrote {}", metrics.display());
-    threshold_status(options.threshold, &entries)
+    threshold_status(options.threshold, entries)
+}
+
+fn analyze(options: &Options) -> i32 {
+    let root = resolve(&options.project_root);
+    match scored_entries(options, &root) {
+        Ok(Some(entries)) => report(options, &root, &entries),
+        Ok(None) => 0,
+        Err(code) => code,
+    }
 }
 
 /// Runs the CLI with the arguments that follow the program name. Returns the exit code.
