@@ -114,7 +114,8 @@ fn spawn(cmd: &Cmd) -> Command {
 fn exit_code(status: ExitStatus) -> i32 {
     status
         .code()
-        .unwrap_or_else(|| -status.signal().unwrap_or(0))
+        .or_else(|| status.signal().map(|signal| -signal))
+        .unwrap_or_default()
 }
 
 pub(crate) fn nearest(start: &Path, marker: &str, stop: &Path) -> Option<PathBuf> {
@@ -271,10 +272,8 @@ fn cover_clojure_with(root: &Path, _files: &[PathBuf], exec: &mut dyn FnMut(&Cmd
     }
     clean_clojure(root);
     let code = run_clojure(root, exec);
-    if code != 0 {
-        warn(&format!(
-            "Clojure coverage exited {code}. Clojure coverage will score 0%."
-        ));
+    if let Some(message) = exit_warning("Clojure", code, None) {
+        warn(&message);
     }
 }
 
@@ -309,11 +308,8 @@ fn cover_java_with(root: &Path, files: &[PathBuf], exec: &mut dyn FnMut(&Cmd, &P
     for module in &modules {
         clean_jacoco(module);
         let code = exec(&maven_command(), module);
-        if code != 0 {
-            warn(&format!(
-                "Java coverage exited {code} in {}. Java coverage will score 0%.",
-                module.display()
-            ));
+        if let Some(message) = exit_warning("Java", code, Some(module)) {
+            warn(&message);
         }
     }
 }
@@ -357,11 +353,8 @@ fn cover_go_with(root: &Path, files: &[PathBuf], exec: &mut dyn FnMut(&Cmd, &Pat
         let profile = go_profile(module);
         prepare_profile(&profile);
         let code = exec(&go_command(&profile), module);
-        if code != 0 {
-            warn(&format!(
-                "Go coverage exited {code} in {}. Go coverage will score 0%.",
-                module.display()
-            ));
+        if let Some(message) = exit_warning("Go", code, Some(module)) {
+            warn(&message);
         }
     }
 }
@@ -380,12 +373,31 @@ fn prepare_profile(profile: &Path) {
 
 fn run_custom(root: &Path, text: &str) -> i32 {
     let code = run_shell(&Cmd::Shell(text.to_string()), root);
-    if code != 0 {
-        warn(&format!(
-            "Coverage command exited {code}. Reports already on disk will not be read."
-        ));
+    if let Some(message) = custom_exit_warning(code) {
+        warn(&message);
     }
     code
+}
+
+/// The warning for a failed run of one language's coverage tool; `None` when it exited 0.
+fn exit_warning(language: &str, code: i32, module: Option<&Path>) -> Option<String> {
+    if code == 0 {
+        return None;
+    }
+    let place = module.map_or_else(String::new, |dir| format!(" in {}", dir.display()));
+    Some(format!(
+        "{language} coverage exited {code}{place}. {language} coverage will score 0%."
+    ))
+}
+
+/// The warning for a failed custom `--coverage-command`; `None` when it exited 0.
+fn custom_exit_warning(code: i32) -> Option<String> {
+    if code == 0 {
+        return None;
+    }
+    Some(format!(
+        "Coverage command exited {code}. Reports already on disk will not be read."
+    ))
 }
 
 type CoverFn = fn(&Path, &[PathBuf]);
@@ -729,5 +741,57 @@ mod tests {
         let start = resolved(dir.path());
         let stop = resolved(other.path());
         assert_eq!(nearest(&start, "crapper-no-such-marker", &stop), None);
+    }
+
+    // CR-13 a zero exit writes no failure warning; a nonzero exit names the language and the module
+    #[test]
+    fn cr_13_exit_warning_is_only_for_a_nonzero_exit() {
+        assert_eq!(exit_warning("Go", 0, Some(Path::new("/m"))), None);
+        assert_eq!(
+            exit_warning("Go", 1, Some(Path::new("/m"))),
+            Some("Go coverage exited 1 in /m. Go coverage will score 0%.".to_string())
+        );
+        assert_eq!(
+            exit_warning("Clojure", 2, None),
+            Some("Clojure coverage exited 2. Clojure coverage will score 0%.".to_string())
+        );
+    }
+
+    // CR-13 a custom command warns only when it exits nonzero
+    #[test]
+    fn cr_13_custom_exit_warning_is_only_for_a_nonzero_exit() {
+        assert_eq!(custom_exit_warning(0), None);
+        assert_eq!(
+            custom_exit_warning(1),
+            Some(
+                "Coverage command exited 1. Reports already on disk will not be read.".to_string()
+            )
+        );
+    }
+
+    // CR-13 a signal death is reported as the negated signal number
+    #[test]
+    fn cr_13_signal_death_is_the_negated_signal_number() {
+        assert_eq!(exit_code(ExitStatus::from_raw(9)), -9);
+    }
+
+    // CR-13 an argument vector's first element is the program, not an argument
+    #[test]
+    fn cr_13_argument_vector_passes_only_the_rest_as_arguments() {
+        let dir = tempdir().unwrap();
+        let cmd = Cmd::Argv(vec!["sh".into(), "-c".into(), "exit 3".into()]);
+        assert_eq!(run_shell(&cmd, dir.path()), 3);
+    }
+
+    // CR-13 a successful Clojure alias returns 0 and no fallback alias runs
+    #[test]
+    fn cr_13_clojure_success_returns_zero_without_a_retry() {
+        let mut calls = 0;
+        let status = run_clojure(Path::new("/p"), &mut |_: &Cmd, _: &Path| -> i32 {
+            calls += 1;
+            0
+        });
+        assert_eq!(status, 0);
+        assert_eq!(calls, 1);
     }
 }

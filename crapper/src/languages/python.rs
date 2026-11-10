@@ -41,16 +41,7 @@ pub fn functions_in_source(source: &str, path: &str, project_root: &str) -> Vec<
 }
 
 fn is_decision(node: Node) -> bool {
-    DECISIONS.contains(&node.kind())
-        || (node.kind() == "boolean_operator" && has_logic_operator(node))
-}
-
-fn has_logic_operator(node: Node) -> bool {
-    let mut cursor = node.walk();
-    let found = node
-        .children(&mut cursor)
-        .any(|child| matches!(child.kind(), "and" | "or"));
-    found
+    DECISIONS.contains(&node.kind()) || node.kind() == "boolean_operator"
 }
 
 fn skip_nested_class(node: Node) -> bool {

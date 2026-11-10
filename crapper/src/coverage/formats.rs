@@ -201,17 +201,13 @@ pub fn go_percent(
     Some(coverage_percent(covered, total))
 }
 
-static DOCTYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)<!DOCTYPE[^>]*>").expect("valid DOCTYPE regex"));
-
 /// Python `_parse_jacoco_index`: JaCoCo methods keyed by `class#method`.
 pub fn parse_jacoco_index(text: &str) -> Result<Keyed<Vec<JacocoMethod>>, String> {
-    let cleaned = DOCTYPE.replace_all(text, "");
     let options = roxmltree::ParsingOptions {
         allow_dtd: true,
         ..Default::default()
     };
-    let document = roxmltree::Document::parse_with_options(&cleaned, options)
+    let document = roxmltree::Document::parse_with_options(text, options)
         .map_err(|error| error.to_string())?;
     let mut found: Keyed<Vec<JacocoMethod>> = Keyed::default();
     for class in document
@@ -454,9 +450,9 @@ mod tests {
         assert!(found.get("demo.pkg.Board#skip").is_none());
     }
 
-    // CR-12: a JaCoCo DOCTYPE is stripped before parsing.
+    // CR-12: a JaCoCo DOCTYPE is accepted by the parser, and a report with no methods has none.
     #[test]
-    fn cr_12_jacoco_doctype_is_stripped_before_parsing() {
+    fn cr_12_jacoco_doctype_is_accepted_by_the_parser() {
         let xml = r#"<?xml version="1.0"?><!DOCTYPE report PUBLIC "x" "report.dtd"><report/>"#;
         assert_eq!(
             parse_jacoco_index(xml)
@@ -485,5 +481,56 @@ mod tests {
     fn cr_12_jacoco_is_none_when_no_method_matches() {
         let index = parse_jacoco_index("<report/>").expect("valid jacoco");
         assert_eq!(jacoco_percent(&index, &["demo.Board"], "place", 4), None);
+    }
+
+    // CR-12: a span with one form (1 out of 1) is kept, so its line is recorded.
+    #[test]
+    fn cr_12_form_coverage_keeps_a_span_with_one_form() {
+        let html =
+            r#"<span class="pc" title="1 out of 1 forms covered">   5&nbsp;&nbsp;(if x 1)</span>"#;
+        assert_eq!(parse_form_coverage(html), HashMap::from([(5, (1, 1))]));
+    }
+
+    // CR-12: a broken Go profile line is reported by its 1-based line number.
+    #[test]
+    fn cr_12_go_profile_error_names_the_one_based_line() {
+        let error = parse_go_profile("mode: set\ndemo/board.go:4.1,6.2 2 1\nnot a segment\n")
+            .expect_err("broken line");
+        assert!(error.contains("on line 3:"), "{error}");
+    }
+
+    // CR-12: a Go block ending on a function's first line, or starting on its last line, overlaps it.
+    #[test]
+    fn cr_12_go_blocks_touching_the_function_edges_overlap_it() {
+        let parsed = profile("mode: set\ndemo/board.go:4.1,6.2 2 1\ndemo/board.go:8.1,9.2 1 0\n");
+        assert_eq!(
+            go_percent(&parsed, "demo/board.go", 6, 8, &source_parts(&[])),
+            Some(66.66666666666667)
+        );
+    }
+
+    // CR-12: only a plain <class> element supplies JaCoCo methods; other and namespaced elements do not.
+    #[test]
+    fn cr_12_jacoco_only_a_plain_class_element_supplies_methods() {
+        let xml = r#"<report>
+            <other name="demo/pkg/Board"><method name="place" line="4"><counter type="INSTRUCTION" missed="1" covered="3"/></method></other>
+            <x:class xmlns:x="urn:x" name="demo/pkg/Board"><method name="place" line="4"><counter type="INSTRUCTION" missed="1" covered="3"/></method></x:class>
+            <class name="demo/pkg/Board"><method name="place" line="4"><counter type="INSTRUCTION" missed="1" covered="3"/></method></class>
+        </report>"#;
+        let index = parse_jacoco_index(xml).expect("valid jacoco");
+        assert_eq!(index.get("demo.pkg.Board#place").map(Vec::len), Some(1));
+    }
+
+    // CR-12: a JaCoCo report with a DOCTYPE line parses, and its method scores.
+    #[test]
+    fn cr_12_jacoco_report_with_a_doctype_parses_and_scores() {
+        let xml = r#"<?xml version="1.0"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="x"><class name="demo/Board"><method name="place" line="4"><counter type="INSTRUCTION" missed="1" covered="3"/></method></class></report>"#;
+        let index = parse_jacoco_index(xml).expect("valid jacoco");
+        assert_eq!(
+            jacoco_percent(&index, &["demo.Board"], "place", 4),
+            Some(75.0)
+        );
     }
 }

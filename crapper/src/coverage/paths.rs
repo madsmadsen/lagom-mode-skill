@@ -273,7 +273,7 @@ fn reverse_index(
     for parts in parts_of {
         for (position, norm) in items {
             let key_parts = segments(norm);
-            if !is_proper_suffix(parts, &key_parts)
+            if !is_suffix(parts, &key_parts)
                 || another_source_ends_with(&key_parts, source_parts, parts_of)
             {
                 continue;
@@ -289,8 +289,8 @@ fn reverse_index(
     }
 }
 
-fn is_proper_suffix(parts: &[String], key_parts: &[String]) -> bool {
-    !key_parts.is_empty() && key_parts.len() < parts.len() && parts.ends_with(key_parts)
+fn is_suffix(parts: &[String], key_parts: &[String]) -> bool {
+    !key_parts.is_empty() && parts.ends_with(key_parts)
 }
 
 fn another_source_ends_with(
@@ -344,5 +344,66 @@ mod tests {
         index.insert("a".to_string(), 3);
         let order: Vec<(String, i32)> = index.into_iter().collect();
         assert_eq!(order, vec![("a".to_string(), 3), ("b".to_string(), 2)]);
+    }
+
+    // CR-12: a percent escape that ends exactly at the end of the input is decoded; a short one stays literal.
+    #[test]
+    fn cr_12_percent_escape_at_the_very_end_is_decoded() {
+        assert_eq!(normalize_path("lib/%41"), "lib/A");
+        assert_eq!(normalize_path("%4"), "%4");
+    }
+
+    // CR-12: candidates drop empty spellings and repeated spellings.
+    #[test]
+    fn cr_12_candidates_skip_empty_and_repeated_spellings() {
+        assert!(candidates("").is_empty());
+        let found = candidates("a.go");
+        assert_eq!(
+            found
+                .iter()
+                .filter(|value| value.as_str() == "a.go")
+                .count(),
+            1
+        );
+        assert!((0..found.len()).all(|index| !found[..index].contains(&found[index])));
+    }
+
+    // CR-12: source_parts lists each segment list once, even when two sources repeat it.
+    #[test]
+    fn cr_12_source_parts_lists_each_segment_list_once() {
+        let parts = source_parts(&["a.go".to_string(), "a.go".to_string()]);
+        let expected = vec!["a.go".to_string()];
+        assert_eq!(
+            parts
+                .iter()
+                .filter(|segments| *segments == &expected)
+                .count(),
+            1
+        );
+    }
+
+    // CR-12: forward matches take the smallest extra leading path, and a tie on it selects nothing.
+    #[test]
+    fn cr_12_forward_match_ties_on_the_smallest_extra_path_select_nothing() {
+        let parts = source_parts(&[]);
+        let tied = Keyed {
+            entries: vec![("proj/src/a.go".to_string(), 1), ("q/a.go".to_string(), 2)],
+        };
+        assert_eq!(lookup(&tied, "src/a.go", &parts), None);
+        let single = Keyed {
+            entries: vec![("proj/src/a.go".to_string(), 1)],
+        };
+        assert_eq!(lookup(&single, "src/a.go", &parts), Some(&1));
+    }
+
+    // CR-12: a reverse match is blocked by another source whose segments equal the key.
+    #[test]
+    fn cr_12_a_source_equal_to_the_key_blocks_a_reverse_match() {
+        let index = Keyed {
+            entries: vec![("main.go".to_string(), 7)],
+        };
+        let same_key_source = vec![vec!["main.go".to_string()]];
+        assert_eq!(lookup(&index, "a/b/main.go", &[]), Some(&7));
+        assert_eq!(lookup(&index, "a/b/main.go", &same_key_source), None);
     }
 }

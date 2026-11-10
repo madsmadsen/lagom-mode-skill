@@ -13,7 +13,7 @@ use std::io::ErrorKind;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use super::{coverage_report, modules_with, nearest, run_shell, warn, Cmd};
+use super::{coverage_report, exit_warning, modules_with, nearest, run_shell, warn, Cmd};
 use crate::discover::{is_test_file, resolve};
 
 /// One line of an install flow: an announcement, or a command with an optional failure warning.
@@ -91,17 +91,18 @@ fn execute(steps: &[Step], cwd: &Path, exec: &mut dyn FnMut(&Cmd, &Path) -> i32)
             Step::Announce(message) => warn(message),
             Step::Run { cmd, on_failure } => {
                 code = exec(cmd, cwd);
-                warn_failure(code, *on_failure);
+                if let Some(message) = failure_warning(code, *on_failure) {
+                    warn(message);
+                }
             }
         }
     }
     code
 }
 
-fn warn_failure(code: i32, on_failure: Option<&str>) {
-    if let (true, Some(message)) = (code != 0, on_failure) {
-        warn(message);
-    }
+/// The failure message of a step that exited nonzero; `None` for success or a silent step.
+fn failure_warning(code: i32, on_failure: Option<&'static str>) -> Option<&'static str> {
+    on_failure.filter(|_| code != 0)
 }
 
 fn rust_modules(root: &Path, files: &[PathBuf]) -> Vec<PathBuf> {
@@ -393,11 +394,8 @@ fn run_rust_module(
     make_report_dir(&report);
     remove_if_present(&report);
     let code = exec(&rust_coverage_command(kind, &report), module);
-    if code != 0 {
-        warn(&format!(
-            "Rust coverage exited {code} in {}. Rust coverage will score 0%.",
-            module.display()
-        ));
+    if let Some(message) = exit_warning("Rust", code, Some(module)) {
+        warn(&message);
     }
 }
 
@@ -508,7 +506,10 @@ mod tests {
             "tests/test_box.py",
             "def test_choose():\n    assert True\n",
         );
-        assert_eq!(python_roots(root, &[source.clone()]), vec![resolve(root)]);
+        assert_eq!(
+            python_roots(root, std::slice::from_ref(&source)),
+            vec![resolve(root)]
+        );
         assert!(uses_pytest(root));
         assert_eq!(python_sources(root, &[source, test.clone()]), "src");
         assert!(is_test_file(&test));
@@ -1062,5 +1063,23 @@ mod tests {
         write(&root, "pytest.ini", "[pytest]\n");
         let mut exec = |_: &Cmd, _: &Path| 1;
         assert_eq!(python_kind("python3", &root, &mut exec), "unittest");
+    }
+
+    // CR-13 an empty install plan succeeds with status 0
+    #[test]
+    fn cr_13_empty_plan_returns_zero() {
+        let mut exec = |_: &Cmd, _: &Path| 7;
+        assert_eq!(execute(&[], Path::new("/p"), &mut exec), 0);
+    }
+
+    // CR-13 a failed step's message is shown only for a nonzero exit
+    #[test]
+    fn cr_13_failure_warning_is_only_for_a_nonzero_exit() {
+        assert_eq!(
+            failure_warning(1, Some("install failed")),
+            Some("install failed")
+        );
+        assert_eq!(failure_warning(0, Some("install failed")), None);
+        assert_eq!(failure_warning(2, None), None);
     }
 }

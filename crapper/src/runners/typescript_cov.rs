@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
-use super::{coverage_report, nearest, run_shell, warn, Cmd};
+use super::{coverage_report, exit_warning, nearest, run_shell, warn, Cmd};
 use crate::discover::{is_test_file, language_of};
 
 const VITEST_CONFIGS: &[&str] = &[
@@ -111,11 +111,8 @@ fn ready_for_run(
 
 fn run_report(package: &Path, command: Vec<String>, exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
     let code = exec(&Cmd::Argv(command), package);
-    if code != 0 {
-        warn(&format!(
-            "TypeScript coverage exited {code} in {}. TypeScript coverage will score 0%.",
-            package.display()
-        ));
+    if let Some(message) = exit_warning("TypeScript", code, Some(package)) {
+        warn(&message);
     }
 }
 
@@ -156,10 +153,15 @@ fn install_provider(package: &Path, spec: &str, exec: &mut dyn FnMut(&Cmd, &Path
     let install = vitest_install_command(spec);
     let code = restoring_manifests(package, || exec(&Cmd::Argv(install), package));
     let ready = code == Some(0) && provider_installed(package);
-    if !ready {
-        warn("Vitest's coverage provider is missing. TypeScript coverage will score 0%.");
+    if let Some(message) = provider_missing_warning(ready) {
+        warn(message);
     }
     ready
+}
+
+/// The warning for a package whose coverage provider is not ready; `None` when it is.
+fn provider_missing_warning(ready: bool) -> Option<&'static str> {
+    (!ready).then_some("Vitest's coverage provider is missing. TypeScript coverage will score 0%.")
 }
 
 fn provider_installed(package: &Path) -> bool {
@@ -862,6 +864,46 @@ mod tests {
             vitest_install_notice("@vitest/coverage-v8@4.1.11"),
             "Installing @vitest/coverage-v8@4.1.11 so Vitest can write LCOV. \
              package.json and the lockfile are restored afterward."
+        );
+    }
+
+    // CR-14 a provider install that exits nonzero is not ready, even when the provider directory exists
+    #[test]
+    fn cr_14_failed_provider_install_is_not_ready_even_if_the_provider_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ready = ensure_vitest_coverage_with(tmp.path(), &mut |_: &Cmd, path: &Path| -> i32 {
+            fs::create_dir_all(path.join("node_modules/@vitest/coverage-v8")).unwrap();
+            1
+        });
+        assert!(!ready);
+    }
+
+    // CR-14 a provider install that exits 0 but leaves no provider directory is not ready
+    #[test]
+    fn cr_14_provider_install_without_the_directory_is_not_ready() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ready = ensure_vitest_coverage_with(tmp.path(), &mut |_: &Cmd, _: &Path| -> i32 { 0 });
+        assert!(!ready);
+    }
+
+    // CR-14 a provider install that exits 0 and leaves the provider directory is ready
+    #[test]
+    fn cr_14_provider_install_with_the_directory_is_ready() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ready = ensure_vitest_coverage_with(tmp.path(), &mut |_: &Cmd, path: &Path| -> i32 {
+            fs::create_dir_all(path.join("node_modules/@vitest/coverage-v8")).unwrap();
+            0
+        });
+        assert!(ready);
+    }
+
+    // CR-14 only an unready provider gets the missing-provider warning
+    #[test]
+    fn cr_14_provider_missing_warning_is_only_for_an_unready_provider() {
+        assert_eq!(provider_missing_warning(true), None);
+        assert_eq!(
+            provider_missing_warning(false),
+            Some("Vitest's coverage provider is missing. TypeScript coverage will score 0%.")
         );
     }
 }

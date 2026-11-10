@@ -34,7 +34,7 @@ const DECISIONS: &[&str] = &[
 ];
 
 static PACKAGE_BLOCK: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?ms)^\[package\](.*?)(?:^\[|\z)").expect("valid regex"));
+    LazyLock::new(|| Regex::new(r"(?ms)^\[package\].*?(?:^\[|\z)").expect("valid regex"));
 static PACKAGE_NAME: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"(?m)^name\s*=\s*"([^"]+)""#).expect("valid regex"));
 
@@ -75,20 +75,13 @@ fn first_type_name(data: &[u8], node: Node) -> Option<String> {
 }
 
 fn impl_type(data: &[u8], imp: Node) -> Option<String> {
-    let mut saw_for = false;
     let mut chosen = None;
     let mut cursor = imp.walk();
     for child in imp.children(&mut cursor) {
         match child.kind() {
-            "for" => {
-                saw_for = true;
-                chosen = None;
-            }
+            "for" => chosen = None,
             "type_identifier" | "generic_type" | "scoped_type_identifier" => {
                 chosen = first_type_name(data, child);
-                if saw_for {
-                    return chosen;
-                }
             }
             _ => {}
         }
@@ -104,9 +97,9 @@ fn impl_owner(data: &[u8], node: Node) -> Option<String> {
 
 fn package_name(dir: &Path) -> Option<String> {
     let text = std::fs::read_to_string(dir.join("Cargo.toml")).ok()?;
-    let block = PACKAGE_BLOCK.captures(&text)?;
+    let block = PACKAGE_BLOCK.find(&text)?;
     let name = PACKAGE_NAME
-        .captures(&block[1])
+        .captures(block.as_str())
         .map_or_else(|| lossy(dir.file_name()), |m| m[1].to_string());
     Some(name.replace('-', "_"))
 }
@@ -343,5 +336,39 @@ fn outer() {
         assert_eq!(lines, [("a", 1, 2), ("b", 4, 4)]);
         assert_eq!(functions[0].language, "rust");
         assert_eq!(functions[0].path, "src/lib.rs");
+    }
+
+    // CR-8: without a crate root, lib and main name the crate alone; any other stem adds itself.
+    #[test]
+    fn cr_8_stem_without_crate_root_names_lib_and_main_as_the_crate() {
+        let path = |name: &str| Path::new("/nowhere").join(name);
+        assert_eq!(
+            file_modules(&path("lib.rs"), "demo", None),
+            vec!["demo".to_string()]
+        );
+        assert_eq!(
+            file_modules(&path("main.rs"), "demo", None),
+            vec!["demo".to_string()]
+        );
+        assert_eq!(
+            file_modules(&path("tool.rs"), "demo", None),
+            vec!["demo".to_string(), "tool".to_string()]
+        );
+    }
+
+    // CR-8: under a crate root, src/lib.rs and src/main.rs name the crate, src/a.rs and src/a/mod.rs name a, src/bin/main.rs names main.
+    #[test]
+    fn cr_8_crate_root_files_map_to_their_module_paths() {
+        let dir = crate_named("demo");
+        let namespace = |rel: &str| {
+            functions_in(&dir, rel, "pub fn f() {}\n")[0]
+                .namespace
+                .clone()
+        };
+        assert_eq!(namespace("src/lib.rs"), "demo");
+        assert_eq!(namespace("src/main.rs"), "demo");
+        assert_eq!(namespace("src/a.rs"), "demo::a");
+        assert_eq!(namespace("src/a/mod.rs"), "demo::a");
+        assert_eq!(namespace("src/bin/main.rs"), "main");
     }
 }

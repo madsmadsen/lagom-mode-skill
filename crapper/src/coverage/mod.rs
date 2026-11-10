@@ -220,7 +220,7 @@ fn collect_named(dir: &Path, matches: &dyn Fn(&str) -> bool, found: &mut Vec<Pat
         }
     }
     for entry in &entries {
-        let is_real_dir = entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false);
+        let is_real_dir = entry.file_type().is_ok_and(|kind| kind.is_dir());
         if is_real_dir {
             collect_named(&entry.path(), matches, found);
         }
@@ -629,5 +629,44 @@ mod tests {
             bundle.percent_for(&function("go", "demo/board.go", 3, 6)),
             None
         );
+    }
+
+    // CR-10: a JaCoCo lookup falls back to the function's namespace class when its JaCoCo class lacks the method.
+    #[test]
+    fn cr_10_java_lookup_falls_back_to_the_namespace_class() {
+        let bundle = CoverageBundle {
+            jacoco: formats::parse_jacoco_index(
+                r#"<report><class name="demo/pkg/Inner"><method name="place" line="4"><counter type="INSTRUCTION" missed="1" covered="3"/></method></class></report>"#,
+            )
+            .expect("valid jacoco"),
+            ..Default::default()
+        };
+        let inner = Function {
+            name: "place".to_string(),
+            namespace: "demo.pkg.Inner".to_string(),
+            jacoco_class: Some("demo.pkg.Board".to_string()),
+            ..function("java", "src/demo/pkg/Inner.java", 4, 4)
+        };
+        assert_eq!(bundle.percent_for(&inner), Some(75.0));
+    }
+
+    // CR-10: a report directory reached only through a symlink is not walked.
+    #[cfg(unix)]
+    #[test]
+    fn cr_10_symlinked_report_directories_are_not_walked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            dir.path(),
+            "target/coverage/real/src/demo/core.clj.html",
+            "<span class=\"pc\" title=\"1 out of 2 forms covered\">   4&nbsp;&nbsp;(if x 1)</span>",
+        );
+        std::os::unix::fs::symlink(
+            dir.path().join("target/coverage/real"),
+            dir.path().join("target/coverage/linked"),
+        )
+        .expect("symlink");
+        let bundle = load_bundle(dir.path());
+        assert!(bundle.form_html.get("real/src/demo/core.clj").is_some());
+        assert!(bundle.form_html.get("linked/src/demo/core.clj").is_none());
     }
 }

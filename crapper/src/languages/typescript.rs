@@ -190,15 +190,16 @@ fn literal_text(data: &[u8], node: Node<'_>) -> Option<String> {
                 .map(|child| node_text(data, child))
                 .collect(),
         ),
-        "template_string" => {
-            let text = node_text(data, node);
-            if text.len() >= 2 && text.starts_with('`') && text.ends_with('`') {
-                Some(text[1..text.len() - 1].to_string())
-            } else {
-                None
-            }
-        }
+        "template_string" => template_body(node_text(data, node)).map(str::to_string),
         _ => None,
+    }
+}
+
+fn template_body(text: &str) -> Option<&str> {
+    if text.len() >= 2 && text.starts_with('`') && text.ends_with('`') {
+        Some(&text[1..text.len() - 1])
+    } else {
+        None
     }
 }
 
@@ -277,9 +278,9 @@ fn is_decision(node: Node<'_>) -> bool {
         return true;
     }
     kind == "?."
-        && node
+        && !node
             .parent()
-            .map_or(true, |parent| parent.kind() != "optional_chain")
+            .is_some_and(|parent| parent.kind() == "optional_chain")
 }
 
 fn complexity_of(data: &[u8], node: Node<'_>) -> u32 {
@@ -453,7 +454,7 @@ fn append_routes(
 
 #[cfg(test)]
 mod tests {
-    use super::functions_in_source;
+    use super::{functions_in_source, strip_root_prefix, template_body};
     use crate::model::Function;
 
     fn located(functions: &[Function]) -> Vec<(&str, &str, u32)> {
@@ -609,5 +610,56 @@ app.get("/users", (req, res) => req.id ?? 0);
             located(&js),
             vec![("demo.app", "choose", 7), ("demo.app", "GET /users", 2)]
         );
+    }
+
+    // CR-8: strip_root_prefix removes a project root only when it is a real prefix followed by "/"; "" and "." never strip.
+    #[test]
+    fn cr_8_strip_root_prefix_strips_only_a_real_root() {
+        assert_eq!(strip_root_prefix("/x/y.ts", ""), "/x/y.ts");
+        assert_eq!(strip_root_prefix("./x/y.ts", ""), "x/y.ts");
+        assert_eq!(strip_root_prefix("./x/y.ts", "."), "x/y.ts");
+        assert_eq!(strip_root_prefix("src/a.ts", "src"), "a.ts");
+        assert_eq!(strip_root_prefix("src/a.ts", "src/"), "a.ts");
+        assert_eq!(strip_root_prefix("src/a.ts", "src\\"), "a.ts");
+        assert_eq!(strip_root_prefix("srcx/a.ts", "src"), "srcx/a.ts");
+        assert_eq!(strip_root_prefix("other/a.ts", "src"), "other/a.ts");
+    }
+
+    // CR-11: a template literal body needs at least two characters, and both ends must be backticks.
+    #[test]
+    fn cr_11_template_body_needs_both_backticks_and_two_characters() {
+        assert_eq!(template_body("``"), Some(""));
+        assert_eq!(template_body("`/users`"), Some("/users"));
+        assert_eq!(template_body("`"), None);
+        assert_eq!(template_body("`a"), None);
+        assert_eq!(template_body("a`"), None);
+        assert_eq!(template_body("a"), None);
+    }
+
+    // CR-11: a callback bound to a name is not a route, so its branches stay in the enclosing function.
+    #[test]
+    fn cr_11_a_callback_bound_to_a_name_is_not_a_route() {
+        let source = r#"
+function outer(a) {
+  const pick = (x) => { if (x) return 1; return 0; };
+  return pick(a);
+}
+"#;
+        let functions = functions_in_source(source, "src/demo/box.ts", "/proj");
+        assert_eq!(located(&functions), vec![("demo.box", "outer", 2)]);
+    }
+
+    // CR-11: a callback passed to a non-route call, or to `new`, stays inside the enclosing function.
+    #[test]
+    fn cr_11_a_callback_passed_to_a_non_route_call_stays_inside() {
+        let source = r#"
+function mount(app) {
+  app.listen(3000, () => { if (app) return 1; return 0; });
+  const w = new Widget(() => { if (app) return 1; return 0; });
+  return w;
+}
+"#;
+        let functions = functions_in_source(source, "src/demo/box.ts", "/proj");
+        assert_eq!(located(&functions), vec![("demo.box", "mount", 3)]);
     }
 }
