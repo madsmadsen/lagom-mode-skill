@@ -5,8 +5,10 @@
 
 //! TypeScript, TSX, and JavaScript functions, methods, and complexity.
 //!
-//! Top-level functions, class methods, and top-level arrow functions are
-//! entries. An inline Express route callback is its own entry, named like
+//! Top-level functions, class methods, top-level arrow functions and function
+//! expressions in `var`, `let`, or `const`, methods of top-level object literals,
+//! class fields that hold arrow functions, and unnamed `export default` functions
+//! are entries. An inline Express route callback is its own entry, named like
 //! `GET /users`. Other nested callbacks stay inside the enclosing function.
 
 use std::collections::HashSet;
@@ -14,8 +16,8 @@ use std::collections::HashSet;
 use tree_sitter::Node;
 
 use crate::languages::ts::{
-    binary_logic, child_of_type, complexity, descendants, end_line, node_text, parse, start_line,
-    Grammar,
+    binary_logic, child_of_type, claim, complexity, descendants, end_line, node_text, parse,
+    start_line, Grammar,
 };
 use crate::model::Function;
 
@@ -36,6 +38,13 @@ const SKIP_TYPES: &[&str] = &[
     "interface_declaration",
 ];
 const CLASS_TYPES: &[&str] = &["class_declaration", "abstract_class_declaration"];
+const DECLARATION_TYPES: &[&str] = &["lexical_declaration", "variable_declaration"];
+const DEFAULT_FUNCTION_TYPES: &[&str] = &[
+    "function_declaration",
+    "function_expression",
+    "generator_function",
+    "generator_function_declaration",
+];
 const FUNCTION_TYPES: &[&str] = &[
     "function_declaration",
     "method_definition",
@@ -67,7 +76,13 @@ pub fn functions_in_source(source: &str, path: &str, project_root: &str) -> Vec<
         match node.kind() {
             "function_declaration" => append_function(&mut found, &data, node, &module, path),
             "method_definition" => append_method(&mut found, &data, node, &module, path),
-            "lexical_declaration" => append_arrows(&mut found, &data, node, &module, path),
+            "lexical_declaration" | "variable_declaration" => {
+                append_arrows(&mut found, &data, node, &module, path)
+            }
+            "public_field_definition" | "field_definition" => {
+                append_field(&mut found, &data, node, &module, path)
+            }
+            "export_statement" => append_default_export(&mut found, &data, node, &module, path),
             "call_expression" => collect_routes(&mut routes, &data, node),
             _ => {}
         }
@@ -346,22 +361,13 @@ fn append_method(
     if !has_body(node) {
         return;
     }
-    let classes = class_names(data, node);
     let Some(ident) = child_of_type(node, &["property_identifier", "identifier"]) else {
         return;
     };
-    if classes.is_empty() {
+    let Some(namespace) = member_namespace(data, node, module) else {
         return;
-    }
-    let namespace = format!("{module}.{}", classes.join("."));
-    let complexity = complexity_of(data, node);
-    found.push(entry(
-        node,
-        node_text(data, ident),
-        &namespace,
-        complexity,
-        path,
-    ));
+    };
+    push_member(found, data, node, ident, &namespace, node, path);
 }
 
 fn append_arrows(
@@ -394,6 +400,92 @@ fn append_arrows(
     }
 }
 
+fn push_member(
+    found: &mut Vec<(usize, Function)>,
+    data: &[u8],
+    node: Node<'_>,
+    name: Node<'_>,
+    namespace: &str,
+    body: Node<'_>,
+    path: &str,
+) {
+    let complexity = complexity_of(data, body);
+    found.push(entry(
+        node,
+        node_text(data, name),
+        namespace,
+        complexity,
+        path,
+    ));
+}
+
+fn append_field(
+    found: &mut Vec<(usize, Function)>,
+    data: &[u8],
+    node: Node<'_>,
+    module: &str,
+    path: &str,
+) {
+    if inside_function(node) {
+        return;
+    }
+    let Some(value) = child_of_type(node, CALLBACK_TYPES) else {
+        return;
+    };
+    let Some(ident) = child_of_type(node, &["property_identifier"]) else {
+        return;
+    };
+    let Some(namespace) = class_namespace(data, node, module) else {
+        return;
+    };
+    push_member(found, data, node, ident, &namespace, value, path);
+}
+
+fn append_default_export(
+    found: &mut Vec<(usize, Function)>,
+    data: &[u8],
+    node: Node<'_>,
+    module: &str,
+    path: &str,
+) {
+    if child_of_type(node, &["default"]).is_none() {
+        return;
+    }
+    let Some(function) = child_of_type(node, DEFAULT_FUNCTION_TYPES) else {
+        return;
+    };
+    if child_of_type(function, &["identifier"]).is_some() || !has_body(function) {
+        return;
+    }
+    let complexity = complexity_of(data, function);
+    found.push(entry(function, "default", module, complexity, path));
+}
+
+fn class_namespace(data: &[u8], node: Node<'_>, module: &str) -> Option<String> {
+    let classes = class_names(data, node);
+    (!classes.is_empty()).then(|| format!("{module}.{}", classes.join(".")))
+}
+
+fn member_namespace(data: &[u8], node: Node<'_>, module: &str) -> Option<String> {
+    class_namespace(data, node, module).or_else(|| object_namespace(data, node, module))
+}
+
+/// The namespace of a method in a top-level object literal, such as `shapes.store`.
+fn object_namespace(data: &[u8], method: Node<'_>, module: &str) -> Option<String> {
+    let object = method.parent().filter(|parent| parent.kind() == "object")?;
+    let declarator = object
+        .parent()
+        .filter(|parent| parent.kind() == "variable_declarator")?;
+    let declaration = declarator
+        .parent()
+        .filter(|parent| DECLARATION_TYPES.contains(&parent.kind()))?;
+    if inside_function(declaration) {
+        return None;
+    }
+    let variable = child_of_type(declarator, &["identifier"])?;
+    Some(format!("{module}.{}", node_text(data, variable)))
+}
+
 fn collect_routes<'t>(routes: &mut Vec<Route<'t>>, data: &[u8], call: Node<'t>) {
     let Some(method) = route_method(data, call) else {
         return;
@@ -418,21 +510,6 @@ fn route_label(method: &str, path: Option<&str>) -> String {
     match path.filter(|path| !path.is_empty()) {
         Some(path) => format!("{label} {path}"),
         None => label,
-    }
-}
-
-/// The first use of a route label keeps it. Later uses get `#2`, `#3`, and so on.
-fn claim(used: &mut HashSet<String>, name: String) -> String {
-    if used.insert(name.clone()) {
-        return name;
-    }
-    let mut number = 2;
-    loop {
-        let candidate = format!("{name}#{number}");
-        if used.insert(candidate.clone()) {
-            return candidate;
-        }
-        number += 1;
     }
 }
 
@@ -661,5 +738,150 @@ function mount(app) {
 "#;
         let functions = functions_in_source(source, "src/demo/box.ts", "/proj");
         assert_eq!(located(&functions), vec![("demo.box", "mount", 3)]);
+    }
+
+    const SHAPES_TS: &str = r#"
+export function plain(x: number): number {
+  if (x > 0) { return 1 }
+  return 0
+}
+
+export var viaVar = (x: number): number => {
+  if (x > 0) { return 1 }
+  return 0
+}
+
+export const store = {
+  objectMethod(x: number): number {
+    if (x > 0) { return 1 }
+    if (x < 0) { return -1 }
+    return 0
+  },
+}
+
+export class Box {
+  method(x: number): number {
+    if (x > 0) { return 1 }
+    return 0
+  }
+  field = (x: number): number => {
+    if (x > 0) { return 1 }
+    if (x < 0) { return -1 }
+    return 0
+  }
+}
+
+export var legacy = function (x: number): number {
+  if (x > 0) { return 1 }
+  return 0
+}
+
+export default function (x: number): number {
+  if (x > 0) { return 1 }
+  return 0
+}
+"#;
+
+    const SHAPES_JS: &str = r#"
+export function plain(x) {
+  if (x > 0) { return 1 }
+  return 0
+}
+
+export var viaVar = (x) => {
+  if (x > 0) { return 1 }
+  return 0
+}
+
+export const store = {
+  objectMethod(x) {
+    if (x > 0) { return 1 }
+    if (x < 0) { return -1 }
+    return 0
+  },
+}
+
+export class Box {
+  method(x) {
+    if (x > 0) { return 1 }
+    return 0
+  }
+  field = (x) => {
+    if (x > 0) { return 1 }
+    if (x < 0) { return -1 }
+    return 0
+  }
+}
+
+export var legacy = function (x) {
+  if (x > 0) { return 1 }
+  return 0
+}
+
+export default function (x) {
+  if (x > 0) { return 1 }
+  return 0
+}
+"#;
+
+    fn shapes_entries() -> Vec<(&'static str, &'static str, u32)> {
+        vec![
+            ("shapes", "plain", 2),
+            ("shapes", "viaVar", 2),
+            ("shapes.store", "objectMethod", 3),
+            ("shapes.Box", "method", 2),
+            ("shapes.Box", "field", 3),
+            ("shapes", "legacy", 2),
+            ("shapes", "default", 2),
+        ]
+    }
+
+    // CR-21, AC-30: the file of issue 20 gives seven entries in TypeScript.
+    #[test]
+    fn cr_21_ac_30_issue_20_shapes_file_gives_seven_entries_in_typescript() {
+        let functions = functions_in_source(SHAPES_TS, "src/shapes.ts", "/proj");
+        assert_eq!(located(&functions), shapes_entries());
+    }
+
+    // CR-21, AC-30: the same file without types gives the same seven entries in JavaScript.
+    #[test]
+    fn cr_21_ac_30_issue_20_shapes_file_gives_seven_entries_in_javascript() {
+        let functions = functions_in_source(SHAPES_JS, "src/shapes.js", "/proj");
+        assert_eq!(located(&functions), shapes_entries());
+    }
+
+    // CR-21: a var, an object method, a class field, or a default export inside a function is not its own entry.
+    #[test]
+    fn cr_21_shapes_inside_a_function_stay_inside_it() {
+        let source = r#"
+function outer(a) {
+  var inner = (x) => { if (x) return 1; return 0; };
+  const holder = { member(y) { if (y) return 1; return 0; } };
+  class Local { field = (z) => { if (z) return 1; return 0; } }
+  return inner(a) + holder.member(a);
+}
+"#;
+        let functions = functions_in_source(source, "src/demo/box.ts", "/proj");
+        assert_eq!(located(&functions), vec![("demo.box", "outer", 3)]);
+    }
+
+    // CR-21: a var declaration holding no function, and a field holding no function, make no entry.
+    #[test]
+    fn cr_21_a_var_or_field_that_holds_no_function_makes_no_entry() {
+        let source = "var n = 1;\nclass A { size = 3; static label = 'a'; }\n";
+        let functions = functions_in_source(source, "src/demo/box.ts", "/proj");
+        assert!(functions.is_empty(), "{functions:?}");
+    }
+
+    // CR-21: let and const object literals name their methods the same way as var.
+    #[test]
+    fn cr_21_let_and_const_object_literals_hold_methods() {
+        let source =
+            "let a = { one() { if (1) return 1; return 0; } };\nvar b = { two() { return 1; } };\n";
+        let functions = functions_in_source(source, "src/demo/box.ts", "/proj");
+        assert_eq!(
+            located(&functions),
+            vec![("demo.box.a", "one", 2), ("demo.box.b", "two", 1)]
+        );
     }
 }
