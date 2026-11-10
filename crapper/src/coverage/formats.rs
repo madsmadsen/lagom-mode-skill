@@ -206,8 +206,9 @@ pub fn go_percent(
     Some(coverage_percent(covered, total))
 }
 
-static DOCTYPE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)<!DOCTYPE[^>]*>").expect("valid DOCTYPE regex"));
+static DOCTYPE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)<!DOCTYPE\b(?:[^>\[]|\[[^\]]*\])*>").expect("valid DOCTYPE regex")
+});
 static XML_TARGET: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\x{feff}?<\?xml\s").expect("valid XML target regex"));
 static XML_DECL: LazyLock<Regex> = LazyLock::new(|| {
@@ -221,8 +222,8 @@ fn bad_declaration(text: &str) -> bool {
 }
 
 /// Python `_parse_jacoco_index`: JaCoCo methods keyed by `class#method`.
-/// Like the original, DOCTYPE text is removed with a regex before parsing, and a
-/// malformed XML declaration is rejected.
+/// The DOCTYPE is deleted with the CR-24 rule, including an internal subset,
+/// before the XML parser runs, and a malformed XML declaration is rejected.
 pub fn parse_jacoco_index(text: &str) -> Result<Keyed<Vec<JacocoMethod>>, String> {
     let cleaned = DOCTYPE.replace_all(text, "");
     if bad_declaration(&cleaned) {
@@ -650,10 +651,10 @@ mod tests {
 
     const JACOCO_BODY: &str = r#"<report><class name="a/B"><method name="f" line="1"><counter type="INSTRUCTION" missed="1" covered="1"/></method></class></report>"#;
 
-    // CR-3: DOCTYPE text is removed with the original's regex before parsing, so junk in it is ignored.
+    // CR-3: DOCTYPE text is removed by regex before parsing, so junk in it is ignored.
     #[test]
     fn cr_3_jacoco_doctype_text_is_removed_like_the_original() {
-        let xml = format!("<!DOCTYPE r\"&\\=2[eport PUBLIC \"x\">\n{}", JACOCO_BODY);
+        let xml = format!("<!DOCTYPE r\"&\\=2eport PUBLIC \"x\">\n{}", JACOCO_BODY);
         let index = parse_jacoco_index(&xml).expect("valid jacoco");
         assert_eq!(index.get("a.B#f").map(Vec::len), Some(1));
     }
@@ -666,11 +667,41 @@ mod tests {
         assert_eq!(index.get("a.B#f").map(Vec::len), Some(1));
     }
 
-    // CR-3: a DOCTYPE with an internal subset leaves its tail behind, and the parse fails.
+    // CR-24: a DOCTYPE with an internal subset is deleted whole, so its entity declarations never reach the XML parser.
     #[test]
-    fn cr_3_jacoco_doctype_with_an_internal_subset_leaves_junk_and_is_an_error() {
+    fn cr_24_jacoco_doctype_with_an_internal_subset_is_deleted() {
         let xml = format!("<!DOCTYPE a [<!ENTITY x \"y\">]>\n{}", JACOCO_BODY);
+        let index = parse_jacoco_index(&xml).expect("valid jacoco");
+        assert_eq!(index.get("a.B#f").map(Vec::len), Some(1));
+    }
+
+    // CR-24: an opening bracket with no closing bracket is not a DOCTYPE the rule can delete, so the parse fails.
+    #[test]
+    fn cr_24_jacoco_doctype_with_an_unclosed_internal_subset_is_an_error() {
+        let xml = format!("<!DOCTYPE a [\n{}", JACOCO_BODY);
         assert!(parse_jacoco_index(&xml).is_err());
+    }
+
+    // CR-24, AC-33: the DOCTYPE of PR 27 over several lines gives 75.0 for demo.pkg.Board#place.
+    #[test]
+    fn cr_24_ac_33_jacoco_doctype_over_several_lines_gives_75_percent() {
+        let xml = r#"<?xml version="1.0"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd" [
+  <!ELEMENT report (class*)>
+]>
+<report>
+  <class name="demo/pkg/Board">
+    <method name="place" line="4">
+      <counter type="INSTRUCTION" missed="1" covered="3"/>
+    </method>
+  </class>
+</report>
+"#;
+        let index = parse_jacoco_index(xml).expect("valid jacoco");
+        assert_eq!(
+            jacoco_percent(&index, &["demo.pkg.Board"], "place", 4),
+            Some(75.0)
+        );
     }
 
     // CR-3: a declaration standalone value other than yes or no is an error that names the value.

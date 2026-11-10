@@ -471,7 +471,7 @@ expect_exit = 0
 id = "lenient-jacoco-doctype"
 fixture = "crash"
 args = ["--use-existing-coverage"]
-setup = ["mkdir -p target/site/jacoco && printf '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<!DOCTYPE r\"&=2[eport PUBLIC \"x\">\\n<report/>\\n' > target/site/jacoco/jacoco.xml"]
+setup = ["mkdir -p target/site/jacoco && printf '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<!DOCTYPE r\"&=2eport PUBLIC \"x\">\\n<report/>\\n' > target/site/jacoco/jacoco.xml"]
 requires = []
 covers = ["lenient:jacoco-doctype"]
 expect_exit = 0
