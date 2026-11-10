@@ -303,6 +303,13 @@ mod tests {
             .any(|site| site.original == original && site.mutant == mutant)
     }
 
+    fn pairs(sites: &[RawSite]) -> Vec<(&str, &str)> {
+        sites
+            .iter()
+            .map(|site| (site.original.as_str(), site.mutant.as_str()))
+            .collect()
+    }
+
     fn apply_one(
         source: &str,
         language: Language,
@@ -624,6 +631,75 @@ mod tests {
             ),
             "class A { int f() { return 0; } }\n"
         );
+    }
+
+    /// MU-12: a unary minus yields only its sign as a site. The operand `a` is not a site.
+    #[test]
+    fn mu_12_unary_minus_site_is_only_the_sign() {
+        let rust = discover_raw(
+            "fn f(a: i32) -> i32 {\n    -a\n}\n",
+            Language::Rust,
+            "src/lib.rs",
+        );
+        assert_eq!(pairs(&rust), vec![("-", "")]);
+        let python = discover_raw("def f(a):\n    return -a\n", Language::Python, "a.py");
+        assert_eq!(pairs(&python), vec![("-", "")]);
+        let typescript = discover_raw(
+            "function f(a: number) { return -a; }\n",
+            Language::TypeScript,
+            "a.ts",
+        );
+        assert_eq!(pairs(&typescript), vec![("-", "")]);
+    }
+
+    /// MU-12: number literals other than `0` and `1` are not constant sites. Only `+` mutates.
+    #[test]
+    fn mu_12_numbers_other_than_zero_and_one_are_not_sites() {
+        let found = discover_raw(
+            "fn f() -> i32 {\n    let x = 7;\n    x + 2\n}\n",
+            Language::Rust,
+            "src/lib.rs",
+        );
+        assert_eq!(pairs(&found), vec![("+", "-")]);
+        assert_eq!(
+            found
+                .iter()
+                .filter(|site| site.category == "constant")
+                .count(),
+            0
+        );
+    }
+
+    /// MU-12: string contents spelled `0` or `1` are not constant sites.
+    #[test]
+    fn mu_12_string_contents_are_not_constant_sites() {
+        let found = discover_raw(
+            "fn f() {\n    let s = \"01\";\n    let t = \"0\";\n    let u = \"1\";\n}\n",
+            Language::Rust,
+            "src/lib.rs",
+        );
+        assert_eq!(
+            found
+                .iter()
+                .filter(|site| site.category == "constant")
+                .count(),
+            0
+        );
+    }
+
+    /// MU-12: `0` and `1` in numeric literals are constant sites that swap. This is the control.
+    #[test]
+    fn mu_12_zero_and_one_are_constant_sites() {
+        let found = discover_raw(
+            "fn f() -> i32 {\n    let z = 0;\n    let o = 1;\n    z + o\n}\n",
+            Language::Rust,
+            "src/lib.rs",
+        );
+        let constants: Vec<RawSite> = found
+            .into_iter()
+            .filter(|site| site.category == "constant")
+            .collect();
+        assert_eq!(pairs(&constants), vec![("0", "1"), ("1", "0")]);
     }
 
     /// MU-12: offsets are UTF-8 byte offsets, so a multi-byte character before a site is counted.

@@ -614,4 +614,82 @@ mod tests {
         let found = functions_in_source(source, "src/demo/core.clj", Some("/proj"));
         assert!(found.iter().all(|f| f.namespace == "demo.core"));
     }
+
+    fn chars(s: &str) -> Vec<char> {
+        s.chars().collect()
+    }
+
+    // MU-9: an escaped backslash does not escape the closing quote of a string.
+    #[test]
+    fn mu_9_string_end_after_escaped_backslash() {
+        assert_eq!(names("(defn a [] \"x\\\\\")\n(defn b [] 1)\n"), ["a", "b"]);
+        assert_eq!(string_end(&chars(r#""x\\" y"#), 0), 5);
+    }
+
+    // MU-9: a character literal at the end of the source ends at the source length.
+    #[test]
+    fn mu_9_char_end_at_source_end() {
+        assert_eq!(char_end(&chars("\\"), 0), 1);
+        assert_eq!(char_end(&chars("\\a b"), 0), 2);
+        assert_eq!(char_end(&chars("\\a(b"), 0), 2);
+    }
+
+    // MU-9: whitespace-only or empty source has no form, so the end is the source length.
+    #[test]
+    fn mu_9_form_end_without_form_returns_length() {
+        assert_eq!(form_end(&chars("  "), 0), 2);
+        assert_eq!(form_end(&chars(""), 0), 0);
+    }
+
+    // MU-9: `#_` skips one following form; bare atoms end at space, delimiter, or `;`.
+    #[test]
+    fn mu_9_one_form_end_reads_each_form_kind() {
+        assert_eq!(form_end(&chars("#_ foo bar"), 0), 6);
+        assert_eq!(form_end(&chars("foo bar"), 0), 3);
+        assert_eq!(form_end(&chars("foo(bar)"), 0), 3);
+        assert_eq!(form_end(&chars("foo\"bar\""), 0), 3);
+        assert_eq!(form_end(&chars("foo;c"), 0), 3);
+        assert_eq!(form_end(&chars("  ;c\n  [a b] z"), 0), 12);
+        assert_eq!(form_end(&chars("x #_ foo bar"), 2), 8);
+    }
+
+    // MU-9: a `;` comment is skipped through its newline, and that newline is counted.
+    #[test]
+    fn mu_9_skip_reader_comment_counts_newline() {
+        assert_eq!(skip_reader(&chars("; hi\nx"), 0), Some((5, 1)));
+        assert_eq!(skip_reader(&chars("; hi"), 0), Some((4, 0)));
+        assert_eq!(skip_reader(&chars("x"), 0), None);
+        assert_eq!(skip_reader(&chars("\"a\nb\""), 0), Some((5, 1)));
+    }
+
+    // MU-9: masked characters become spaces, while newlines survive so line numbers hold.
+    #[test]
+    fn mu_9_blank_keeps_only_newlines() {
+        assert_eq!(blank('\n'), '\n');
+        assert_eq!(blank('x'), ' ');
+        assert_eq!(blank(' '), ' ');
+        assert_eq!(
+            without_strings_and_comments(&chars("a \"b\nc\" d")),
+            "a   \n   d"
+        );
+    }
+
+    // MU-9: the source root is removed only as a whole leading path segment.
+    #[test]
+    fn mu_9_strip_root_removes_only_whole_root_prefix() {
+        assert_eq!(strip_root("./src/a.clj", Some(".")), "./src/a.clj");
+        assert_eq!(strip_root("src/a.clj", Some("src")), "a.clj");
+        assert_eq!(strip_root("src/a.clj", None), "src/a.clj");
+        assert_eq!(strip_root("src/a.clj", Some("")), "src/a.clj");
+        assert_eq!(strip_root("src/a.clj", Some("src/")), "a.clj");
+        assert_eq!(strip_root("srcx/a.clj", Some("src")), "srcx/a.clj");
+    }
+
+    // MU-9: a `defn` or `defn-` keyword at the end of the form has no name.
+    #[test]
+    fn mu_9_defn_keyword_at_end_has_no_name() {
+        assert_eq!(defn_name(&chars("(defn")), None);
+        assert_eq!(defn_name(&chars("(defn-")), None);
+        assert_eq!(defn_name(&chars("(defn f)")), Some("f".to_string()));
+    }
 }

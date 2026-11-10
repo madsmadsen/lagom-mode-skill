@@ -165,15 +165,14 @@ fn lookup(
 
 /// 1-based line of `offset`, given the byte offsets of every newline.
 fn line_of(newlines: &[usize], offset: usize) -> usize {
-    newlines
-        .binary_search(&offset)
-        .unwrap_or_else(|index| index)
-        + 1
+    match newlines.binary_search(&offset) {
+        Ok(index) | Err(index) => index + 1,
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::discover;
+    use super::{discover, line_of};
 
     fn described(source: &str) -> Vec<String> {
         discover(source)
@@ -305,5 +304,16 @@ mod tests {
             described("(f true false 0 1)"),
             ["true->false", "false->true", "0->1", "1->0"]
         );
+    }
+
+    // MU-12: line_of maps a byte offset to its 1-based line; an offset on a newline belongs to the line it ends
+    #[test]
+    fn mu_12_line_of_maps_offsets_to_one_based_lines() {
+        assert_eq!(line_of(&[3, 7], 0), 1);
+        assert_eq!(line_of(&[3, 7], 3), 1);
+        assert_eq!(line_of(&[3, 7], 4), 2);
+        assert_eq!(line_of(&[3, 7], 7), 2);
+        assert_eq!(line_of(&[3, 7], 8), 3);
+        assert_eq!(line_of(&[], 5), 1);
     }
 }
