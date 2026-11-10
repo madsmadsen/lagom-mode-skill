@@ -52,7 +52,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 
 Each requirement in this section comes from an open issue or pull request of the original, and differs from the original at the pinned commit. Each one has an entry in `dryer/parity/fixes.toml` (DR-PB-3) and a test (DR-PB-4).
 
-- DR-14: The port reads `.js`, `.jsx`, `.mjs`, and `.cjs` files as language `typescript`, as crapper and mutator do ([issue 17](https://github.com/unclebob/dryer/issues/17), [PR 16](https://github.com/unclebob/dryer/pull/16)). It parses these files with the JavaScript grammar, which also parses JSX. It treats a file whose name ends in `.test.js`, `.spec.js`, `.test.jsx`, `.spec.jsx`, `.test.mjs`, `.spec.mjs`, `.test.cjs`, or `.spec.cjs` as a test file and does not scan it. A `.d.ts` file stays out of the scan.
+- DR-14: The port reads `.js`, `.jsx`, `.mjs`, and `.cjs` files as language `typescript` ([issue 17](https://github.com/unclebob/dryer/issues/17), [PR 16](https://github.com/unclebob/dryer/pull/16)). It parses these files with the JavaScript grammar, which also parses JSX. It treats a file whose name ends in `.test.js`, `.spec.js`, `.test.jsx`, `.spec.jsx`, `.test.mjs`, `.spec.mjs`, `.test.cjs`, or `.spec.cjs` as a test file and does not scan it. A `.d.ts` file stays out of the scan.
 
 ## 6. Non-functional requirements
 
