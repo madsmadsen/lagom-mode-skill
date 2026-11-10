@@ -44,7 +44,7 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 - CR-7: The port supports `--changed` with the same Git selection of files as the original.
 - CR-8: The port names functions and namespaces for each language with the table in the README of the original.
 - CR-9: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, and with an EDN-aware reader for Clojure. `[ASSUMPTION]` The original uses tree-sitter for the same grammars.
-- CR-10: The port computes `CRAP = CC² × (1 − coverage)³ + CC` for each function. Coverage is the value that the original computes for the function at the pinned commit: a percentage from 0 to 100, measured as LCOV branches when the function has BRDA records and LCOV lines otherwise, JaCoCo instructions, Go statements, and Cloverage forms. The formula uses coverage / 100. Under `--no-coverage` and for a function with no data in the coverage report, `:coverage` and `:crap` are nil, as in the original.
+- CR-10: The port computes `CRAP = CC² × (1 − coverage)³ + CC` for each function. Coverage is the value that the original computes for the function at the pinned commit: a percentage from 0 to 100, measured as LCOV branches when the function has BRDA records and LCOV lines otherwise, JaCoCo instructions, Go statements, and Cloverage forms. The formula uses coverage / 100. Under `--no-coverage`, `:coverage` and `:crap` are nil, as in the original. For a function that the coverage report does not mention, `:coverage` is `0.0` and `:crap` is the score for coverage 0, as in the original.
 - CR-11: The port counts decision points for each language with the rules in the README of the original, section "What each language counts".
 - CR-12: The port reads coverage in each format of the original. At the pinned commit, the complete list is: Cloverage form counts, LCOV, JaCoCo XML, and the Go coverage profile. Cloverage form counts are the HTML files that Cloverage writes under `target/coverage/` (`target/coverage/**/*.html`). The original reads the per-line counts "N out of M forms covered" from these files.
 - CR-13: The port runs the default coverage command for each language from the README of the original, section "Coverage commands". It supports `--coverage-command`, `--use-existing-coverage`, and `--no-coverage`.
@@ -97,7 +97,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 22. AC-22 (CR-PB-2): CI fails when the commit in `crapper/parity/last-run.toml` differs from the commit in `crapper/parity/upstream.toml`, or when the result in `last-run.toml` is not a pass.
 23. AC-23 (CR-PB-3): A check confirms that each entry in `fixes.toml` has an `issue` or a `description` field, a `behavior` field, and a `fixture` field that names an existing parity fixture. Every difference that the parity run finds matches an entry.
 24. AC-24 (CR-PB-6): A check confirms that every entry in `fixes.toml` has `approved_by = "Mads Madsen"`. A difference whose only matching entry has no such field counts as a failure under AC-1.
-25. AC-25 (CR-10): On a fixture with a function that has no data in the coverage report, the original and the port write the same `:coverage` and `:crap` values for that function.
+25. AC-25 (CR-10): On a fixture with a function that the coverage report does not mention, the original and the port write `:coverage 0.0` and the same `:crap` value (the score for coverage 0) for that function. Under `--no-coverage`, both write nil.
 
 ## 9. Risks
 

@@ -96,7 +96,6 @@ Lint: `cargo clippy --all-targets` reports no issues (fixed `cloned_ref_to_slice
 
 ## Differences from the PRD text (need an owner decision)
 
-- CR-10 and AC-25 say a function with no coverage data has `:coverage nil`. The original at the pinned commit writes `0.0` (its README says: "A function the coverage report does not mention scores 0%"). The port copies the original. Parity run `missing-function` records this.
 - `parity/fixes.toml` has no entries. The port found no bug in the original to fix, and the only Python-only difference found (`1_0` in `--threshold`) is copied, not fixed. Candidate differences that are not copied (a decision for Mads Madsen):
   - A broken symlink or an unreadable source file stops the original with a Python traceback (exit 1) and the port with a Rust panic (exit 101).
   - A malformed Go profile or JaCoCo XML does the same.

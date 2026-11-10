@@ -455,3 +455,26 @@ fn cr_13_cr_3_successful_coverage_command_reads_reports() {
     let row = choose_row(&stdout(&output));
     assert!(row.contains("100.0%"), "row was: {row}");
 }
+
+// CR-10, AC-25
+#[test]
+fn cr_10_ac_25_function_missing_from_the_report_scores_coverage_0_0() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(root, "src/other.py", "def other():\n    return 1\n");
+    write_lcov(root, &lcov_record("src/other.py", 2, 1));
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+
+    let snapshot = fs::read_to_string(root.join(".metrics/crap.edn")).expect("snapshot written");
+    assert_eq!(
+        snapshot,
+        "{:entries [\n  {:name \"choose\", :namespace \"app\", :complexity 3, :coverage 0.0, :crap 12.0}\n  {:name \"other\", :namespace \"other\", :complexity 1, :coverage 100.0, :crap 1.0}\n]}\n"
+    );
+    assert!(!snapshot.contains("nil"), "snapshot was: {snapshot}");
+
+    let row = choose_row(&stdout(&output));
+    assert!(row.contains("  0.0%"), "row was: {row}");
+}
