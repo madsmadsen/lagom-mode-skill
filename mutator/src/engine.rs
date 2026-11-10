@@ -8,11 +8,12 @@ use std::time::Duration;
 
 use crate::bind::{self, Span};
 use crate::discover;
+use crate::memory;
 use crate::metrics;
 use crate::model::{FormResult, History, Language, LineSet, RunResult, Site, Status};
 use crate::report;
 use crate::runner::{self, Command, CommandRunner};
-use crate::workers;
+use crate::workers::{self, Limits};
 
 /// Baseline cache: (command key, cwd) -> (passed, seconds, failure tail).
 pub type Baselines = HashMap<(String, String), (bool, f64, String)>;
@@ -35,6 +36,7 @@ pub struct MutateOptions<'a> {
     pub timeout_factor: f64,
     pub mutation_warning: usize,
     pub max_workers: Option<usize>,
+    pub max_memory_mb: u64,
 }
 
 struct Target<'a> {
@@ -353,7 +355,10 @@ fn apply_selected(
         runner,
         &command,
         &cwd,
-        timeout,
+        Limits {
+            timeout,
+            max_memory: memory::limit_bytes(opts.max_memory_mb),
+        },
         target.file_key,
         outcomes,
     );
@@ -518,6 +523,7 @@ mod tests {
             timeout_factor: 10.0,
             mutation_warning: 50,
             max_workers: None,
+            max_memory_mb: 0,
         }
     }
 

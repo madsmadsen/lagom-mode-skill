@@ -77,6 +77,20 @@ test = "tests/upstream_fixes.rs::mu_24_ac16_elif_sites_on_an_uncovered_line_are_
 changes_snapshot_keys_or_shape = false
 approved = false
 
+[[fix]]
+id = "max-memory-limit"
+requirement = "MU-25"
+description = """The original has no memory limit and no `--max-memory-mb` flag. A mutant that makes
+the tests allocate without end can use all memory of the host before the timeout ends it. The port
+sums the resident memory of the process group of each mutant test run at least once each second.
+Over the limit (default 4096 MiB, `--max-memory-mb N`, 0 turns it off) it kills the group with
+SIGKILL, and the mutant counts as killed without a MU-21 second run. The baseline has no limit."""
+changed_behavior = "A mutant test run over the memory limit is killed, and the flag --max-memory-mb exists (the original exits 1 on it)."
+fixture = "tests/memory_limit.rs (project built inline: src/m.py and an allocating test command)"
+test = "tests/memory_limit.rs::mu_25_ac17_a_mutant_over_the_memory_limit_is_killed_once_and_fast"
+changes_snapshot_keys_or_shape = false
+approved = false
+
 # Not listed on purpose (MU-PB-5): `bugs/python-tests-run-with-mutators-virtualenv.md` comes from
 # Python only. The port has no interpreter of its own and uses the project's `.venv` or `venv`
 # Python, else `python3` on the PATH.

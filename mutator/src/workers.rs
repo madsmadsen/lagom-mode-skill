@@ -95,6 +95,7 @@ struct Plan<'a> {
     command: &'a Command,
     cwd: &'a Path,
     timeout: Duration,
+    max_memory: Option<u64>,
     file_key: &'a str,
 }
 
@@ -436,8 +437,10 @@ pub fn mapped_cwd(worker: &Path, root: &Path, cwd: &Path) -> PathBuf {
 }
 
 /// Whether the mutant's run is near enough to its timeout that it must run again (MU-21).
-pub fn needs_second_run(timed_out: bool, seconds: f64, timeout: Duration) -> bool {
-    timed_out || seconds >= NEAR_TIMEOUT * timeout.as_secs_f64()
+/// A run that the memory limit killed is not run again (MU-25).
+pub fn needs_second_run(first: &CommandResult, timeout: Duration) -> bool {
+    !first.memory_killed
+        && (first.timed_out || first.seconds >= NEAR_TIMEOUT * timeout.as_secs_f64())
 }
 
 /// A timed-out or failing run kills the mutant. A passing run lets it survive.
@@ -459,7 +462,9 @@ fn run_mutant(
     let destination = directory.join(plan.relative);
     fs::write(&destination, mutated)?;
     let cwd = mapped_cwd(directory, plan.root, plan.cwd);
-    let result = plan.runner.run(plan.command, &cwd, Some(timeout));
+    let result = plan
+        .runner
+        .run_limited(plan.command, &cwd, Some(timeout), plan.max_memory);
     fs::write(&destination, plan.text)?;
     Ok(result)
 }
@@ -476,7 +481,7 @@ fn execute(directory: &Path, site: &Site, plan: &Plan<'_>) -> io::Result<Status>
     }
     let mutated = apply_site(plan.text, site.start, site.end, &site.mutant);
     let first = run_mutant(directory, plan, &mutated, plan.timeout)?;
-    let result = if needs_second_run(first.timed_out, first.seconds, plan.timeout) {
+    let result = if needs_second_run(&first, plan.timeout) {
         run_mutant(directory, plan, &mutated, plan.timeout * 2)?
     } else {
         first
@@ -515,6 +520,13 @@ fn relative_key(root: &Path, source: &Path) -> io::Result<String> {
     relative_posix(&source.canonicalize()?, &root.canonicalize()?)
 }
 
+/// What ends a mutant's test run: its time and, when set, the memory of its process group in bytes.
+#[derive(Clone, Copy, Debug)]
+pub struct Limits {
+    pub timeout: Duration,
+    pub max_memory: Option<u64>,
+}
+
 /// Mutates `sites` in parallel overlays of `root`. The source stays put.
 #[allow(clippy::too_many_arguments)]
 pub fn run_mutants(
@@ -526,7 +538,7 @@ pub fn run_mutants(
     runner: &CommandRunner,
     command: &Command,
     cwd: &Path,
-    timeout: Duration,
+    limits: Limits,
     file_key: &str,
     outcomes: &mut BTreeMap<String, Status>,
 ) {
@@ -550,7 +562,8 @@ pub fn run_mutants(
             runner,
             command,
             cwd,
-            timeout,
+            timeout: limits.timeout,
+            max_memory: limits.max_memory,
             file_key,
         },
         queue: Mutex::new(sites.iter().collect()),
@@ -601,6 +614,7 @@ mod tests {
         CommandResult {
             code,
             timed_out,
+            memory_killed: false,
             seconds: 0.0,
             output: String::new(),
         }
@@ -833,7 +847,10 @@ mod tests {
             &CommandRunner::default(),
             &command,
             root,
-            Duration::from_secs(20),
+            Limits {
+                timeout: Duration::from_secs(20),
+                max_memory: None,
+            },
             "src/x.txt",
             &mut outcomes,
         );
@@ -870,7 +887,10 @@ mod tests {
             &CommandRunner::default(),
             &command,
             root,
-            Duration::from_secs(20),
+            Limits {
+                timeout: Duration::from_secs(20),
+                max_memory: None,
+            },
             "src/x.txt",
             &mut outcomes,
         );
@@ -882,21 +902,79 @@ mod tests {
     // MU-21: a timed-out mutant gets a second run, whatever its seconds say.
     #[test]
     fn mu_21_a_timed_out_run_needs_a_second_run() {
-        assert!(needs_second_run(true, 0.0, Duration::from_secs(10)));
+        assert!(needs_second_run(
+            &result(124, true),
+            Duration::from_secs(10)
+        ));
     }
 
     // MU-21: a run at 0.89 of its timeout is not repeated, a run at 0.9 of it is.
     #[test]
     fn mu_21_a_run_within_ten_percent_of_the_timeout_needs_a_second_run() {
         let timeout = Duration::from_secs(10);
-        assert!(!needs_second_run(false, 8.9, timeout));
-        assert!(needs_second_run(false, 9.0, timeout));
+        let took = |seconds| CommandResult {
+            seconds,
+            ..result(0, false)
+        };
+        assert!(!needs_second_run(&took(8.9), timeout));
+        assert!(needs_second_run(&took(9.0), timeout));
     }
 
     // MU-21: a fast run that did not time out is not repeated.
     #[test]
     fn mu_21_a_fast_run_is_not_repeated() {
-        assert!(!needs_second_run(false, 0.01, Duration::from_secs(10)));
+        let fast = CommandResult {
+            seconds: 0.01,
+            ..result(0, false)
+        };
+        assert!(!needs_second_run(&fast, Duration::from_secs(10)));
+    }
+
+    // MU-25: a run that the memory limit killed is never run again, even near its timeout.
+    #[test]
+    fn mu_25_a_memory_kill_needs_no_second_run() {
+        let killed = CommandResult {
+            memory_killed: true,
+            timed_out: true,
+            seconds: 99.0,
+            ..result(137, false)
+        };
+        assert!(!needs_second_run(&killed, Duration::from_secs(10)));
+        assert_eq!(outcome_of(&killed), Status::Killed);
+    }
+
+    // MU-25: a mutant over the memory limit is killed, and its test command runs once.
+    #[test]
+    fn mu_25_a_mutant_over_the_memory_limit_is_killed_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("root");
+        put(&root, "src/x.txt", "a > b\n");
+        let source = root.join("src/x.txt");
+        let original = fs::read(&source).unwrap();
+        let log = dir.path().join("runs.log");
+        let sites = [site(2, 3, ">", "<", "big-id")];
+        let command = Command::Shell(format!("echo run >> {}; sleep 30", log.display()));
+        let mut outcomes = BTreeMap::new();
+
+        run_mutants(
+            &root,
+            &source,
+            &original,
+            &sites,
+            Some(1),
+            &CommandRunner::default(),
+            &command,
+            &root,
+            Limits {
+                timeout: Duration::from_secs(60),
+                max_memory: Some(1),
+            },
+            "src/x.txt",
+            &mut outcomes,
+        );
+
+        assert_eq!(outcomes.get("big-id"), Some(&Status::Killed));
+        assert_eq!(fs::read_to_string(&log).unwrap().lines().count(), 1);
     }
 
     // MU-21: a timeout or a nonzero exit kills the mutant, a clean exit lets it survive.
@@ -1012,7 +1090,10 @@ mod tests {
             &CommandRunner::default(),
             &command,
             &root,
-            Duration::from_secs(1),
+            Limits {
+                timeout: Duration::from_secs(1),
+                max_memory: None,
+            },
             "src/x.txt",
             &mut outcomes,
         );
@@ -1043,7 +1124,10 @@ mod tests {
             &CommandRunner::default(),
             &command,
             &root,
-            Duration::from_secs(20),
+            Limits {
+                timeout: Duration::from_secs(20),
+                max_memory: None,
+            },
             "src/x.txt",
             &mut outcomes,
         );

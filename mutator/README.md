@@ -27,6 +27,7 @@ mutator --mutate-all                 # rerun killed mutants too
 mutator --no-coverage                # treat every site as covered
 mutator --test-command "pytest -q tests/test_demo.py"
 mutator --max-workers 3 src/demo/core.clj
+mutator --max-memory-mb 1024         # kill a mutant test run over 1024 MiB (default 4096, 0 = off)
 ```
 
 `mutator --help` lists every flag. Flags, arguments, exit codes, and snapshots match the original:

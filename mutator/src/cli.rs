@@ -62,6 +62,10 @@ Options:
                                 once. Default: half the cores, at least one.
                                 The run uses the smaller of this limit, half
                                 the cores, and the number of selected sites.
+  --max-memory-mb <number>      Kill a mutant test run when its process group
+                                uses more than this many MiB of resident
+                                memory. Default: 4096. 0 turns the limit off.
+                                The baseline run has no limit.
   --verbose                     Print each test command and each mutant.
 
 Arguments:
@@ -125,6 +129,7 @@ pub struct Options {
     pub timeout_factor: f64,
     pub mutation_warning: usize,
     pub max_workers: Option<usize>,
+    pub max_memory_mb: u64,
     pub changed: bool,
     pub verbose: bool,
 }
@@ -149,6 +154,7 @@ impl Default for Options {
             timeout_factor: 10.0,
             mutation_warning: 50,
             max_workers: None,
+            max_memory_mb: 4096,
             changed: false,
             verbose: false,
         }
@@ -172,6 +178,7 @@ const VALUE_OPTIONS: &[(&[&str], ValueSetter)] = &[
     (&["--timeout-factor"], set_timeout_factor),
     (&["--mutation-warning"], set_mutation_warning),
     (&["--max-workers"], set_max_workers),
+    (&["--max-memory-mb"], set_max_memory_mb),
     (&["--lines"], set_lines),
 ];
 
@@ -221,6 +228,12 @@ fn set_timeout_factor(options: &mut Options, value: &str) -> Result<(), String> 
 fn set_mutation_warning(options: &mut Options, value: &str) -> Result<(), String> {
     options.mutation_warning = usize::try_from(py_number::<i64>(value, int_error)?)
         .map_err(|_| "--mutation-warning requires a non-negative integer".to_string())?;
+    Ok(())
+}
+
+fn set_max_memory_mb(options: &mut Options, value: &str) -> Result<(), String> {
+    options.max_memory_mb = u64::try_from(py_number::<i64>(value, int_error)?)
+        .map_err(|_| "--max-memory-mb requires a non-negative integer".to_string())?;
     Ok(())
 }
 
@@ -687,6 +700,7 @@ fn mutate_files(options: &Options, root: &Path, files: &[PathBuf]) -> i32 {
             timeout_factor: options.timeout_factor,
             mutation_warning: options.mutation_warning,
             max_workers: options.max_workers,
+            max_memory_mb: options.max_memory_mb,
         };
         tally.record(mutate_file(
             path,
@@ -771,6 +785,35 @@ mod tests {
         assert_eq!(options.mutation_warning, 50);
         assert!(options.lines.is_none());
         assert!(options.max_workers.is_none());
+    }
+
+    /// MU-25: the memory limit is 4096 MiB by default, and the flag sets it; 0 turns it off.
+    #[test]
+    fn mu_25_max_memory_mb_defaults_to_4096_and_takes_a_whole_number() {
+        assert_eq!(parse_args(&[]).max_memory_mb, 4096);
+        for (value, expected) in [("256", 256), ("0", 0), (" 7 ", 7)] {
+            let options = parse_args(&args(&["--max-memory-mb", value]));
+            assert_eq!(options.exit_code, 0, "{value:?}");
+            assert_eq!(options.max_memory_mb, expected, "{value:?}");
+        }
+    }
+
+    /// MU-25: a value that is not a whole number of 0 or more exits 1.
+    #[test]
+    fn mu_25_max_memory_mb_rejects_bad_values() {
+        let cases = [
+            ("abc", "invalid literal for int() with base 10: 'abc'"),
+            ("1.5", "invalid literal for int() with base 10: '1.5'"),
+            ("", "--max-memory-mb requires a value"),
+            ("-1", "--max-memory-mb requires a value"),
+            (" -1", "--max-memory-mb requires a non-negative integer"),
+        ];
+        for (value, reason) in cases {
+            let options = parse_args(&args(&["--max-memory-mb", value]));
+            assert_eq!(options.exit_code, 1, "{value:?}");
+            assert!(options.message.starts_with(reason), "{value:?}");
+        }
+        assert_eq!(parse_args(&args(&["--max-memory-mb"])).exit_code, 1);
     }
 
     /// MU-2: the lines option parses positive numbers and drops duplicates.

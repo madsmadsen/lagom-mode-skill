@@ -13,6 +13,7 @@ pub mod edn;
 pub mod engine;
 pub mod fs_util;
 pub mod functions;
+pub mod memory;
 pub mod metrics;
 pub mod model;
 pub mod report;

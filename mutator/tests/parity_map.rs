@@ -92,11 +92,29 @@ fn help_flags() -> Vec<String> {
     flags
 }
 
+/// Flags that the original does not have. Each one has a fix in fixes.toml (MU-PB-3), and a
+/// parity run cannot pass on it, so coverage.toml does not run it.
+const PORT_ONLY_FLAGS: [(&str, &str); 1] = [("--max-memory-mb", "max-memory-limit")];
+
 /// AC-1 and MU-12: coverage.toml mentions every help flag and has a covers string for each language.
+/// MU-25: a flag that only the port has is named by a fix in fixes.toml instead.
 #[test]
 fn mu_ac_1_coverage_toml_covers_every_flag_and_table_row() {
     let coverage = coverage_toml();
+    let fixes = fixes_toml();
     let flags = help_flags();
+    for (flag, id) in PORT_ONLY_FLAGS {
+        assert!(flags.iter().any(|f| f == flag), "help lists no {flag}");
+        let entry = format!("id = \"{id}\"");
+        assert!(
+            fixes.lines().any(|l| l.trim() == entry),
+            "parity/fixes.toml has no {entry} for {flag}"
+        );
+    }
+    let flags: Vec<String> = flags
+        .into_iter()
+        .filter(|f| PORT_ONLY_FLAGS.iter().all(|(flag, _)| flag != f))
+        .collect();
     assert!(
         flags.iter().any(|f| f == "--help"),
         "help lists no --help: {flags:?}"

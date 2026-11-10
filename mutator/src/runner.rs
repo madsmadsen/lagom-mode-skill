@@ -10,12 +10,17 @@ use std::process::{self, Child, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::memory;
 use crate::model::Language;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(5);
 const TIMED_OUT_CODE: i32 = 124;
 const SPAWN_FAILED_CODE: i32 = 127;
 const UNKNOWN_EXIT_CODE: i32 = 1;
+/// The code of a run that `SIGKILL` ended: 128 plus the signal, as a shell reports it.
+const KILLED_CODE: i32 = 128 + libc::SIGKILL;
+/// A run is measured for memory at least this often (MU-25 asks for once each second).
+const MEMORY_POLL: Duration = Duration::from_millis(200);
 
 /// A test command: a shell string the user typed, or an argument vector run without a shell.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,6 +34,8 @@ pub enum Command {
 pub struct CommandResult {
     pub code: i32,
     pub timed_out: bool,
+    /// The run was killed because its process group went over the memory limit (MU-25).
+    pub memory_killed: bool,
     pub seconds: f64,
     pub output: String,
 }
@@ -40,16 +47,29 @@ pub struct CommandRunner {
 }
 
 impl CommandRunner {
-    /// Run `command` in `cwd`, merging stdout and stderr into `output`.
+    /// Run `command` in `cwd`, merging stdout and stderr into `output`. No memory limit.
     pub fn run(&self, command: &Command, cwd: &Path, timeout: Option<Duration>) -> CommandResult {
+        self.run_limited(command, cwd, timeout, None)
+    }
+
+    /// Like `run`. When `max_memory` is set, the run is killed once the resident memory of its
+    /// process group is over that many bytes (MU-25).
+    pub fn run_limited(
+        &self,
+        command: &Command,
+        cwd: &Path,
+        timeout: Option<Duration>,
+        max_memory: Option<u64>,
+    ) -> CommandResult {
         if self.verbose {
             eprintln!("+ ({}) {}", cwd.display(), display_command(command));
         }
         let started = Instant::now();
-        let (code, timed_out, output) = execute(command, cwd, timeout);
+        let (finish, output) = execute(command, cwd, timeout, max_memory);
         CommandResult {
-            code,
-            timed_out,
+            code: finish.code,
+            timed_out: finish.timed_out,
+            memory_killed: finish.memory_killed,
             seconds: started.elapsed().as_secs_f64(),
             output,
         }
@@ -117,14 +137,33 @@ pub fn test_plan(
     }
 }
 
-fn execute(command: &Command, cwd: &Path, timeout: Option<Duration>) -> (i32, bool, String) {
+/// How a run ended.
+#[derive(Default)]
+struct Finish {
+    code: i32,
+    timed_out: bool,
+    memory_killed: bool,
+}
+
+fn execute(
+    command: &Command,
+    cwd: &Path,
+    timeout: Option<Duration>,
+    max_memory: Option<u64>,
+) -> (Finish, String) {
     let (mut child, reader) = match spawn(command, cwd) {
         Ok(parts) => parts,
-        Err(error) => return (SPAWN_FAILED_CODE, false, error.to_string()),
+        Err(error) => {
+            let failed = Finish {
+                code: SPAWN_FAILED_CODE,
+                ..Finish::default()
+            };
+            return (failed, error.to_string());
+        }
     };
     let drain = thread::spawn(move || read_all(reader));
-    let (code, timed_out) = finish(&mut child, timeout);
-    (code, timed_out, drain.join().unwrap_or_default())
+    let finish = finish(&mut child, timeout, max_memory);
+    (finish, drain.join().unwrap_or_default())
 }
 
 fn spawn(command: &Command, cwd: &Path) -> io::Result<(Child, PipeReader)> {
@@ -168,33 +207,103 @@ fn read_all(mut reader: PipeReader) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
-fn finish(child: &mut Child, timeout: Option<Duration>) -> (i32, bool) {
-    let outcome = wait_for(child, timeout);
-    if let Ok(Some(status)) = outcome {
-        return (exit_code(status), false);
-    }
-    kill_group_and_reap(child);
-    let timed_out = matches!(outcome, Ok(None));
-    let code = if timed_out {
-        TIMED_OUT_CODE
-    } else {
-        UNKNOWN_EXIT_CODE
-    };
-    (code, timed_out)
+/// Why `wait_for` stopped waiting.
+enum Wait {
+    Exited(ExitStatus),
+    TimedOut,
+    OverMemory,
 }
 
-fn wait_for(child: &mut Child, timeout: Option<Duration>) -> io::Result<Option<ExitStatus>> {
-    let Some(limit) = timeout else {
-        return child.wait().map(Some);
-    };
+fn finish(child: &mut Child, timeout: Option<Duration>, max_memory: Option<u64>) -> Finish {
+    let outcome = wait_for(child, timeout, memory_watch(child, max_memory));
+    if let Ok(Wait::Exited(status)) = outcome {
+        return Finish {
+            code: exit_code(status),
+            ..Finish::default()
+        };
+    }
+    kill_group_and_reap(child);
+    match outcome {
+        Ok(Wait::TimedOut) => Finish {
+            code: TIMED_OUT_CODE,
+            timed_out: true,
+            ..Finish::default()
+        },
+        Ok(Wait::OverMemory) => Finish {
+            code: KILLED_CODE,
+            memory_killed: true,
+            ..Finish::default()
+        },
+        _ => Finish {
+            code: UNKNOWN_EXIT_CODE,
+            ..Finish::default()
+        },
+    }
+}
+
+/// Reads the memory of a process group, at most once each `MEMORY_POLL`.
+struct MemoryWatch {
+    pgid: i32,
+    limit: u64,
+    last: Instant,
+    sample: fn(i32) -> io::Result<u64>,
+}
+
+impl MemoryWatch {
+    /// Whether the group is over the limit. False when it is too soon to read again.
+    fn over_limit(&mut self) -> io::Result<bool> {
+        // Some once `MEMORY_POLL` has passed since the last read.
+        if self.last.elapsed().checked_sub(MEMORY_POLL).is_none() {
+            return Ok(false);
+        }
+        self.last = Instant::now();
+        let used = (self.sample)(self.pgid)?;
+        Ok(memory::is_over(used, Some(self.limit)))
+    }
+}
+
+fn memory_watch(child: &Child, max_memory: Option<u64>) -> Option<MemoryWatch> {
+    Some(MemoryWatch {
+        pgid: i32::try_from(child.id()).ok()?,
+        limit: max_memory?,
+        last: Instant::now(),
+        sample: memory::group_resident_bytes,
+    })
+}
+
+/// True when the watch finds the group over the limit. When the memory cannot be read, the
+/// watch says so on stderr once and ends, and the run goes on under its timeout alone.
+fn over_memory(watch: &mut Option<MemoryWatch>) -> bool {
+    match watch.as_mut().map(MemoryWatch::over_limit) {
+        Some(Ok(over)) => over,
+        Some(Err(error)) => {
+            eprintln!("{}", memory::unreadable_notice(&error));
+            *watch = None;
+            false
+        }
+        None => false,
+    }
+}
+
+fn wait_for(
+    child: &mut Child,
+    timeout: Option<Duration>,
+    mut watch: Option<MemoryWatch>,
+) -> io::Result<Wait> {
+    if timeout.is_none() && watch.is_none() {
+        return child.wait().map(Wait::Exited);
+    }
     let started = Instant::now();
     loop {
         if let Some(status) = child.try_wait()? {
-            return Ok(Some(status));
+            return Ok(Wait::Exited(status));
         }
         // Some once the elapsed time reaches the limit.
-        if started.elapsed().checked_sub(limit).is_some() {
-            return Ok(None);
+        if timeout.is_some_and(|limit| started.elapsed().checked_sub(limit).is_some()) {
+            return Ok(Wait::TimedOut);
+        }
+        if over_memory(&mut watch) {
+            return Ok(Wait::OverMemory);
         }
         thread::sleep(POLL_INTERVAL);
     }
@@ -514,6 +623,7 @@ mod tests {
         let dir = tempdir().expect("tempdir");
         let result = run_in(&argv(["mu-no-such-binary-xyz"]), dir.path());
         assert_eq!(result.code, 127);
+        assert!(!result.timed_out && !result.memory_killed);
         assert!(!result.output.is_empty());
     }
 
@@ -625,6 +735,7 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(2));
         assert!(result.seconds < 2.0);
         assert!(result.timed_out);
+        assert!(!result.memory_killed);
         assert_eq!(result.code, 124);
     }
 
@@ -674,6 +785,108 @@ mod tests {
             !marker.exists(),
             "a background grandchild survived the timeout"
         );
+    }
+
+    // MU-25: a run whose process group is over the limit is killed, and it is not a timeout.
+    #[test]
+    fn mu_25_a_run_over_the_memory_limit_is_killed_and_is_not_a_timeout() {
+        let dir = tempdir().expect("tempdir");
+        let result = CommandRunner::default().run_limited(
+            &shell("sleep 30"),
+            dir.path(),
+            Some(Duration::from_secs(60)),
+            Some(1),
+        );
+        assert!(result.memory_killed);
+        assert!(!result.timed_out);
+        assert_eq!(result.code, 137);
+        assert!(result.seconds < 5.0, "took {} s", result.seconds);
+    }
+
+    // MU-25: a run under the limit, or with no limit, ends by itself. The limit also works
+    // with no timeout.
+    #[test]
+    fn mu_25_a_run_under_the_limit_or_with_no_limit_is_not_killed() {
+        let dir = tempdir().expect("tempdir");
+        let runner = CommandRunner::default();
+        for (timeout, limit) in [
+            (Some(Duration::from_secs(60)), Some(u64::MAX)),
+            (Some(Duration::from_secs(60)), None),
+            (None, Some(u64::MAX)),
+            (None, None),
+        ] {
+            let result =
+                runner.run_limited(&shell("sleep 0.5; exit 3"), dir.path(), timeout, limit);
+            assert!(!result.memory_killed && !result.timed_out);
+            assert_eq!(result.code, 3);
+        }
+        let result = runner.run_limited(&shell("sleep 30"), dir.path(), None, Some(1));
+        assert!(result.memory_killed, "no timeout, limit 1 byte");
+    }
+
+    // MU-25: the memory is read once each `MEMORY_POLL`, and it is over only above the limit.
+    #[test]
+    fn mu_25_memory_watch_reads_after_the_poll_time_and_compares_with_the_limit() {
+        let watch = |pgid: i32, limit: u64, age: Duration| MemoryWatch {
+            pgid,
+            limit,
+            last: Instant::now().checked_sub(age).expect("instant"),
+            sample: |pgid| Ok(u64::try_from(pgid).expect("pgid")),
+        };
+        let old = Duration::from_secs(5);
+        let over = |pgid, limit, age| watch(pgid, limit, age).over_limit().unwrap();
+        assert!(!over(1000, 1, Duration::ZERO), "too soon to read");
+        assert!(!over(40, 41, old));
+        assert!(!over(41, 41, old));
+        assert!(over(42, 41, old));
+        let mut again = watch(42, 41, old);
+        assert!(again.over_limit().unwrap());
+        assert!(!again.over_limit().unwrap(), "the read time moved on");
+    }
+
+    static FAILED_READS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    fn failing_sample(_pgid: i32) -> io::Result<u64> {
+        FAILED_READS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Err(io::Error::from(io::ErrorKind::PermissionDenied))
+    }
+
+    // MU-25: when the memory cannot be read, the failure is shown once on stderr, the watch ends,
+    // and the run still ends by its timeout (MU-15).
+    #[test]
+    fn mu_25_an_unreadable_memory_ends_the_watch_and_the_timeout_still_applies() {
+        let dir = tempdir().expect("tempdir");
+        let (mut child, _reader) = spawn(&shell("sleep 30"), dir.path()).expect("spawn");
+        let watch = MemoryWatch {
+            pgid: i32::try_from(child.id()).expect("pid"),
+            limit: 1,
+            last: Instant::now()
+                .checked_sub(Duration::from_secs(5))
+                .expect("instant"),
+            sample: failing_sample,
+        };
+        let started = Instant::now();
+        let outcome = wait_for(&mut child, Some(Duration::from_millis(1200)), Some(watch));
+        kill_group_and_reap(&mut child);
+        assert!(matches!(outcome, Ok(Wait::TimedOut)));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        assert_eq!(FAILED_READS.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    // MU-25: `over_memory` is false with no watch, and it drops a watch that fails to read.
+    #[test]
+    fn mu_25_over_memory_is_false_without_a_watch_and_drops_a_failed_watch() {
+        assert!(!over_memory(&mut None));
+        let mut watch = Some(MemoryWatch {
+            pgid: 1,
+            limit: 1,
+            last: Instant::now()
+                .checked_sub(Duration::from_secs(5))
+                .expect("instant"),
+            sample: |_| Err(io::Error::from(io::ErrorKind::PermissionDenied)),
+        });
+        assert!(!over_memory(&mut watch));
+        assert!(watch.is_none());
     }
 
     // MU-14: display renders shell text as typed and quotes each argument part.
