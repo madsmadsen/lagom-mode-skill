@@ -1,13 +1,23 @@
-# Accepted differences between the Python original and the Rust port (DR-PB-3).
-# Empty until a difference is reviewed and approved.
+# Differences between the Python original and the Rust port (DR-PB-3).
 #
 # Each entry is a [[fix]] table with these keys:
-#   id                    short unique name, for example "fix-001"
-#   fixture               name of the [[case]] in coverage.toml whose difference is accepted
-#   upstream              the original behavior, quoted from the original output
+#   id                    short unique name, also named by its test (DR-PB-4, AC-9)
+#   requirement           the DR-* requirement that asks for the difference
+#   fixture               name of the [[case]] in coverage.toml that shows the difference
+#   upstream              the upstream issue or pull request, or a description
+#   original_behavior     what the original does, quoted from its output
 #   changed_behavior      what the port does instead, and why
-#   approved_by           reviewer name; Mads Madsen approves every entry (DR-PB-6)
-#   uml_viewer_commit     uml viewer commit checked against the change
-#   uml_viewer_checked_on date of that check, YYYY-MM-DD
-# The runner reports a difference for a listed case as ACCEPTED. It requires
-# id, fixture, and approved_by.
+#   test                  the test that fails on the original and passes on the port
+#   approved_by           "Mads Madsen". Set only by Mads Madsen (DR-PB-6). An entry
+#                         without this key is not approved.
+# The runner reports a difference in a case with an approved entry as ACCEPTED.
+# With an entry that is not approved, it reports the difference as PENDING.
+
+[[fix]]
+id = "js-read-as-typescript"
+requirement = "DR-14"
+fixture = "jsx-fix"
+upstream = "https://github.com/unclebob/dryer/issues/17 and https://github.com/unclebob/dryer/pull/16"
+original_behavior = "On a project with only .jsx files, the original prints No source files to analyze. and writes no snapshot."
+changed_behavior = "The port reads .js, .jsx, .mjs, and .cjs as language typescript with the JavaScript grammar, and skips .test.* and .spec.* files of these extensions."
+test = "tests/cli.rs::dr14_jsx_only_project_reports_the_pair"

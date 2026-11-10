@@ -257,13 +257,23 @@ def load_cases(selected):
 
 
 def load_fixes():
+    """fixes.toml entries by case name. An entry with a non-empty approved_by is approved (DR-PB-6)."""
     by_case = {}
     for fix in load_toml(PARITY / "fixes.toml").get("fix", []):
-        for key in ("id", "fixture", "approved_by"):
+        for key in ("id", "fixture"):
             if key not in fix:
                 raise SystemExit(f"fixes.toml: fix missing {key}: {fix}")
-        by_case.setdefault(fix["fixture"], []).append(fix["id"])
+        by_case.setdefault(fix["fixture"], []).append(fix)
     return by_case
+
+
+def judge(diffs, case_fixes):
+    """Status of one case: PASS, ACCEPTED (approved fix), PENDING (unapproved fix), or FAIL."""
+    if not diffs:
+        return "PASS"
+    if any(fix.get("approved_by") for fix in case_fixes):
+        return "ACCEPTED"
+    return "PENDING" if case_fixes else "FAIL"
 
 
 # ---------------------------------------------------------------- running
@@ -351,7 +361,7 @@ def main(argv=None):
 
     pinned = load_toml(PARITY / "upstream.toml")
     original_root = ensure_original(args.original, pinned)
-    cases = load_cases(args.cases)
+    cases = [c for c in load_cases(args.cases) if not (args.record and "fix" in c)]
     fixes = load_fixes()
 
     original_prefix = [os.environ.get("DRYER_ORIGINAL_PYTHON", sys.executable), "-m", "dryer"]
@@ -363,6 +373,7 @@ def main(argv=None):
 
     failures = 0
     accepted = 0
+    pending = 0
     for case in cases:
         name = case["name"]
         orig, port = run_case(case, original_prefix, original_env, port_prefix, args.record)
@@ -371,24 +382,25 @@ def main(argv=None):
             print(f"RECORDED {name} exit={orig.code} original={orig.seconds:.2f}s")
             continue
         diffs = compare(orig, port)
-        if not diffs:
-            status = "PASS"
-        elif name in fixes:
-            status = "ACCEPTED"
-            accepted += 1
-        else:
+        case_fixes = fixes.get(name, [])
+        status = judge(diffs, case_fixes)
+        if "fix" in case and not diffs:
             status = "FAIL"
-            failures += 1
+            diffs = ["fix case shows no difference from the original"]
+        accepted += status == "ACCEPTED"
+        pending += status == "PENDING"
+        failures += status == "FAIL"
         print(f"{status:<9}{name}  original={orig.seconds:.2f}s port={port.seconds:.2f}s")
         for line in diffs:
             print(f"    {line}")
-        if status == "ACCEPTED":
-            print(f"    accepted by: {', '.join(fixes[name])}")
+        if status in ("ACCEPTED", "PENDING"):
+            ids = ", ".join(fix["id"] for fix in case_fixes)
+            print(f"    {'accepted' if status == 'ACCEPTED' else 'awaiting approval'} by: {ids}")
 
     if args.record:
         print(f"recorded {len(cases)} case(s) into {EXPECTED}")
         return 0
-    print(f"{len(cases)} case(s), {failures} failed, {accepted} accepted")
+    print(f"{len(cases)} case(s), {failures} failed, {accepted} accepted, {pending} awaiting approval")
     return 1 if failures else 0
 
 

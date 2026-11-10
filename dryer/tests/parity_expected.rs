@@ -35,7 +35,7 @@ const FLAGS: [&str; 12] = [
     "--text",
 ];
 const LANGS: [&str; 6] = ["clojure", "java", "go", "typescript", "rust", "python"];
-/// Names of fix tests defined in this file. Empty while parity/fixes.toml has no entries.
+/// Names of fix tests defined in this file. The fix tests live in other files.
 const FIX_TESTS_IN_THIS_FILE: &[&str] = &[];
 
 fn parity_dir() -> PathBuf {
@@ -81,6 +81,7 @@ struct Case {
     name: String,
     fixture: String,
     git_setup: Option<String>,
+    fix: Option<String>,
     args: Vec<String>,
     covers: Vec<String>,
 }
@@ -119,6 +120,11 @@ fn load_cases() -> Vec<Case> {
                 .unwrap_or_else(|| panic!("case {name}: git_setup must be a string"))
                 .to_owned()
         });
+        let fix = t.get("fix").map(|v| {
+            v.as_str()
+                .unwrap_or_else(|| panic!("case {name}: fix must be a string"))
+                .to_owned()
+        });
         assert!(
             names.insert(name.clone()),
             "coverage.toml: duplicate case {name}"
@@ -127,6 +133,7 @@ fn load_cases() -> Vec<Case> {
             name,
             fixture,
             git_setup,
+            fix,
             args,
             covers,
         });
@@ -647,7 +654,8 @@ fn parse_edn_bytes(bytes: &[u8]) -> Result<Edn, String> {
 fn ac1_dr2_dr3_dr4_every_case_matches_recorded_original() {
     let cases = load_cases();
     let mut failures = Vec::new();
-    for case in &cases {
+    // A case with a `fix` differs from the original on purpose (DR-14) and has no recording.
+    for case in cases.iter().filter(|case| case.fix.is_none()) {
         match check_case(case) {
             Ok(found) if found.is_empty() => {}
             Ok(found) => failures.push(format!("FAIL {}\n    {}", case.name, found.join("\n    "))),
@@ -794,7 +802,14 @@ fn ac9_dr_pb_4_every_fixes_entry_has_a_named_test() {
         let table = entry
             .as_table()
             .expect("fixes.toml: [[fix]] must be a table");
-        for key in ["id", "fixture", "approved_by"] {
+        for key in [
+            "id",
+            "requirement",
+            "fixture",
+            "upstream",
+            "changed_behavior",
+            "test",
+        ] {
             if !table.contains_key(key) {
                 problems.push(format!("fix entry missing {key}: {table:?}"));
             }
@@ -811,6 +826,29 @@ fn ac9_dr_pb_4_every_fixes_entry_has_a_named_test() {
         "parity/fixes.toml entries without named tests:\n  {}",
         problems.join("\n  ")
     );
+}
+
+/// DR-PB-3: each `fix` of a case in coverage.toml names an entry in fixes.toml
+/// that lists the case as its fixture.
+#[test]
+fn dr_pb_3_every_fix_case_has_a_fixes_entry() {
+    let fixes = load_toml(&parity_dir().join("fixes.toml"));
+    let entries = fixes
+        .get("fix")
+        .and_then(toml::Value::as_array)
+        .expect("fixes.toml has no [[fix]] tables");
+    let mut problems = Vec::new();
+    for case in load_cases() {
+        let Some(id) = case.fix else { continue };
+        let listed = entries.iter().filter_map(toml::Value::as_table).any(|e| {
+            e.get("id").and_then(toml::Value::as_str) == Some(id.as_str())
+                && e.get("fixture").and_then(toml::Value::as_str) == Some(case.name.as_str())
+        });
+        if !listed {
+            problems.push(format!("case {} has no fixes.toml entry {id}", case.name));
+        }
+    }
+    assert!(problems.is_empty(), "{}", problems.join("\n"));
 }
 
 /// DR-PB-1: the parity suite pins the original to a full 40-hex commit.

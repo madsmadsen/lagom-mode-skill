@@ -236,3 +236,14 @@ name = "no-source-files"
 fixture = "python"
 args = ["-s", "nothing-here"]
 covers = ["no-source-files"]
+
+# DR-14: the original finds no source file here. The case carries the fix id, so the runner
+# expects a difference from the original, and parity_expected.rs does not replay it.
+[[case]]
+name = "jsx-fix"
+fixture = "jsx"
+args = ["--threshold", "0.8"]
+fix = "js-read-as-typescript"
+covers = [
+  "row:typescript:javascript-fix",
+]
