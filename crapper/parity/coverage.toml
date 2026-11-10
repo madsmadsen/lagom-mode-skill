@@ -8,7 +8,8 @@ items = ["flag:-h", "flag:--help", "flag:--root", "flag:-s", "flag:--source-root
          "cr11:clojure","cr11:java","cr11:go","cr11:typescript","cr11:rust","cr11:python",
          "cr13:clojure","cr13:java","cr13:go","cr13:typescript","cr13:rust","cr13:python",
          "reject:unknown-flag","reject:missing-value","reject:bad-threshold","reject:no-coverage+coverage-command",
-         "cr6:skip-dirs","cr7:changed","cr10:no-data"]
+         "cr6:skip-dirs","cr7:changed","cr10:no-data",
+         "crash:broken-symlink","crash:unreadable-source","crash:symlink-loop"]
 
 # Existing-report runs: read the fixture's checked-in coverage reports only.
 [[run]]
@@ -323,4 +324,32 @@ args = ["--no-coverage", "--coverage-command", "true"]
 setup = []
 requires = []
 covers = ["reject:no-coverage+coverage-command"]
+expect_exit = 1
+
+# Crash runs (AC-26): the original stops with a traceback and exit 1; the port must exit 1 too.
+[[run]]
+id = "crash-broken-symlink"
+fixture = "crash"
+args = ["--no-coverage"]
+setup = ["ln -s /nonexistent/missing.py src/broken.py"]
+requires = []
+covers = ["crash:broken-symlink"]
+expect_exit = 1
+
+[[run]]
+id = "crash-unreadable-source"
+fixture = "crash"
+args = ["--no-coverage"]
+setup = ["cp src/app.py src/secret.py", "chmod 000 src/secret.py"]
+requires = []
+covers = ["crash:unreadable-source"]
+expect_exit = 1
+
+[[run]]
+id = "crash-symlink-loop"
+fixture = "crash"
+args = ["--no-coverage"]
+setup = ["ln -s loop.py src/loop.py"]
+requires = []
+covers = ["crash:symlink-loop"]
 expect_exit = 1

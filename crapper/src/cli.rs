@@ -423,6 +423,11 @@ fn show_help(message: &str, exit_code: i32) -> i32 {
     exit_code
 }
 
+fn fail(message: &str) -> i32 {
+    eprintln!("{message}");
+    1
+}
+
 fn analyze(options: &Options) -> i32 {
     let root = resolve(&options.project_root);
     let files = match select_files(options) {
@@ -437,13 +442,13 @@ fn analyze(options: &Options) -> i32 {
         return 0;
     }
     let mut bundle = coverage_bundle(options, &root, &files);
-    let entries = analyze_files(&files, &root, bundle.as_mut());
+    let entries = match analyze_files(&files, &root, bundle.as_mut()) {
+        Ok(entries) => entries,
+        Err(error) => return fail(&error),
+    };
     let metrics = match write_metrics(&entries, &root) {
         Ok(path) => path,
-        Err(error) => {
-            eprintln!("{error}");
-            return 1;
-        }
+        Err(error) => return fail(&error.to_string()),
     };
     print!("{}", format_report(&entries));
     eprintln!("Wrote {}", metrics.display());

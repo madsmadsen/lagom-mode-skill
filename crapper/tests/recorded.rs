@@ -288,6 +288,12 @@ fn ac_9_rejected_flags_match_recorded() {
     check_group("AC-9", &ids_where(|run| run.id.starts_with("reject")));
 }
 
+// CR-3, AC-26
+#[test]
+fn ac_26_crashes_exit_1_like_the_recorded_original() {
+    check_group("AC-26", &ids_where(|run| run.id.starts_with("crash-")));
+}
+
 #[test]
 fn ac_14_skipped_dirs_match_recorded() {
     check_group("AC-14", &explicit(&["dirs-skip"]));

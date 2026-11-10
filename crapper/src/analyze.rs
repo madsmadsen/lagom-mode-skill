@@ -27,19 +27,18 @@ fn source_path(file: &Path, root: &Path) -> String {
 }
 
 /// Python reads in text mode: `\r\n` and a lone `\r` both become `\n`.
-fn read_source(file: &Path) -> String {
-    let bytes =
-        fs::read(file).unwrap_or_else(|err| panic!("cannot read {}: {err}", file.display()));
-    String::from_utf8_lossy(&bytes)
+fn read_source(file: &Path) -> Result<String, String> {
+    let bytes = fs::read(file).map_err(|err| format!("cannot read {}: {err}", file.display()))?;
+    Ok(String::from_utf8_lossy(&bytes)
         .replace("\r\n", "\n")
-        .replace('\r', "\n")
+        .replace('\r', "\n"))
 }
 
 pub fn analyze_files(
     files: &[PathBuf],
     project_root: &Path,
     bundle: Option<&mut CoverageBundle>,
-) -> Vec<Entry> {
+) -> Result<Vec<Entry>, String> {
     let root = resolve(project_root);
     let resolved: Vec<PathBuf> = files.iter().map(|file| resolve(file)).collect();
     let mut bundle = bundle;
@@ -57,13 +56,13 @@ pub fn analyze_files(
         let Some(language) = language_of(file) else {
             continue;
         };
-        let source = read_source(file);
+        let source = read_source(file)?;
         let relative = source_path(file, &root);
         for function in functions_in_file(language, &source, &relative, &root_text) {
             entries.push(make_entry(&function, coverage_of(coverage, &function)));
         }
     }
-    sort_entries(entries)
+    Ok(sort_entries(entries))
 }
 
 #[cfg(test)]
@@ -79,7 +78,8 @@ mod tests {
         let root = dir.path();
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join("src/app.py"), "def run():\n    return 1\n").unwrap();
-        let entries = analyze_files(&[root.join("src/app.py")], root, None);
+        let entries =
+            analyze_files(&[root.join("src/app.py")], root, None).expect("analysis succeeds");
         assert_eq!(
             entries,
             vec![Entry {
@@ -99,7 +99,45 @@ mod tests {
     fn cr_5_a_file_with_an_unknown_extension_is_skipped() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("notes.md"), "# notes\n").unwrap();
-        let entries = analyze_files(&[dir.path().join("notes.md")], dir.path(), None);
+        let entries = analyze_files(&[dir.path().join("notes.md")], dir.path(), None)
+            .expect("analysis succeeds");
         assert!(entries.is_empty());
+    }
+
+    // CR-5, CR-3
+    #[test]
+    fn cr_5_a_broken_symlink_with_an_unknown_extension_is_not_read() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        std::os::unix::fs::symlink("/nonexistent/notes.md", root.join("notes.md")).unwrap();
+        let entries = analyze_files(&[root.join("notes.md")], root, None);
+        assert_eq!(entries, Ok(vec![]));
+    }
+
+    // CR-3, AC-26
+    #[test]
+    fn cr_3_ac_26_a_symlink_loop_source_is_an_error() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).unwrap();
+        std::os::unix::fs::symlink("loop.py", root.join("src/loop.py")).unwrap();
+        let message = analyze_files(&[root.join("src/loop.py")], root, None)
+            .expect_err("symlink loop is an error");
+        assert!(message.contains("loop.py"), "{message}");
+    }
+
+    // CR-3, AC-26
+    #[test]
+    fn cr_3_ac_26_a_broken_symlink_source_is_an_error_that_names_the_file() {
+        let dir = tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/app.py"), "def run():\n    return 1\n").unwrap();
+        std::os::unix::fs::symlink("/nonexistent/missing.py", root.join("src/broken.py")).unwrap();
+        let files = [root.join("src/app.py"), root.join("src/broken.py")];
+        let message = analyze_files(&files, root, None).expect_err("broken symlink is an error");
+        assert!(message.starts_with("cannot read "), "{message}");
+        assert!(message.contains("broken.py"), "{message}");
+        assert!(!message.contains('\n'), "{message}");
     }
 }

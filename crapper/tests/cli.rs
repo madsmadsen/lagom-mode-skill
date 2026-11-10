@@ -6,6 +6,7 @@
 //! Black-box tests of the `crapper` binary's command-line behavior.
 
 use std::fs;
+use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::Path;
 use std::process::{Command, Output};
 
@@ -477,4 +478,64 @@ fn cr_10_ac_25_function_missing_from_the_report_scores_coverage_0_0() {
 
     let row = choose_row(&stdout(&output));
     assert!(row.contains("  0.0%"), "row was: {row}");
+}
+
+fn assert_crash_exit_1(output: &Output, root: &Path, needle: &str) {
+    assert_eq!(exit_code(output), 1, "stderr was: {}", stderr(output));
+    assert_eq!(stdout(output), "");
+    let err = stderr(output);
+    assert_eq!(err.trim_end().lines().count(), 1, "stderr was: {err}");
+    assert!(err.contains(needle), "stderr was: {err}");
+    assert!(!err.contains("panicked"), "stderr was: {err}");
+    assert!(!root.join(".metrics/crap.edn").exists());
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_broken_symlink_source_exits_1_with_one_stderr_line() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    symlink("/nonexistent/missing.py", root.join("src/broken.py")).expect("symlink");
+
+    let output = crapper_in(root, &["--no-coverage"]);
+    assert_crash_exit_1(&output, root, "broken.py");
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_source_file_without_read_permission_exits_1_with_one_stderr_line() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(root, "src/secret.py", CHOOSE_SOURCE);
+    fs::set_permissions(
+        root.join("src/secret.py"),
+        fs::Permissions::from_mode(0o000),
+    )
+    .expect("chmod");
+    // Root ignores permission bits, so an unreadable file is still readable here.
+    if fs::read(root.join("src/secret.py")).is_ok() {
+        return;
+    }
+
+    let output = crapper_in(root, &["--no-coverage"]);
+    fs::set_permissions(
+        root.join("src/secret.py"),
+        fs::Permissions::from_mode(0o644),
+    )
+    .expect("restore mode");
+    assert_crash_exit_1(&output, root, "secret.py");
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_symlink_loop_source_exits_1_with_one_stderr_line() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    symlink("loop.py", root.join("src/loop.py")).expect("symlink");
+
+    let output = crapper_in(root, &["--no-coverage"]);
+    assert_crash_exit_1(&output, root, "loop.py");
 }
