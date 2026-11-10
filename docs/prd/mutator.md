@@ -2,7 +2,7 @@
 
 Status: Draft 1. Owner and approver: Mads Madsen. Date: 2026-11-07.
 
-This document states the requirements for `mutator`, a Rust port of [mutator](https://github.com/unclebob/mutator) by Robert C. Martin. The port is one Cargo crate in the `mutator/` directory. It does not depend on another crate or tool in this repository. Each statement that comes from a guess and not from a source carries the label `[ASSUMPTION]`.
+This document states the requirements for `mutator`, a Rust port of [mutator](https://github.com/unclebob/mutator) by Robert C. Martin. The port is one Cargo crate in the `mutator/` directory. It does not depend on another crate or tool in this repository.
 
 ## 1. Problem
 
@@ -17,7 +17,7 @@ mutator makes small changes to the code and runs the tests after each change. A 
 | Mutant | A copy of the code with one small change, for example `<` to `<=`. |
 | Site | A place in the code where mutator can make a mutant. |
 | Killed | A mutant that makes the tests fail, time out, or not compile. |
-| Scan run | A run that lists sites and runs no mutant. `[ASSUMPTION]` The original has such a mode. |
+| Scan run | A run with `--scan` that lists sites and runs no mutant. |
 | Uncovered site | A site on a line that no test runs. |
 | Snapshot | An EDN file under `.metrics/mutate/` that mutator writes. |
 | EDN | Extensible Data Notation, the Clojure data format. |
@@ -46,7 +46,7 @@ mutator makes small changes to the code and runs the tests after each change. A 
 - MU-5: The port detects the language of each file by its extension, the same as the original.
 - MU-6: The port skips the directories `test`, `spec`, `vendor`, `node_modules`, and `target`, the same as the original.
 - MU-7: The port supports `--changed` with the same Git selection of files as the original.
-- MU-8: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, and with an EDN-aware reader for Clojure. `[ASSUMPTION]` The original uses tree-sitter for the same grammars.
+- MU-8: The port parses source with tree-sitter grammars for Clojure, Java, Go, TypeScript, JavaScript, Rust, and Python, as the original does through the `tree-sitter-language-pack` code of crapper.
 
 ### 5.2 Functions and coverage
 
@@ -67,7 +67,7 @@ The original imports code from a crapper checkout for the work in this section. 
 - MU-18: Before each run that is not a scan run, the port restores the source files from `target/mutator-backup/`, the same as the original.
 - MU-19: If a snapshot exists, the port runs differentially. It reruns the survivors and every site in a function whose text changed. `--mutate-all` reruns all sites.
 - MU-20: The port exits `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives.
-- MU-21: When a mutant times out, or its test time is within 10% of its timeout, the port runs that mutant once more with 2 times the timeout. The outcome of this second run is the outcome of the mutant. This behavior differs from the original, and `mutator/parity/fixes.toml` lists it. `[ASSUMPTION: 10% and 2 times]`
+- MU-21: When a mutant times out, or its test time is within 10% of its timeout, the port runs that mutant once more with 2 times the timeout. The outcome of this second run is the outcome of the mutant. This behavior differs from the original, and `mutator/parity/fixes.toml` lists it.
 
 ## 6. Non-functional requirements
 
@@ -112,7 +112,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 | The port copies the crapper code that the original imports. | The function names or the coverage of the port drift from the crapper code. | AC-1 compares with the original, which uses the pinned crapper code. |
 | A tree-sitter grammar version in Rust differs from the one in Python. | Different parse trees give different sites or names. | Pin the grammar versions. AC-1 detects a difference. |
 | Two mutator runs at the same time on one host slow each other down. | A survivor can time out and count as killed. | MU-21 runs each mutant near its timeout a second time with 2 times the timeout. AC-13 checks the outcome. |
-| A backup from an old run is restored. | The restore overwrites later edits to the source files. | `[ASSUMPTION]` The port copies the behavior of the original. A fix needs an entry in `fixes.toml`. |
+| A backup from an old run is restored. | Before each run that is not a scan run, the original restores every file under `target/mutator-backup/`. The restore overwrites later edits to the source files. | The port copies the behavior of the original. A fix needs an entry in `fixes.toml`. |
 | A run on a large project takes a long time. | The run can hit the command timeout of an agent. | Use `--changed` or a list of files. |
 
 ## 10. Dependencies
@@ -124,4 +124,4 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 
 ## 11. Open questions
 
-Each `[ASSUMPTION]` label in this document is an open question for the owner.
+None.

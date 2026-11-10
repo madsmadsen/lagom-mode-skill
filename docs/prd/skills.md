@@ -2,7 +2,7 @@
 
 Status: Draft 1. Owner and approver: Mads Madsen. Date: 2026-11-07.
 
-This document states the requirements for the agent skills in the `skills/` directory. The main skill, `feature-loop`, makes an agent implement one small feature through a fixed loop with quality gates. It is based on [ub-mode](https://github.com/unclebob/ub-mode) by Robert C. Martin. Each statement that comes from a guess and not from a source carries the label `[ASSUMPTION]`.
+This document states the requirements for the agent skills in the `skills/` directory. The main skill, `feature-loop`, makes an agent implement one small feature through a fixed loop with quality gates. It is based on [ub-mode](https://github.com/unclebob/ub-mode) by Robert C. Martin.
 
 ## 1. Problem
 
@@ -47,8 +47,8 @@ The skills use three commands from the `PATH`: `crapper`, `dryer`, and `mutator`
 | Command | Used interface |
 | --- | --- |
 | `crapper` | `--changed`, a list of files, `--threshold N`. Exit `0` when the worst CRAP score is `N` or lower, and `2` when it is higher than `N` (CR-17). A table on stdout with the worst score first (CR-16). |
-| `dryer` | `--changed`, a list of files, `--threshold N`, a report of candidate pairs in the snapshot `.metrics/dry.edn`, with the two forms of each pair `[ASSUMPTION: field name]` and their similarity score `[ASSUMPTION: field name]` (DR-10). Exit `0` after a report, `1` on a usage error, and `2` on an unknown `--format` (DR-13). |
-| `mutator` | `--changed`, a list of files. Exit `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives (MU-20). Uncovered sites, survivors, and dead code in `.metrics/mutate/<namespace>.edn`, with the field name of each: uncovered sites `[ASSUMPTION: field name]`, survivors `[ASSUMPTION: field name]`, and dead code `[ASSUMPTION: field name]`. |
+| `dryer` | `--changed`, a list of files, `--threshold N`, a report of candidate pairs under `:candidates` in the snapshot `.metrics/dry.edn`. Each pair has its two forms in `:left` and `:right`, each with `:file`, `:start-line`, and `:end-line`, and its similarity score in `:score` (DR-10). Exit `0` after a report, `1` on a usage error, and `2` on an unknown `--format` (DR-13). |
+| `mutator` | `--changed`, a list of files. Exit `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives (MU-20). Uncovered sites and survivors in `.metrics/mutate/<namespace>.edn`: each form in `:forms` has the counts `:uncovered` and `:survived`, and `:outcomes` maps each mutation to `:killed` or `:survived`. |
 
 ## 6. The loop
 
@@ -94,14 +94,14 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
   3. dryer reports no candidate pair with a score of 0.8 or more in the checked files.
   4. mutator exits `0` for the checked files, and the snapshots have 0 uncovered sites in the checked functions.
 - SK-8: The unit gates run `crapper --changed --threshold 9.99`, `dryer --changed --threshold 0.8`, and `mutator --changed`. The feature gates run the same three commands without `--changed`, with the feature files as positional arguments. The agent gets the feature files with `git diff --name-only <base-commit>`.
-- SK-9: `feature-loop` sets a retry limit for each gate. If a gate still fails after the limit, the agent stops and reports the failure and the log. It does not lower a threshold, delete a test, or edit a gate command to pass. `[ASSUMPTION]` The limit is 3 tries for each gate.
+- SK-9: `feature-loop` sets a retry limit of 5 tries for each gate. If a gate still fails after the limit, the agent stops and reports the failure and the log. It does not lower a threshold, delete a test, or edit a gate command to pass.
 - SK-10: `feature-loop` tells the agent to keep a log of each action and its reason, and to report the log at the end.
 - SK-11: `feature-loop` tells the agent to commit each unit after its unit gates pass. Each commit message states why, what changed, and how the agent proved it.
 - SK-25: `feature-loop` lists every stop condition (SK-9, SK-12, SK-14, SK-15, SK-16) in one numbered list.
 
 ### 7.3 Worktree
 
-- SK-12: At the start of a loop, the agent records the source branch and the base commit. It creates a new worktree on a new branch from the base commit. If the loop starts on a detached HEAD, the agent stops before it creates the worktree and asks for a source branch. `[ASSUMPTION]` The branch name is `feature-loop/<short-feature-name>`.
+- SK-12: At the start of a loop, the agent records the source branch and the base commit. It creates a new worktree on a new branch `feature-loop/<short-feature-name>` from the base commit. If the loop starts on a detached HEAD, the agent stops before it creates the worktree and asks for a source branch.
 - SK-13: The agent makes every edit, test run, gate run, and commit inside the loop worktree. It does not change files in another worktree, except the fast-forward in SK-14.
 - SK-14: After the feature gates pass, the agent fast-forwards the source branch to the loop branch with `git merge --ff-only`. It runs the command in the worktree that has the source branch checked out. It makes no merge commit. If the command fails because that worktree has uncommitted changes, the agent stops and reports.
 - SK-15: If the source branch moved since the base commit, the agent rebases the loop branch onto the new tip of the source branch. Then it runs all tests and the feature gates again, and does SK-14 only if they pass. If the rebase has a conflict, the agent stops and reports.
@@ -115,7 +115,7 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 - SK-20: Each tool skill names the document with the install instructions of its tool: the README of its port. It also states how to run the tool on uncommitted changes and on a list of files, and how to read its output.
 - SK-21: The crapper skill maps a high score to an action: split the function, add tests, or both. It states when a `match` or `case` is worth splitting.
 - SK-22: The dryer skill maps a candidate pair to an action: extract the shared shape, or record why the pair stays.
-- SK-23: The mutator skill maps each outcome to an action: cover an uncovered site, kill a survivor with a new test, or delete dead code.
+- SK-23: The mutator skill maps each outcome to an action: cover an uncovered site, or kill a survivor with a new test. If no test can kill a survivor, the code is dead, and the agent deletes it.
 - SK-24: Each tool skill states the exit codes of its tool and what the agent does for each code.
 
 ## 8. Non-functional requirements
@@ -125,14 +125,16 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 
 ## 9. Acceptance criteria
 
-`[ASSUMPTION: sample project and features]` The sample features run on the sample Rust project `samples/rust-todo`, a command-line to-do list, with the three tools on the `PATH`. The 3 sample feature requests are:
+The sample features run on the sample Rust project `samples/rust-todo`, a command-line to-do list, with the three tools on the `PATH`. The 5 sample feature requests are:
 
 1. Add a `done <id>` command that marks a task as done.
 2. Add a `--due <date>` option to `add`, and list overdue tasks first.
 3. Add an `export --csv` command that writes all tasks as CSV.
+4. Add a `delete <id>` command that removes a task.
+5. Add a `--tag <name>` option to `add`, and a `--tag <name>` filter to `list`.
 
 1. AC-1 (SK-1, SK-3, SK-4, SK-5, SK-20 to SK-25): `docs/skill-checklist.md` has one item for each of these requirements. Mads Madsen inspects the skills and records pass or fail for each item. All items pass.
-2. AC-2 (SK-7, SK-9): An agent loads `feature-loop` and gets a small feature request. The agent ends with all four conditions of SK-7 true for the feature files, or with a stop report after the retry limit. Mads Madsen reviews the log for 3 sample features. `[ASSUMPTION: sample size]`
+2. AC-2 (SK-7, SK-9): An agent loads `feature-loop` and gets a small feature request. The agent ends with all four conditions of SK-7 true for the feature files, or with a stop report after the retry limit. Mads Madsen reviews the log for the 5 sample features.
 3. AC-3 (SK-6): In the log of each sample feature, every unit has a run of its failing test, with the failure reason recorded, before the first change to production code in that unit.
 4. AC-4 (SK-8): In one sample feature, unit 1 and unit 3 add two functions that dryer scores 0.8 or more. The unit gates pass, the feature gates fail, and the agent removes the duplication before it finishes.
 5. AC-5 (SK-9): For every sample feature, a script finds no change to a gate command or a threshold under `skills/`, and no deleted test file in the diff of the loop branch.
@@ -144,32 +146,24 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 11. AC-11 (SK-15, SK-19): The rebase has a conflict. The agent stops and reports, and the loop worktree and the loop branch still exist.
 12. AC-12 (SK-16): The remote rejects the push. The agent stops, the log names the rejection, and the remote branch is unchanged.
 13. AC-13 (SK-18): The loop worktree has uncommitted changes after SK-14 and SK-16 succeed. The agent does not remove the worktree, and it reports the changes.
-14. AC-14 (SK-2): The same 3 sample features finish in two different agent harnesses, Claude Code and omp, with no change to the skills. `[ASSUMPTION: harnesses]`
 
-## 10. Success metrics
-
-| Metric | Target | How to measure |
-| --- | --- | --- |
-| Sample features that finish with no human edit | 70% `[ASSUMPTION]` | Logs of the sample features |
-| Gate failures that the agent fixes inside the retry limit | 80% `[ASSUMPTION]` | Logs of the sample features |
-
-## 11. Risks
+## 10. Risks
 
 | Risk | Effect | Mitigation |
 | --- | --- | --- |
 | The agent lowers a threshold or deletes a test to pass a gate. | False pass. | SK-9 forbids it. AC-5 detects it. |
 | ub-mode and dryer use different defaults: 0.8 against 0.82. | The agent uses the wrong threshold. | SK-8 states `--threshold 0.8` in the command. |
 | The source branch is checked out in another worktree that has uncommitted work. | A fast-forward there can fail, or can mix the loop changes with that work. | SK-14 uses `git merge --ff-only` and stops if Git refuses. The agent never moves the branch with `git branch -f` or `git update-ref`. |
-| Each worktree has its own build output and no installed dependencies. | The first build and the first coverage run in a new worktree are slow. | `[ASSUMPTION]` Accept the cost. |
+| Each worktree has its own build output and no installed dependencies. | The first build and the first coverage run in a new worktree are slow. | Accept the cost. |
 | A tool has a bug that blocks the loop. | The loop stops at the retry limit for a reason outside the feature. | The agent stops and reports (SK-9). |
 
-## 12. Dependencies
+## 11. Dependencies
 
 1. Git 2.30 or later on each host that runs a loop.
 2. `crapper`, `dryer`, and `mutator` on the `PATH`, with the interface in section 5.
 3. The test tools of the project that the agent works on.
 4. Until a Rust port replaces its original, one wrapper script for each tool puts the Python original on the `PATH` under the command name `crapper`, `dryer`, or `mutator`. The mutator original needs a crapper checkout at `../crapper`, next to the mutator checkout.
 
-## 13. Open questions
+## 12. Open questions
 
-Each `[ASSUMPTION]` label in this document is an open question for the owner.
+None.

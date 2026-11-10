@@ -2,7 +2,7 @@
 
 Status: Draft 1. Owner and approver: Mads Madsen. Date: 2026-11-07.
 
-This document states the requirements for `crapper`, a Rust port of [crapper](https://github.com/unclebob/crapper) by Robert C. Martin. The port is one Cargo crate in the `crapper/` directory. It does not depend on another crate or tool in this repository. Each statement that comes from a guess and not from a source carries the label `[ASSUMPTION]`.
+This document states the requirements for `crapper`, a Rust port of [crapper](https://github.com/unclebob/crapper) by Robert C. Martin. The port is one Cargo crate in the `crapper/` directory. It does not depend on another crate or tool in this repository.
 
 ## 1. Problem
 
@@ -43,7 +43,7 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 - CR-6: The port skips the same directories as the original. The behavior of the original is normative. The list `test`, `spec`, `vendor`, `node_modules`, and `target` is informative.
 - CR-7: The port supports `--changed` with the same Git selection of files as the original.
 - CR-8: The port names functions and namespaces for each language with the table in the README of the original.
-- CR-9: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, and with an EDN-aware reader for Clojure. `[ASSUMPTION]` The original uses tree-sitter for the same grammars.
+- CR-9: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, as the original does with `tree-sitter-language-pack`. For Clojure, the port copies the scanner of the original, which comes from crap4clj: it counts decision points with regular expressions and bracket depth, and it does not read EDN.
 - CR-10: The port computes `CRAP = CC² × (1 − coverage)³ + CC` for each function. Coverage is the value that the original computes for the function at the pinned commit: a percentage from 0 to 100, measured as LCOV branches when the function has BRDA records and LCOV lines otherwise, JaCoCo instructions, Go statements, and Cloverage forms. The formula uses coverage / 100. Under `--no-coverage`, `:coverage` and `:crap` are nil, as in the original. For a function that the coverage report does not mention, `:coverage` is `0.0` and `:crap` is the score for coverage 0, as in the original.
 - CR-11: The port counts decision points for each language with the rules in the README of the original, section "What each language counts".
 - CR-12: The port reads coverage in each format of the original. At the pinned commit, the complete list is: Cloverage form counts, LCOV, JaCoCo XML, and the Go coverage profile. Cloverage form counts are the HTML files that Cloverage writes under `target/coverage/` (`target/coverage/**/*.html`). The original reads the per-line counts "N out of M forms covered" from these files. The port reads each number in a Go profile and in a JaCoCo report with the rules of Python `int()`: an optional sign, underscores between digits, and any number of digits. The port clamps a number above 2^63 − 1 to 2^63 − 1. The port reads JaCoCo XML as the original does: it deletes the text that matches `<!DOCTYPE[^>]*>` (any case) first, and it rejects a malformed XML declaration. A malformed Go profile, a malformed JaCoCo XML file, and a coverage report without read permission stop the port with exit code 1 (CR-3).
@@ -106,7 +106,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 | --- | --- | --- |
 | The original changes often. | The port drifts from the original. | Pin one commit (CR-PB-1). Update on purpose only (CR-PB-2). |
 | A tree-sitter grammar version in Rust differs from the one in Python. | Different parse trees give a different CC or different names. | Pin the grammar versions. `upstream.toml` records the exact Python dependency versions of the original, and the parity runner installs them (CR-PB-1). AC-1 detects a difference. |
-| The Clojure reader in the original is custom Python code. | Edge cases of the reader are hard to copy. | The Clojure fixture covers reader conditionals, syntax-quote, and keyword calls. |
+| The Clojure scanner in the original uses regular expressions and bracket depth, not a reader. | Edge cases of the scanner are hard to copy. | The Clojure fixture covers reader conditionals, syntax-quote, and keyword calls. |
 | Floats print in a different way in Rust and Python. | Snapshots differ in the last digits. | AC-1 compares parsed EDN. The port copies the number format of the original. |
 | The six coverage tool chains must exist on the CI host. | Parity runs are slow and fragile. | Most runs use `--use-existing-coverage` with stored coverage reports. |
 | The port installs tools into the environment of the user. | An install surprises the user. | CR-15 prints each install. |
@@ -121,4 +121,4 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 
 ## 11. Open questions
 
-Each `[ASSUMPTION]` label in this document is an open question for the owner.
+None.

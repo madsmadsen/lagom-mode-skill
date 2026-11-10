@@ -2,7 +2,7 @@
 
 Status: Draft 1. Owner and approver: Mads Madsen. Date: 2026-11-07.
 
-This document states the requirements for `dryer`, a Rust port of [dryer](https://github.com/unclebob/dryer) by Robert C. Martin. The port is one Cargo crate in the `dryer/` directory. It does not depend on another crate or tool in this repository. Each statement that comes from a guess and not from a source carries the label `[ASSUMPTION]`.
+This document states the requirements for `dryer`, a Rust port of [dryer](https://github.com/unclebob/dryer) by Robert C. Martin. The port is one Cargo crate in the `dryer/` directory. It does not depend on another crate or tool in this repository.
 
 ## 1. Problem
 
@@ -41,7 +41,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 - DR-5: The port detects the language of each file by its extension, the same as the original.
 - DR-6: The port skips the directories `test`, `spec`, `vendor`, `node_modules`, and `target`, the same as the original.
 - DR-7: The port supports `--changed` with the same Git selection of files as the original.
-- DR-8: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, and with an EDN-aware reader for Clojure. `[ASSUMPTION]` The original uses tree-sitter for the same grammars.
+- DR-8: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, as the original does with `tree-sitter-language-pack`. For Clojure, the port copies the Clojure reader of the original (`clojure_read.py`).
 - DR-9: The port normalizes each form with the rules of the original. It keeps call names, method names, operators, and tree shape. It drops local names, field names, literals, and keywords.
 - DR-10: The port scores each pair with the Jaccard similarity of structural fingerprints. It compares forms only within one language.
 - DR-11: The port selects the forms for each language with the table in the README of the original, section "What each language compares".
@@ -51,7 +51,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 ## 6. Non-functional requirements
 
 - DR-NFR-1: Determinism. Two runs on the same files write byte-identical snapshots.
-- DR-NFR-2: Speed. On each parity fixture, the port finishes in less time than the original. `[ASSUMPTION]`
+- DR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port is lower than the median wall-clock time of 5 runs of the original. Both run on one named CI runner: Linux x86_64, Ubuntu 22.04. The time of the original includes Python start-up and excludes the clone and the install.
 - DR-NFR-3: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
 - DR-NFR-4: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
 - DR-NFR-5: License. The port uses the MIT License. Each file that derives from the original names its source.
@@ -78,6 +78,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 7. AC-7 (DR-NFR-1): Two runs on each fixture write byte-identical snapshots.
 8. AC-8 (Goal 3): All fixtures pass with the port on a host that has no Python installed. The expected results come from an earlier parity run.
 9. AC-9 (DR-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
+10. AC-10 (DR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as DR-NFR-2 defines.
 
 ## 9. Risks
 
@@ -96,4 +97,4 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 
 ## 11. Open questions
 
-Each `[ASSUMPTION]` label in this document is an open question for the owner.
+None.
