@@ -78,8 +78,9 @@ const NEAR_TIMEOUT: f64 = 0.9;
 
 /// Node, and Vite in front of it, resolve a relative import from the real path of the module.
 /// A symlinked test therefore loads the original source.
+/// A lone '.' or '..' names the index file of a directory (MU-22, issue 29 of the original).
 static SPECIFIER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r#"(?:from|import|require)\s*\(?\s*['"](\.[^'"]+)['"]"#)
+    Regex::new(r#"(?:from|import|require)\s*\(?\s*['"](\.[^'"]*)['"]"#)
         .expect("specifier pattern is valid")
 });
 
@@ -120,7 +121,11 @@ fn processors() -> usize {
 
 /// Half the cores, at least one. No run uses more workers than this.
 fn worker_cap() -> usize {
-    (processors() / 2).max(1)
+    cap_for(processors())
+}
+
+fn cap_for(cores: usize) -> usize {
+    (cores / 2).max(1)
 }
 
 /// The smaller of the sites, half the cores, and an explicit --max-workers.
@@ -613,6 +618,16 @@ mod tests {
         assert_eq!(worker_count(0, None), 1);
     }
 
+    // MU-17: half the cores, and at least one worker on a host with 0, 1, or 2 cores.
+    #[test]
+    fn mu_17_cap_for_is_half_the_cores_and_at_least_one() {
+        let caps: Vec<usize> = [0, 1, 2, 3, 4, 9]
+            .iter()
+            .map(|cores| cap_for(*cores))
+            .collect();
+        assert_eq!(caps, vec![1, 1, 1, 1, 2, 4]);
+    }
+
     // MU-17: workers keep a private copy of the file and link the rest of the project.
     #[test]
     fn mu_17_workers_keep_a_private_copy_and_link_the_rest() {
@@ -729,6 +744,34 @@ mod tests {
         assert!(worker.join("tests/other.test.mjs").is_symlink());
         delete_tree(&base).unwrap();
         assert_eq!(fs::read(source).unwrap(), original);
+    }
+
+    // MU-22: the specifiers `'.'` and `'..'` are relative imports of the `index` file.
+    #[test]
+    fn mu_22_dot_and_dot_dot_imports_reach_the_index_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        put(
+            &root,
+            "src/calc/index.ts",
+            "export const big = (x) => x > 10;\n",
+        );
+        put(
+            &root,
+            "src/calc/index.test.ts",
+            "import { big } from '.';\n",
+        );
+        put(
+            &root,
+            "src/calc/sub/deep.test.ts",
+            "const { big } = require(\"..\");\n",
+        );
+        put(&root, "src/calc/other.test.ts", "import x from './none';\n");
+        let expected: BTreeSet<String> = ["src/calc/index.test.ts", "src/calc/sub/deep.test.ts"]
+            .iter()
+            .map(|path| path.to_string())
+            .collect();
+        assert_eq!(importers_of(&root, "src/calc/index.ts").unwrap(), expected);
     }
 
     // MU-17: each run directory is new and lives under target/mutation-workers.

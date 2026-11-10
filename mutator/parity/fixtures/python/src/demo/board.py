@@ -16,7 +16,7 @@ class Board:
     def score(self, bonus: int) -> int:
         if bonus < 0:
             return -bonus * 2
-        return self.cells + bonus / 1 - 0
+        return self.cells + bonus * 1 - 0
 
 
 def _hide(flag: bool) -> bool:

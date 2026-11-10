@@ -13,7 +13,7 @@ KILLED    src/demo/board.py:17 0 -> 1
 SURVIVED  src/demo/board.py:18 delete -
 SURVIVED  src/demo/board.py:18 * -> /
 SURVIVED  src/demo/board.py:19 + -> -
-SURVIVED  src/demo/board.py:19 / -> *
+SURVIVED  src/demo/board.py:19 * -> /
 SURVIVED  src/demo/board.py:19 1 -> 0
 SURVIVED  src/demo/board.py:19 - -> +
 SURVIVED  src/demo/board.py:19 0 -> 1

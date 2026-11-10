@@ -31,6 +31,23 @@ const BINARY_PARENTS: &[&str] = &[
     "binary_operator",
     "comparison_operator",
     "boolean_operator",
+    "augmented_assignment",
+];
+
+const PYTHON_OPERATORS: &[(&str, &str)] = &[
+    ("is", "is not"),
+    ("is not", "is"),
+    ("in", "not in"),
+    ("not in", "in"),
+    ("//", "/"),
+    ("/", "//"),
+    ("%", "*"),
+    ("**", "*"),
+    ("@", "*"),
+    ("+=", "-="),
+    ("-=", "+="),
+    ("*=", "/="),
+    ("/=", "*="),
 ];
 
 const UNARY_PARENTS: &[&str] = &["unary_expression", "unary_operator", "not_operator"];
@@ -159,7 +176,7 @@ fn lookup(table: &[(&'static str, &'static str)], key: &str) -> Option<&'static 
 fn category(token: &str) -> &'static str {
     match token {
         ">" | ">=" | "<" | "<=" => "comparison",
-        "==" | "!=" | "===" | "!==" => "equality",
+        "==" | "!=" | "===" | "!==" | "is" | "is not" | "in" | "not in" => "equality",
         "&&" | "||" | "??" | "and" | "or" => "logical",
         _ => "arithmetic",
     }
@@ -192,8 +209,16 @@ fn optional_mutant(at: At) -> Option<&'static str> {
     }
 }
 
+// MU-24, issue 9 of the original: a clause is a statement boundary for coverage.
+const CLAUSES: &[&str] = &[
+    "elif_clause",
+    "except_clause",
+    "except_group_clause",
+    "case_clause",
+];
+
 fn is_statement(kind: &str) -> bool {
-    kind.ends_with("_statement") || kind.ends_with("_declaration")
+    kind.ends_with("_statement") || kind.ends_with("_declaration") || CLAUSES.contains(&kind)
 }
 
 fn statement_line(at: At) -> usize {
@@ -232,6 +257,16 @@ fn visit_binary(at: At, token: &str, language: Language, found: &mut Vec<RawSite
     }
     if let Some(mutant) = binary_mutant(language, token) {
         add(found, at, token, mutant, category(token));
+    }
+    if language == Language::Python {
+        add_python(at, token, token, found);
+    }
+}
+
+/// Adds one site for each Python operator pair whose first element is `key`.
+fn add_python(at: At, original: &str, key: &str, found: &mut Vec<RawSite>) {
+    for (_, mutant) in PYTHON_OPERATORS.iter().filter(|(from, _)| *from == key) {
+        add(found, at, original, mutant, category(key));
     }
 }
 
@@ -290,7 +325,17 @@ fn visit_node(at: At, data: &[u8], language: Language, found: &mut Vec<RawSite>)
     }
     if at.node.child_count() == 0 {
         visit_leaf(at, data, language, found);
+    } else {
+        visit_compound(at, data, language, found);
     }
+}
+
+// A Python `is not` or `not in` is one non-leaf node under a comparison, so it is visited here.
+fn visit_compound(at: At, data: &[u8], language: Language, found: &mut Vec<RawSite>) {
+    if language != Language::Python {
+        return;
+    }
+    add_python(at, ts::node_text(data, at.node), at.node.kind(), found);
 }
 
 #[cfg(test)]
@@ -594,18 +639,16 @@ mod tests {
         );
     }
 
-    /// MU-12: Python `not in` is not a site. The original reports no site for it, so the
-    /// program text is left as written.
+    /// MU-12 and MU-23: Python `not in` has no site in the original. The port makes exactly one,
+    /// `not in` to `in` (fix `python-more-operators`), and `not` alone is not a site.
     #[test]
-    fn mu_12_python_not_in_has_no_sites() {
-        assert!(
-            discover_raw(
-                "def f(x, items):\n    return x not in items\n",
-                Language::Python,
-                "a.py"
-            )
-            .is_empty()
+    fn mu_12_python_not_in_has_one_site_by_mu_23() {
+        let found = discover_raw(
+            "def f(x, items):\n    return x not in items\n",
+            Language::Python,
+            "a.py",
         );
+        assert_eq!(pairs(&found), vec![("not in", "in")]);
     }
 
     /// MU-12: `0` and `1` swap in the program text.
@@ -828,5 +871,98 @@ export function check(n: number): { ok: true } | { ok: false; used?: true } {
             .map(|site| (site.line, site.original.as_str(), site.mutant.as_str()))
             .collect();
         assert_eq!(described, vec![(5, ">", ">="), (5, "0", "1")]);
+    }
+
+    /// MU-23: the operators of issue 10 that the original never mutates in Python.
+    #[test]
+    fn mu_23_python_identity_membership_matrix_and_power_operators_are_sites() {
+        let source = "def ops(a, b, items, m):\n    if a is None:\n        return m @ m\n    if b in items:\n        return a // b\n    a += b\n    return a % b + a ** b\n";
+        let found = discover_raw(source, Language::Python, "src/demo/ops2.py");
+        for (original, mutant) in [
+            ("is", "is not"),
+            ("in", "not in"),
+            ("@", "*"),
+            ("//", "/"),
+            ("%", "*"),
+            ("**", "*"),
+            ("+=", "-="),
+            ("+", "-"),
+        ] {
+            assert!(
+                has(&found, original, mutant),
+                "missing {original} -> {mutant}: {:?}",
+                pairs(&found)
+            );
+        }
+    }
+
+    /// MU-23: the reverse pairs, the compound tokens `is not` and `not in`, and `/` to `//`.
+    #[test]
+    fn mu_23_python_reverse_pairs_and_compound_tokens_are_sites() {
+        let source = "def more(a, b, items, c):\n    if a is not b and c not  in items:\n        a -= 1\n        a *= 2\n        a /= 3\n    return a / b\n";
+        let found = discover_raw(source, Language::Python, "src/demo/more.py");
+        for (original, mutant) in [
+            ("is not", "is"),
+            ("not  in", "in"),
+            ("-=", "+="),
+            ("*=", "/="),
+            ("/=", "*="),
+            ("/", "//"),
+            ("/", "*"),
+        ] {
+            assert!(
+                has(&found, original, mutant),
+                "missing {original} -> {mutant}: {:?}",
+                pairs(&found)
+            );
+        }
+        assert_eq!(
+            apply_one(source, Language::Python, "more.py", "is not", "is"),
+            source.replace("a is not b", "a is b")
+        );
+    }
+
+    /// MU-23: `in` of a `for` loop, a decorator `@`, and the words of a comparison that are not
+    /// operators stay unmutated.
+    #[test]
+    fn mu_23_python_loop_in_and_decorator_at_are_not_sites() {
+        let source = "@wrap\ndef f(items):\n    for item in items:\n        pass\n    return [x for x in items]\n";
+        let found = discover_raw(source, Language::Python, "src/demo/loop.py");
+        assert_eq!(pairs(&found), Vec::<(&str, &str)>::new());
+    }
+
+    /// MU-24: a site in an `elif` condition anchors to the `elif` line, not the `if` line.
+    #[test]
+    fn mu_24_python_elif_condition_anchors_to_the_elif_line() {
+        let source = "def classify(x):\n    if x > 10:\n        return \"high\"\n    elif x > 0:\n        return \"pos\"\n    return \"non-pos\"\n";
+        let found = discover_raw(source, Language::Python, "src/demo/branches.py");
+        let anchors: Vec<(usize, &str, usize)> = found
+            .iter()
+            .map(|site| (site.line, site.original.as_str(), site.anchor_line))
+            .collect();
+        assert_eq!(anchors, vec![(2, ">", 2), (4, ">", 4), (4, "0", 4)]);
+    }
+
+    /// MU-24: a site in an `except` clause anchors to the `except` line, and a site in a `case`
+    /// guard anchors to the `case` line.
+    #[test]
+    fn mu_24_python_except_and_case_guard_anchor_to_their_clause_line() {
+        let source = "def f(x, y):\n    try:\n        run()\n    except (A if x > 1 else B):\n        pass\n    match y:\n        case 1 if y > 0:\n            pass\n";
+        let found = discover_raw(source, Language::Python, "src/demo/clauses.py");
+        let anchors: Vec<(usize, &str, usize)> = found
+            .iter()
+            .filter(|site| site.original == ">")
+            .map(|site| (site.line, site.original.as_str(), site.anchor_line))
+            .collect();
+        assert_eq!(anchors, vec![(4, ">", 4), (7, ">", 7)]);
+    }
+
+    /// MU-24: a site inside the body of an `elif` still anchors to its own statement.
+    #[test]
+    fn mu_24_python_site_in_an_elif_body_keeps_its_statement_anchor() {
+        let source = "def f(x):\n    if x:\n        pass\n    elif x:\n        return x + 1\n";
+        let found = discover_raw(source, Language::Python, "src/demo/body.py");
+        let site = found.iter().find(|site| site.original == "+").unwrap();
+        assert_eq!((site.line, site.anchor_line), (5, 5));
     }
 }

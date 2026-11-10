@@ -14,7 +14,7 @@ Scan: 28 mutation sites in src/demo/board.py
   src/demo/board.py:18 delete -  [defn/score]
   src/demo/board.py:18 * -> /  [defn/score]
   src/demo/board.py:19 + -> -  [defn/score]
-  src/demo/board.py:19 / -> *  [defn/score]
+  src/demo/board.py:19 * -> /  [defn/score]
   src/demo/board.py:19 1 -> 0  [defn/score]
   src/demo/board.py:19 - -> +  [defn/score]
   src/demo/board.py:19 0 -> 1  [defn/score]

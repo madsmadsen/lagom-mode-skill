@@ -37,6 +37,46 @@ test = "tests/worker_cap.rs::mu_17_default_worker_count_is_half_the_cores_at_lea
 changes_snapshot_keys_or_shape = false
 approved = false
 
+[[fix]]
+id = "ts-dot-imports-are-relative"
+requirement = "MU-22"
+description = """The original finds the test files that import the mutated module with a pattern that
+needs one character after the dot. The specifiers `'.'` and `'..'` (the `index` file of a directory)
+never match, so such a test stays a symlink, Node loads the original file, and a killed mutant is
+reported as SURVIVED (upstream issue 29). The port matches a lone dot, resolves it to `index.<ext>`,
+and copies the test file into the worker."""
+changed_behavior = "A TypeScript or JavaScript test that imports its module from '.' or '..' runs against the mutant."
+fixture = "tests/upstream_fixes.rs (project built inline: src/calc/index.ts and src/calc/index.test.ts)"
+test = "tests/upstream_fixes.rs::mu_22_ac14_a_test_that_imports_dot_is_copied_so_the_mutant_is_killed"
+changes_snapshot_keys_or_shape = false
+approved = false
+
+[[fix]]
+id = "python-more-operators"
+requirement = "MU-23"
+description = """The original makes no site for the Python operators `is`, `is not`, `in`, `not in`,
+`//`, `%`, `**`, `@`, `+=`, `-=`, `*=`, and `/=` (upstream issue 10). The port makes these mutants:
+`is` <-> `is not`, `in` <-> `not in`, `//` <-> `/`, `%` to `*`, `**` to `*`, `@` to `*`,
+`+=` <-> `-=`, and `*=` <-> `/=`. Python `/` keeps its mutant `*` and gains `//`."""
+changed_behavior = "A Python file with these operators has more sites, so snapshots and logs list more mutants."
+fixture = "tests/upstream_fixes.rs (project built inline: src/demo/ops2.py and src/demo/ops3.py)"
+test = "tests/upstream_fixes.rs::mu_23_ac15_scan_lists_a_site_for_each_operator_of_issue_10"
+changes_snapshot_keys_or_shape = false
+approved = false
+
+[[fix]]
+id = "python-clause-coverage-line"
+requirement = "MU-24"
+description = """The original gives a Python site in an `elif` condition, an `except` clause, or a
+`case` guard the first line of the enclosing `if`, `try`, or `match` statement as its coverage line.
+That line is covered, so a mutant on an uncovered clause runs and is reported as SURVIVED (upstream
+issue 9). The port uses the first line of the clause, so such a site is an uncovered site."""
+changed_behavior = "A Python site in an uncovered `elif`, `except`, or `case` clause is an uncovered site and runs no mutant."
+fixture = "tests/upstream_fixes.rs (project built inline: src/demo/branches.py and src/demo/clauses.py)"
+test = "tests/upstream_fixes.rs::mu_24_ac16_elif_sites_on_an_uncovered_line_are_uncovered"
+changes_snapshot_keys_or_shape = false
+approved = false
+
 # Not listed on purpose (MU-PB-5): `bugs/python-tests-run-with-mutators-virtualenv.md` comes from
 # Python only. The port has no interpreter of its own and uses the project's `.venv` or `venv`
 # Python, else `python3` on the PATH.

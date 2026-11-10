@@ -120,3 +120,30 @@ The golden tests (`tests/fixtures_langs.rs`, AC-11) pass with no Python and no c
   `~/.cargo/bin/cargo-llvm-cov` exists after run 1. The fixture has no `cargo test` tests, so the coverage report hits no line: all 14 sites are uncovered and
   no mutant runs (summary rows show 0 killed, 0 survived, 14 uncovered). The coverage values are written, and the notice-before-install order and the
   one-time install are what this check proves. The guest is stopped by the script; `pgrep -f linux-vm` shows no qemu of mine.
+
+## PRD update: upstream fixes MU-22, MU-23, MU-24 (AC-14, AC-15, AC-16)
+
+Reason: commits 8f31773 and bc91fc4 added section 5.4 (three upstream fixes) and AC-14 to AC-16 to the PRD. MU-8 now names Clojure among the tree-sitter
+grammars (see the open point at the end). No other requirement changed.
+
+| Step | Action and reason | Result |
+| --- | --- | --- |
+| P1 | Read the PRD diff against 4384d65, the three upstream issues (9, 10, 29), `fixes.toml`, and `upstream.toml`. The pinned commits stay as they are. | Three fixes are missing: MU-22, MU-23, MU-24. |
+| P2 | Tests first: `tests/upstream_fixes.rs` (5 end-to-end tests named for MU-22/23/24 and AC-14/15/16) and 7 unit tests in `sites.rs` and `workers.rs`. | Before any code change the 5 end-to-end tests failed for the reasons of the issues: AC-14 `SURVIVED src/calc/index.ts:2 > -> >=` (exit 3, not 0); AC-15 scan lists only `src/demo/ops2.py:7 + -> -` (1 site, as issue 10 says); AC-16 `SURVIVED` on line 4 for the two `elif` sites and no `uncovered` mark on the `except` and `case` sites. |
+| P3 | MU-22: in `workers.rs` the import pattern `(\.[^'"]+)` became `(\.[^'"]*)`. `candidates` already resolves `.` and `..` to `index.<ext>`, so the importer is copied into the worker. | AC-14 passes: `KILLED src/calc/index.ts:2 > -> >=`. |
+| P4 | MU-23: in `sites.rs` a Python-only table `PYTHON_OPERATORS` (13 pairs) and `augmented_assignment` in `BINARY_PARENTS`. `is not` and `not in` are one non-leaf node in tree-sitter-python, so `visit_compound` handles them with the node kind as key and the source text as original. Python `/` keeps `*` and gains `//`. `is`/`in` are category `equality`. | AC-15 passes. |
+| P5 | MU-24: in `sites.rs` `is_statement` also stops the climb at `elif_clause`, `except_clause`, `except_group_clause`, `case_clause` (no other grammar has these kinds). | AC-16 passes: both line-4 sites are `UNCOVERED`, line 2 runs. |
+| P6 | `fixes.toml`: three new entries `ts-dot-imports-are-relative`, `python-more-operators`, `python-clause-coverage-line`, all `approved = false`. Each names its test (AC-12). | `fixes_toml` tests pass. |
+| P7 | The old test `mu_12_python_not_in_has_no_sites` pinned the behavior of the original. It became `mu_12_python_not_in_has_one_site_by_mu_23`. | Passes. |
+| P8 | The parity fixture `fixtures/python` had `bonus / 1`, which the fix MU-23 now mutates to `//`. An unapproved fix prints FAIL in `run.py`, so the fixture line became `bonus * 1` (the two sides still compare). `golden.py` regenerated `tests/golden/python/` from the original (only the Python golden changed). | The Python golden test passes again. |
+| P9 | A mutation gate run found one survivor in `workers.rs:124` (`.max(1)` to `.max(0)` in `worker_cap`, from e6b7084; it cannot show on a host with 2 or more cores). The cap moved to `cap_for(cores)` with the test `mu_17_cap_for_is_half_the_cores_and_at_least_one`. The first gate run of `sites.rs` also found one survivor (`||` to `&&` in `visit_compound`, a parent check that no grammar can fail). The check was removed. | Both files: 0 survivors. |
+
+Gates (scratch copy under `/tmp`, own `CARGO_TARGET_DIR`, 2 workers, `ulimit -t 120`, every process stopped afterwards):
+- `cargo build --release`, `cargo test` 493 passed, `cargo clippy --all-targets` clean, `cargo fmt` clean.
+- Original-port tools: `crapper --threshold 9.99` exit 0 (worst CRAP 9.0), `dryer --threshold 0.8` no candidates.
+- `mutator` on `src/sites.rs`: 32 killed, 0 survived, 0 uncovered. On `src/workers.rs`: 31 killed, 0 survived, 0 uncovered.
+- `parity/run.py` against the pinned original: 38 PASS.
+
+Open point for the owner: MU-8 now says the port parses Clojure with a tree-sitter grammar. The port reads Clojure with its own reader that copies the node shapes
+of tree-sitter-clojure (`clojure_reader.rs`), and the Clojure parity fixture and golden pass. No code change was made, because the PRD does not say that a
+grammar crate is required.
