@@ -84,3 +84,16 @@ Method: ub-mode. Orchestrator plans and verifies; implementer agents
 - Parity: `parity/run.py` against the pinned original gives 38 PASS. `flag-help-short` and `flag-help-long` now carry `allow_stdout_diff = true`
   in `coverage.toml`, because e6b7084 (half the cores) changed the help text on purpose. `fixes.toml` is unchanged.
 - cargo test 477 passed, clippy --all-targets clean.
+
+## Linux guests (arm64 and x86_64, Ubuntu 22.04, glibc 2.35)
+
+Scripts: `ci/linux-vm/`. arm64 guest: qemu with HVF. x86_64 guest: qemu with TCG (emulated, slow). Sources copied in (no shared folder), built on the guest disk, Rust 1.99.1.
+
+| Step | Action | Result |
+| --- | --- | --- |
+| L1 | `cargo build --release`, `cargo test`, `cargo clippy --all-targets` with python3 installed. | arm64: 477 pass, clippy 0 warnings. x86_64: 477 pass, clippy 0 warnings. |
+| L2 | Guest clone with every Python interpreter removed (`which python3` empty, no executable `python*` file), fresh `target`, `cargo test`. | arm64: 476 pass, 1 FAIL: `cli::tests::mu_3_surviving_mutant_returns_three_and_writes_snapshot` ran `python3 -c ...` as its test command (`sh: python3: not found`, run exits 2, not 3). It was a test that needed Python on the host, which MU AC-11 forbids. |
+| L3 | Fix (`src/cli.rs`, test only): test command is `grep -q 'return a + b' src/demo.py`. Same outcome: the baseline passes, an arithmetic mutant is killed, a comparison mutant survives (exit 3, snapshot `defn/add`). | arm64 without Python: 477 pass, clippy 0. x86_64 without Python: 477 pass, clippy 0 (the `timeouts` tests also pass under TCG). |
+| L4 | Mutation gate for `src/cli.rs` after the edit (scratch copy `/tmp/mgl`, lcov from `cargo llvm-cov --lib --test cli_exit --test changed --test overlay`, `--use-existing-coverage`, 2 workers, `ulimit -t 120`, own process group, killed by group, `pgrep` empty). | 58 killed, 0 survived, 0 uncovered. |
+
+The golden tests (`tests/fixtures_langs.rs`, AC-11) pass with no Python and no crapper checkout on both architectures. The parity runner `parity/run.py` (needs the original mutator and crapper) was not run on Linux.

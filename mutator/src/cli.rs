@@ -1119,8 +1119,7 @@ mod tests {
             &dir.path().join("src/demo.py"),
             "def add(a, b):\n    if a > 0:\n        return a + b\n    return 0\n",
         );
-        let command = "python3 -c \"import sys; sys.path.insert(0, 'src'); \
-                       from demo import add; raise SystemExit(0 if add(2, 3) == 5 else 1)\"";
+        let command = "grep -q 'return a + b' src/demo.py";
         let root_text = dir.path().to_str().expect("utf-8 path");
         let code = run(&args(&[
             "--no-coverage",
