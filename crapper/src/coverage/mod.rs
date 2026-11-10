@@ -83,18 +83,18 @@ fn java_class_names(function: &Function) -> Vec<&str> {
 }
 
 /// Python `load_coverage`: read every report under `root` and merge them.
-/// A malformed Go profile or JaCoCo index is fatal, as it is in the Python original.
-pub fn load_bundle(root: &Path) -> CoverageBundle {
-    CoverageBundle {
-        lcov: merge_lcov(root),
-        form_html: merge_forms(root),
-        go_profile: merge_go(root),
-        jacoco: merge_jacoco(root),
+/// A malformed report, or one that cannot be read, is an error, as it is fatal in the Python original.
+pub fn load_bundle(root: &Path) -> Result<CoverageBundle, String> {
+    Ok(CoverageBundle {
+        go_profile: merge_go(root)?,
+        jacoco: merge_jacoco(root)?,
+        lcov: merge_lcov(root)?,
+        form_html: merge_forms(root)?,
         source_parts: Vec::new(),
-    }
+    })
 }
 
-fn merge_lcov(root: &Path) -> Keyed<FileCoverage> {
+fn merge_lcov(root: &Path) -> Result<Keyed<FileCoverage>, String> {
     let mut merged: Keyed<FileCoverage> = Keyed::default();
     let mut lcov_files = find_named(&root.join("target").join("coverage"), &|name| {
         name == "lcov.info"
@@ -102,20 +102,21 @@ fn merge_lcov(root: &Path) -> Keyed<FileCoverage> {
     lcov_files.extend(find_named(&root.join("coverage"), &|name| {
         name == "lcov.info"
     }));
-    for text in merge_texts(&lcov_files) {
+    for (_, text) in merge_texts(&lcov_files)? {
         for (key, record) in parse_lcov(&text) {
             merged.insert(key, record);
         }
     }
-    merged
+    Ok(merged)
 }
 
-fn merge_forms(root: &Path) -> Keyed<LineHits> {
+fn merge_forms(root: &Path) -> Result<Keyed<LineHits>, String> {
     let coverage_dir = root.join("target").join("coverage");
     let mut found: Keyed<LineHits> = Keyed::default();
     for html_path in find_named(&coverage_dir, &|name| name.ends_with(".html")) {
-        let Some(text) = read_text(&html_path).filter(|text| text.contains("forms covered")) else {
-            continue;
+        let text = match read_text(&html_path)? {
+            Some(text) if text.contains("forms covered") => text,
+            _ => continue,
         };
         let Ok(relative) = html_path.strip_prefix(&coverage_dir) else {
             continue;
@@ -126,10 +127,10 @@ fn merge_forms(root: &Path) -> Keyed<LineHits> {
             parse_form_coverage(&text),
         );
     }
-    found
+    Ok(found)
 }
 
-fn merge_go(root: &Path) -> Keyed<Vec<GoSegment>> {
+fn merge_go(root: &Path) -> Result<Keyed<Vec<GoSegment>>, String> {
     let mut merged: Keyed<Vec<GoSegment>> = Keyed::default();
     let mut go_files = vec![
         root.join("target/coverage/coverage.out"),
@@ -137,49 +138,51 @@ fn merge_go(root: &Path) -> Keyed<Vec<GoSegment>> {
         root.join("coverage.out"),
     ];
     go_files.extend(project_reports(root, "target/coverage/go/coverage.out"));
-    for text in merge_texts(&go_files) {
-        let profile = parse_go_profile(&text).unwrap_or_else(|error| panic!("{error}"));
+    for (path, text) in merge_texts(&go_files)? {
+        let profile =
+            parse_go_profile(&text).map_err(|error| format!("{}: {error}", path.display()))?;
         for (key, segments) in profile {
             merged.get_mut_or_default(key).extend(segments);
         }
     }
-    merged
+    Ok(merged)
 }
 
-fn merge_jacoco(root: &Path) -> Keyed<Vec<JacocoMethod>> {
+fn merge_jacoco(root: &Path) -> Result<Keyed<Vec<JacocoMethod>>, String> {
     let mut merged: Keyed<Vec<JacocoMethod>> = Keyed::default();
     let mut jacoco_files = vec![root.join("target/site/jacoco/jacoco.xml")];
     jacoco_files.extend(project_reports(root, "target/site/jacoco/jacoco.xml"));
-    for text in merge_texts(&jacoco_files) {
-        let index = parse_jacoco_index(&text).unwrap_or_else(|error| panic!("{error}"));
+    for (path, text) in merge_texts(&jacoco_files)? {
+        let index =
+            parse_jacoco_index(&text).map_err(|error| format!("{}: {error}", path.display()))?;
         for (key, methods) in index {
             merged.get_mut_or_default(key).extend(methods);
         }
     }
-    merged
+    Ok(merged)
 }
 
 /// Python `_merge_texts`: read each distinct file (by resolved path, first wins) that is non-empty.
-fn merge_texts(paths: &[PathBuf]) -> Vec<String> {
+fn merge_texts(paths: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, String> {
     let mut seen: HashSet<PathBuf> = HashSet::new();
     let mut texts = Vec::new();
     for path in paths {
         if !seen.insert(resolve(path)) {
             continue;
         }
-        if let Some(text) = read_text(path).filter(|text| !text.is_empty()) {
-            texts.push(text);
+        if let Some(text) = read_text(path)?.filter(|text| !text.is_empty()) {
+            texts.push((path.clone(), text));
         }
     }
-    texts
+    Ok(texts)
 }
 
-fn read_text(path: &Path) -> Option<String> {
+fn read_text(path: &Path) -> Result<Option<String>, String> {
     if !path.is_file() {
-        return None;
+        return Ok(None);
     }
-    let bytes = fs::read(path).ok()?;
-    Some(String::from_utf8_lossy(&bytes).into_owned())
+    let bytes = fs::read(path).map_err(|err| format!("cannot read {}: {err}", path.display()))?;
+    Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
 }
 
 /// Python `*/<tail>` and `*/*/<tail>`: the tail under every child directory, then every grandchild.
@@ -462,7 +465,7 @@ mod tests {
             "<span class=\"pc\" title=\"1 out of 2 forms covered\">   4&nbsp;&nbsp;(if x 1)</span>\n\
              <span class=\"pc\" title=\"3 out of 4 forms covered\">   6&nbsp;&nbsp;(if y 2)</span>\n",
         );
-        let bundle = load_bundle(dir.path());
+        let bundle = load_bundle(dir.path()).expect("bundle loads");
         assert_eq!(
             bundle.percent_for(&function("clojure", "src/demo/core.clj", 3, 6)),
             Some(66.66666666666667)
@@ -490,7 +493,7 @@ mod tests {
             "target/coverage/lcov.info",
             "SF:src/demo/app.ts\nDA:2,1\nDA:3,0\nDA:4,1\nBRDA:2,0,0,1\nBRDA:2,0,1,0\nBRDA:2,0,2,-\nend_of_record\n",
         );
-        let bundle = load_bundle(dir.path());
+        let bundle = load_bundle(dir.path()).expect("bundle loads");
         assert_eq!(
             bundle.percent_for(&function("typescript", "src/demo/app.ts", 2, 4)),
             Some(33.333333333333336)
@@ -523,7 +526,7 @@ mod tests {
              </class>\n\
              </package></report>\n",
         );
-        let bundle = load_bundle(dir.path());
+        let bundle = load_bundle(dir.path()).expect("bundle loads");
         let java = |name: &str, class: &str, line: u32| Function {
             name: name.to_string(),
             namespace: "demo.pkg.Board".to_string(),
@@ -557,7 +560,7 @@ mod tests {
             "target/coverage/go/coverage.out",
             "mode: set\ndemo/board.go:4.1,6.2 2 1\ndemo/board.go:8.1,9.2 1 0\n",
         );
-        let bundle = load_bundle(dir.path());
+        let bundle = load_bundle(dir.path()).expect("bundle loads");
         assert_eq!(
             bundle.percent_for(&function("go", "demo/board.go", 4, 9)),
             Some(66.66666666666667)
@@ -594,7 +597,7 @@ mod tests {
             "<span title=\"1 out of 2 forms covered\">   4&nbsp;&nbsp;(if x 1)</span>",
         );
         write(dir.path(), "target/coverage/index.html", "<html></html>");
-        let bundle = load_bundle(dir.path());
+        let bundle = load_bundle(dir.path()).expect("bundle loads");
         assert_eq!(
             bundle.percent_for(&function("clojure", "src/demo/core.clj", 3, 4)),
             Some(50.0)
@@ -616,7 +619,7 @@ mod tests {
     #[test]
     fn ac_25_load_bundle_on_an_empty_tree_scores_nothing() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let bundle = load_bundle(dir.path());
+        let bundle = load_bundle(dir.path()).expect("bundle loads");
         assert_eq!(
             bundle.percent_for(&function("clojure", "src/demo/core.clj", 3, 6)),
             None
@@ -665,8 +668,137 @@ mod tests {
             dir.path().join("target/coverage/linked"),
         )
         .expect("symlink");
-        let bundle = load_bundle(dir.path());
+        let bundle = load_bundle(dir.path()).expect("bundle loads");
         assert!(bundle.form_html.get("real/src/demo/core.clj").is_some());
         assert!(bundle.form_html.get("linked/src/demo/core.clj").is_none());
+    }
+
+    // CR-3, AC-26: a malformed Go profile is an error that names the report file.
+    #[test]
+    fn cr_3_ac_26_a_malformed_go_profile_is_an_error_that_names_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            dir.path(),
+            "target/coverage/go/coverage.out",
+            "mode: set\nboard.go:1.1,2.2 1\n",
+        );
+        let Err(message) = load_bundle(dir.path()) else {
+            panic!("a malformed Go profile must fail to load");
+        };
+        assert!(message.contains("coverage.out"), "{message}");
+        assert!(
+            message.contains("invalid coverage segment on line 2"),
+            "{message}"
+        );
+        assert!(!message.contains('\n'), "{message}");
+    }
+
+    // CR-3, AC-26: a malformed JaCoCo report is an error that names the report file.
+    #[test]
+    fn cr_3_ac_26_a_malformed_jacoco_report_is_an_error_that_names_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            dir.path(),
+            "target/site/jacoco/jacoco.xml",
+            "<report><class name=\"a/B\"",
+        );
+        let Err(message) = load_bundle(dir.path()) else {
+            panic!("a malformed JaCoCo report must fail to load");
+        };
+        assert!(message.contains("jacoco.xml"), "{message}");
+    }
+
+    // CR-3, AC-26: a JaCoCo counter that is not a number is an error that names the report file.
+    #[test]
+    fn cr_3_ac_26_a_jacoco_counter_that_is_not_a_number_is_an_error() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(
+            dir.path(),
+            "target/site/jacoco/jacoco.xml",
+            "<report><class name=\"a/B\"><method name=\"m\" line=\"1\"><counter type=\"INSTRUCTION\" missed=\"x\" covered=\"1\"/></method></class></report>",
+        );
+        let Err(message) = load_bundle(dir.path()) else {
+            panic!("a non-numeric JaCoCo counter must fail to load");
+        };
+        assert!(message.contains("jacoco.xml"), "{message}");
+    }
+
+    // CR-3, AC-26: a report that exists but cannot be read is an error that names the file.
+    #[cfg(unix)]
+    #[test]
+    fn cr_3_ac_26_an_unreadable_report_is_an_error_that_names_the_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let reports = [
+            (
+                "target/coverage/lcov.info",
+                "SF:src/demo/app.ts\nend_of_record\n",
+            ),
+            (
+                "target/coverage/go/coverage.out",
+                "mode: set\nboard.go:1.1,2.2 1 1\n",
+            ),
+            ("target/site/jacoco/jacoco.xml", "<report/>"),
+            (
+                "target/coverage/app.html",
+                "<span title=\"1 out of 2 forms covered\">   4&nbsp;</span>",
+            ),
+        ];
+        for (relative, text) in reports {
+            let dir = tempfile::tempdir().expect("tempdir");
+            write(dir.path(), relative, text);
+            let path = dir.path().join(relative);
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("name");
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).expect("chmod");
+            // Root reads files whatever their mode, so such a file cannot fail to load.
+            if fs::read(&path).is_ok() {
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("chmod");
+                return;
+            }
+            let result = load_bundle(dir.path());
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).expect("chmod");
+            let Err(message) = result else {
+                panic!("unreadable {relative} must fail to load");
+            };
+            assert!(message.contains(name), "{message}");
+            assert!(message.contains("cannot read"), "{message}");
+        }
+    }
+
+    // CR-12: a directory or a broken symlink named like a report is ignored, not read.
+    #[cfg(unix)]
+    #[test]
+    fn cr_12_a_directory_or_a_broken_symlink_named_like_a_report_is_ignored() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("target/coverage/lcov.info")).expect("mkdir");
+        fs::create_dir_all(dir.path().join("target/site/jacoco")).expect("mkdir");
+        std::os::unix::fs::symlink(
+            "/nonexistent/x",
+            dir.path().join("target/coverage/coverage.out"),
+        )
+        .expect("symlink");
+        std::os::unix::fs::symlink(
+            "/nonexistent/y",
+            dir.path().join("target/site/jacoco/jacoco.xml"),
+        )
+        .expect("symlink");
+        let bundle = load_bundle(dir.path()).expect("bundle loads");
+        assert_eq!(
+            bundle.percent_for(&function("clojure", "src/demo/core.clj", 3, 4)),
+            None
+        );
+        assert_eq!(bundle.percent_for(&function("go", "board.go", 1, 3)), None);
+    }
+
+    // CR-12: an empty Go profile and an empty JaCoCo index are skipped, and score nothing.
+    #[test]
+    fn cr_12_an_empty_report_file_is_skipped() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write(dir.path(), "target/coverage/go/coverage.out", "");
+        write(dir.path(), "target/site/jacoco/jacoco.xml", "");
+        let bundle = load_bundle(dir.path()).expect("bundle loads");
+        assert_eq!(bundle.percent_for(&function("go", "board.go", 1, 3)), None);
     }
 }

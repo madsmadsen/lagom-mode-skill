@@ -9,7 +9,9 @@ items = ["flag:-h", "flag:--help", "flag:--root", "flag:-s", "flag:--source-root
          "cr13:clojure","cr13:java","cr13:go","cr13:typescript","cr13:rust","cr13:python",
          "reject:unknown-flag","reject:missing-value","reject:bad-threshold","reject:no-coverage+coverage-command",
          "cr6:skip-dirs","cr7:changed","cr10:no-data",
-         "crash:broken-symlink","crash:unreadable-source","crash:symlink-loop"]
+         "crash:broken-symlink","crash:unreadable-source","crash:symlink-loop",
+         "crash:go-profile-fields","crash:go-profile-number","crash:go-profile-range","crash:jacoco-xml",
+         "crash:jacoco-count","crash:unreadable-lcov","crash:unreadable-html"]
 
 # Existing-report runs: read the fixture's checked-in coverage reports only.
 [[run]]
@@ -352,4 +354,67 @@ args = ["--no-coverage"]
 setup = ["ln -s loop.py src/loop.py"]
 requires = []
 covers = ["crash:symlink-loop"]
+expect_exit = 1
+
+[[run]]
+id = "crash-go-profile-fields"
+fixture = "crash"
+args = ["--use-existing-coverage"]
+setup = ['mkdir -p target/coverage/go && printf "mode: set\nsrc/app.py:1.1,2.2 1\n" > target/coverage/go/coverage.out']
+requires = []
+covers = ["crash:go-profile-fields"]
+expect_exit = 1
+
+[[run]]
+id = "crash-go-profile-number"
+fixture = "crash"
+args = ["--use-existing-coverage"]
+setup = ['mkdir -p target/coverage/go && printf "mode: set\nsrc/app.py:a.1,2.2 1 1\n" > target/coverage/go/coverage.out']
+requires = []
+covers = ["crash:go-profile-number"]
+expect_exit = 1
+
+[[run]]
+id = "crash-go-profile-range"
+fixture = "crash"
+args = ["--use-existing-coverage"]
+setup = ['mkdir -p target/coverage/go && printf "mode: set\nsrc/app.py:1.1 1 1\n" > target/coverage/go/coverage.out']
+requires = []
+covers = ["crash:go-profile-range"]
+expect_exit = 1
+
+[[run]]
+id = "crash-jacoco-xml"
+fixture = "crash"
+args = ["--use-existing-coverage"]
+setup = ["mkdir -p target/site/jacoco && printf '<report><class name=\"a/B\"' > target/site/jacoco/jacoco.xml"]
+requires = []
+covers = ["crash:jacoco-xml"]
+expect_exit = 1
+
+[[run]]
+id = "crash-jacoco-count"
+fixture = "crash"
+args = ["--use-existing-coverage"]
+setup = ["mkdir -p target/site/jacoco && printf '<report><package><class name=\"a/B\"><method name=\"f\" line=\"1\"><counter type=\"INSTRUCTION\" missed=\"x\" covered=\"1\"/></method></class></package></report>' > target/site/jacoco/jacoco.xml"]
+requires = []
+covers = ["crash:jacoco-count"]
+expect_exit = 1
+
+[[run]]
+id = "crash-unreadable-lcov"
+fixture = "crash"
+args = ["--use-existing-coverage"]
+setup = ['mkdir -p coverage && printf "SF:src/app.py\nDA:1,1\nend_of_record\n" > coverage/lcov.info && chmod 000 coverage/lcov.info']
+requires = []
+covers = ["crash:unreadable-lcov"]
+expect_exit = 1
+
+[[run]]
+id = "crash-unreadable-html"
+fixture = "crash"
+args = ["--use-existing-coverage"]
+setup = ["mkdir -p target/coverage && printf '<span title=\"1 out of 2 forms covered\">1&nbsp;' > target/coverage/app.html && chmod 000 target/coverage/app.html"]
+requires = []
+covers = ["crash:unreadable-html"]
 expect_exit = 1

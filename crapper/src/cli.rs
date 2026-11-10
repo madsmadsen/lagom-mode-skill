@@ -386,18 +386,22 @@ fn resolve(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-fn coverage_bundle(options: &Options, root: &Path, files: &[PathBuf]) -> Option<CoverageBundle> {
+fn coverage_bundle(
+    options: &Options,
+    root: &Path,
+    files: &[PathBuf],
+) -> Result<Option<CoverageBundle>, String> {
     if options.no_coverage {
-        return None;
+        return Ok(None);
     }
     if options.use_existing_coverage {
-        return Some(load_bundle(root));
+        return load_bundle(root).map(Some);
     }
     let status = run_coverage(root, files, options.coverage_command.as_deref());
     if options.coverage_command.is_some() && matches!(status, Some(code) if code != 0) {
-        return Some(CoverageBundle::default());
+        return Ok(Some(CoverageBundle::default()));
     }
-    Some(load_bundle(root))
+    load_bundle(root).map(Some)
 }
 
 fn threshold_status(threshold: Option<f64>, entries: &[Entry]) -> i32 {
@@ -441,7 +445,10 @@ fn analyze(options: &Options) -> i32 {
         println!("No source files to analyze.");
         return 0;
     }
-    let mut bundle = coverage_bundle(options, &root, &files);
+    let mut bundle = match coverage_bundle(options, &root, &files) {
+        Ok(bundle) => bundle,
+        Err(message) => return fail(&message),
+    };
     let entries = match analyze_files(&files, &root, bundle.as_mut()) {
         Ok(entries) => entries,
         Err(error) => return fail(&error),

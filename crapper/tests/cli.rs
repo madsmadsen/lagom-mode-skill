@@ -539,3 +539,152 @@ fn cr_3_ac_26_a_symlink_loop_source_exits_1_with_one_stderr_line() {
     let output = crapper_in(root, &["--no-coverage"]);
     assert_crash_exit_1(&output, root, "loop.py");
 }
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_go_profile_with_a_wrong_field_count_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/coverage/go/coverage.out",
+        "mode: set\nsrc/app.py:1.1,2.2 1\n",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_crash_exit_1(&output, root, "coverage.out");
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_go_profile_with_a_non_integer_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/coverage/go/coverage.out",
+        "mode: set\nsrc/app.py:a.1,2.2 1 1\n",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_crash_exit_1(&output, root, "coverage.out");
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_go_profile_block_without_a_comma_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/coverage/go/coverage.out",
+        "mode: set\nsrc/app.py:1.1 1 1\n",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_crash_exit_1(&output, root, "coverage.out");
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_go_profile_line_without_a_colon_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/coverage/go/coverage.out",
+        "mode: set\nsrc/app.py 1 1\n",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_crash_exit_1(&output, root, "coverage.out");
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_jacoco_report_that_is_not_well_formed_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/site/jacoco/jacoco.xml",
+        "<report><class name=\"a/B\"",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_crash_exit_1(&output, root, "jacoco.xml");
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_jacoco_counter_that_is_not_a_number_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/site/jacoco/jacoco.xml",
+        "<report><package><class name=\"a/B\"><method name=\"f\" line=\"1\"><counter type=\"INSTRUCTION\" missed=\"x\" covered=\"1\"/></method></class></package></report>",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_crash_exit_1(&output, root, "jacoco.xml");
+}
+
+fn assert_unreadable_report_exits_1(relative: &str, content: &str, needle: &str) {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(root, relative, content);
+    fs::set_permissions(root.join(relative), fs::Permissions::from_mode(0o000)).expect("chmod");
+    // Root ignores permission bits, so an unreadable report is still readable here.
+    if fs::read(root.join(relative)).is_ok() {
+        return;
+    }
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    fs::set_permissions(root.join(relative), fs::Permissions::from_mode(0o644))
+        .expect("restore mode");
+    assert_crash_exit_1(&output, root, needle);
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_an_unreadable_lcov_report_exits_1() {
+    assert_unreadable_report_exits_1(
+        "target/coverage/python/lcov.info",
+        "SF:src/app.py\nDA:1,1\nend_of_record\n",
+        "lcov.info",
+    );
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_an_unreadable_go_profile_exits_1() {
+    assert_unreadable_report_exits_1(
+        "target/coverage/go/coverage.out",
+        "mode: set\nsrc/app.py:1.1,2.2 1 1\n",
+        "coverage.out",
+    );
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_an_unreadable_jacoco_report_exits_1() {
+    assert_unreadable_report_exits_1("target/site/jacoco/jacoco.xml", "<report/>", "jacoco.xml");
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_an_unreadable_cloverage_html_exits_1() {
+    assert_unreadable_report_exits_1(
+        "target/coverage/app.html",
+        "<span title=\"1 out of 2 forms covered\">1&nbsp;",
+        "app.html",
+    );
+}
