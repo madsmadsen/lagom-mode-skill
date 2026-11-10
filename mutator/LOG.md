@@ -97,3 +97,26 @@ Scripts: `ci/linux-vm/`. arm64 guest: qemu with HVF. x86_64 guest: qemu with TCG
 | L4 | Mutation gate for `src/cli.rs` after the edit (scratch copy `/tmp/mgl`, lcov from `cargo llvm-cov --lib --test cli_exit --test changed --test overlay`, `--use-existing-coverage`, 2 workers, `ulimit -t 120`, own process group, killed by group, `pgrep` empty). | 58 killed, 0 survived, 0 uncovered. |
 
 The golden tests (`tests/fixtures_langs.rs`, AC-11) pass with no Python and no crapper checkout on both architectures. The parity runner `parity/run.py` (needs the original mutator and crapper) was not run on Linux.
+
+## Decisions round: worker cap fix and AC-9 on a fresh guest
+
+- Worker cap (owner decision): `parity/fixes.toml` has a third entry, `worker-cap-half-the-cores` (`approved = false`; the owner approves it).
+  The PRD has no requirement for the worker count; the closest is MU-17 (parallel workers), which the entry uses. Test:
+  `tests/worker_cap.rs::mu_17_default_worker_count_is_half_the_cores_at_least_one` (also `mu_17_help_says_half_the_cores_not_one_per_core`).
+  The comments on `allow_stdout_diff = true` for `flag-help-short` and `flag-help-long` cite the fix id, and
+  `tests/parity_map.rs::mu_pb_3_allow_stdout_diff_names_a_fix_in_fixes_toml` checks that each one names an id in `fixes.toml`.
+  `run.py` needed no change: `allow_stdout_diff` already skips the stdout check per run. No test checks that every entry is approved, so none was weakened.
+  Results: cargo test 480 passed, clippy `--all-targets` clean, `parity/run.py` (venv rebuilt in `/tmp/mu/venv` from the pinned checkouts) 38 PASS.
+  No `src/` file changed in this round, so no mutation gate run was needed.
+- AC-9, real install (`ci/linux-vm/install-check.sh`): fresh clone of the arm64 guest (Ubuntu 22.04, HVF), Rust 1.99.1, no `cargo-llvm-cov`
+  (the script fails if it is there), network on, sources copied over ssh, release mutator, parity Rust fixture (`git init` + commit),
+  `mutator --test-command 'sh check.sh'` (coverage on).
+
+  | Run | Order of events on stderr | Exit | Install count |
+  | --- | --- | --- | --- |
+  | 1 | line 1: `Neither cargo-llvm-cov nor cargo-tarpaulin is installed. Installing cargo-llvm-cov.`; then `+ (/home/dev) rustup component add llvm-tools-preview`; `+ (/home/dev) cargo install cargo-llvm-cov --locked`; cargo output (first at line 5: `Updating crates.io index`, `Installed`/`Installing cargo-llvm-cov v0.9.1`); `+ ... cargo llvm-cov --lcov --output-path .../lcov.info`; `Finished report saved ...`; `Wrote .metrics/mutate/demo.edn`, `demo/Counter.edn` | 0 | 1 (notice on 1 line, before any cargo output) |
+  | 2 | no notice, no install; starts with `+ ... cargo llvm-cov ...`; same `Wrote` lines | 0 | 0 |
+
+  `~/.cargo/bin/cargo-llvm-cov` exists after run 1. The fixture has no `cargo test` tests, so the coverage report hits no line: all 14 sites are uncovered and
+  no mutant runs (summary rows show 0 killed, 0 survived, 14 uncovered). The coverage values are written, and the notice-before-install order and the
+  one-time install are what this check proves. The guest is stopped by the script; `pgrep -f linux-vm` shows no qemu of mine.
