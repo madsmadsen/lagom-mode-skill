@@ -457,6 +457,14 @@ mod tests {
     }
 
     #[test]
+    // MU-4: lookup skips entries whose key is neither a keyword nor a string, even when they come last.
+    fn mu_4_get_skips_non_text_keys() {
+        let value = parse("{:a 1 2 3 nil 4 true 5}").expect("map parses");
+        assert_eq!(value.get("a"), Some(&Value::Int(1)));
+        assert_eq!(value.get("missing"), None);
+    }
+
+    #[test]
     // MU-4: string escapes n t r " and \ decode; other escapes keep the character.
     fn mu_4_parse_string_escapes() {
         assert_eq!(parse(r#""a\nb\t\"\\\q""#), Ok(text("a\nb\t\"\\q")));

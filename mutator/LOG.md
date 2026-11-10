@@ -52,3 +52,13 @@ Method: ub-mode. Orchestrator plans and verifies; implementer agents
   `splitlines`/`digest` range clamp). These survivors are NOT yet fixed; other files are NOT yet mutation-checked.
 - Not verified: AC-9 with a real `cargo-llvm-cov` install (the e2e test uses a fake `cargo`; the host already has the tool and a real install needs network
   and a host without it). MU-PB-6 approval of `fixes.toml` entries is pending (`approved = false`).
+
+## Mutation pass results (port run on its own src, parallel scratch copies)
+- Pass 1 survivors found: bind 3, workers 7, cover_run 11 (+2 uncovered), coverage 8, metrics 7 (+3 uncovered), engine 11, runner 6,
+  python fn 2, rust fn 3, sites 1, cli 10 (+1), report 2, clojure_reader 10 (+3), clojure_sites 1, edn 1 = 112 survivors (+9 uncovered).
+- All were killed by new behaviour tests or by deleting dead/equivalent code (e.g. unreachable fallbacks, nanos in run-dir name, `not in` branch
+  that the original also never mutates). Re-runs after fixes: bind, workers, cover_run, coverage, metrics, engine, runner, discover, ts,
+  python/rust function finders, sites: exit 0 (no survivors).
+- Not re-run after the fixes (scratch dir /tmp/mu was lost when the host reset): cli, report, model, clojure_reader, clojure_sites, edn (second pass),
+  and a first pass of functions/clojure.rs (80 sites, its run never finished). Those files have fixes but no confirming rerun.
+- Final: cargo test 461 passed, clippy clean; original crapper max CRAP 9.0; original dryer no candidates.
