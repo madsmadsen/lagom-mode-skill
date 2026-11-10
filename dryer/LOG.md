@@ -64,11 +64,25 @@ The port follows the original, as PRD goal 1 says.
 
 ## Blockers and open items
 
-- DR-NFR-3 (macOS 14 arm64 and x86_64, Linux x86_64 and arm64): only macOS arm64 was exercised. Nothing in the crate is platform specific
-  except the tree-sitter C grammars, which build with the default C toolchain.
+- DR-NFR-3 (macOS 14 arm64 and x86_64, Linux x86_64 and arm64): macOS arm64 and Ubuntu 22.04 arm64 and x86_64 (qemu guests, see Linux guests) were exercised. macOS x86_64 was not.
 - DR-NFR-4: the README shows `cargo install --git https://github.com/<owner>/deterministic-coding dryer`. The real URL is not known. `[ASSUMPTION]`.
   Because `tree-sitter-python` is a git dependency, the build needs network access to github.com for that crate.
 - DR-PB-3, DR-PB-6, AC-9: `parity/fixes.toml` has no entries because no fix is approved. AC-9 has a test that parses the file and
   checks that each entry id appears in a test (it passes with zero entries).
 - AC-8 is met by `tests/parity_expected.rs`, which replays `parity/expected/` (recorded from the original) with no Python.
 - uml-viewer check (PRD AC-5): no `fixes.toml` entry changes snapshot keys, so none is needed.
+
+## Linux guests (arm64 and x86_64, Ubuntu 22.04, glibc 2.35)
+
+Scripts: `ci/linux-vm/`. arm64 guest: qemu with HVF. x86_64 guest: qemu with TCG (emulated, slow). Sources copied in (no shared folder), built on the guest disk, Rust 1.99.1.
+
+| Check | arm64 | x86_64 |
+| --- | --- | --- |
+| `cargo build --release` (the build fetches `tree-sitter-python` from github.com) | ok | ok |
+| `cargo test` | 198 pass | 198 pass |
+| `cargo clippy --all-targets` | 0 warnings | 0 warnings |
+| Guest with every Python interpreter removed (`which python3` empty), fresh `target`, `cargo test` (AC-8, `tests/parity_expected.rs`) | 198 pass | 198 pass |
+| `parity/run_parity.py` against the pinned original (live, 32 cases) | 32 pass, 0 failed | 32 pass, 0 failed |
+| DR-NFR-2: port time below original time per case | 32 of 32 (original 0.02 s and up, port at most 0.01 s) | 32 of 32 (original 0.24 s and up, port at most 0.04 s; TCG, emulated, absolute times not comparable with a real runner) |
+
+No Linux-only failure found. No source change.
