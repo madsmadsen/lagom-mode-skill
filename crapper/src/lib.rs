@@ -11,5 +11,6 @@ pub mod discover;
 pub mod languages;
 pub mod metrics;
 pub mod model;
+pub mod pynum;
 pub mod report;
 pub mod runners;

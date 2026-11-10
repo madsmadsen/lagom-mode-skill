@@ -11,7 +11,8 @@ items = ["flag:-h", "flag:--help", "flag:--root", "flag:-s", "flag:--source-root
          "cr6:skip-dirs","cr7:changed","cr10:no-data",
          "crash:broken-symlink","crash:unreadable-source","crash:symlink-loop",
          "crash:go-profile-fields","crash:go-profile-number","crash:go-profile-range","crash:jacoco-xml",
-         "crash:jacoco-count","crash:unreadable-lcov","crash:unreadable-html"]
+         "crash:jacoco-count","crash:unreadable-lcov","crash:unreadable-html",
+         "lenient:go-ints","lenient:go-huge","lenient:jacoco-ints"]
 
 # Existing-report runs: read the fixture's checked-in coverage reports only.
 [[run]]
@@ -418,3 +419,31 @@ setup = ["mkdir -p target/coverage && printf '<span title=\"1 out of 2 forms cov
 requires = []
 covers = ["crash:unreadable-html"]
 expect_exit = 1
+
+# Python int() leniency: the original accepts these numbers; the port must too.
+[[run]]
+id = "lenient-go-ints"
+fixture = "go"
+args = ["--use-existing-coverage"]
+setup = ['printf "mode: set\nexample.com/gofixture/calc/calc.go:+3.25,4.19 1_0 +1\nexample.com/gofixture/calc/calc.go:6.23,7.10 +1 0\nexample.com/gofixture/calc/calc.go:12.25,15.10 2_0 1\n" > target/coverage/go/coverage.out']
+requires = []
+covers = ["lenient:go-ints"]
+expect_exit = 0
+
+[[run]]
+id = "lenient-go-huge"
+fixture = "go"
+args = ["--use-existing-coverage"]
+setup = ['printf "mode: set\nexample.com/gofixture/calc/calc.go:3.25,4.19 99999999999999999999999 1\nexample.com/gofixture/calc/calc.go:12.25,15.10 1 0\n" > target/coverage/go/coverage.out']
+requires = []
+covers = ["lenient:go-huge"]
+expect_exit = 0
+
+[[run]]
+id = "lenient-jacoco-ints"
+fixture = "java"
+args = ["--use-existing-coverage"]
+setup = ["sed -i.bak -e 's/missed=\"6\" covered=\"4\"/missed=\"+0_6\" covered=\"0_4\"/' -e 's/missed=\"0\" covered=\"7\"/missed=\"0\" covered=\"99999999999999999999999\"/' -e 's/line=\"4\"/line=\"+0_4\"/' target/site/jacoco/jacoco.xml && rm target/site/jacoco/jacoco.xml.bak"]
+requires = []
+covers = ["lenient:jacoco-ints"]
+expect_exit = 0

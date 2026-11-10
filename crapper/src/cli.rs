@@ -19,6 +19,7 @@ use crate::discover::{
 };
 use crate::metrics::write_metrics;
 use crate::model::Entry;
+use crate::pynum::python_float;
 use crate::report::format_report;
 use crate::runners::run_coverage;
 
@@ -199,25 +200,6 @@ fn take(args: &[String], index: usize, option: &str) -> Result<String, String> {
 
 fn parse_threshold(raw: &str) -> Result<f64, String> {
     python_float(raw).ok_or_else(|| "--threshold requires a number".to_string())
-}
-
-/// Python's `float()` for ASCII text: surrounding whitespace is ignored, and
-/// an underscore is allowed only directly between two digits.
-fn python_float(raw: &str) -> Option<f64> {
-    let text = raw.trim();
-    let bytes = text.as_bytes();
-    let underscores_between_digits = bytes.iter().enumerate().all(|(index, &byte)| {
-        byte != b'_'
-            || (index > 0
-                && index + 1 < bytes.len()
-                && bytes[index - 1].is_ascii_digit()
-                && bytes[index + 1].is_ascii_digit())
-    });
-    if underscores_between_digits {
-        text.replace('_', "").parse().ok()
-    } else {
-        None
-    }
 }
 
 fn check_conflicts(options: Options) -> Result<Options, String> {
@@ -640,25 +622,6 @@ mod tests {
         assert_eq!(threshold_status(Some(9.99), &[entry(10.0)]), 2);
         assert_eq!(threshold_status(Some(1.0), &[]), 0);
         assert_eq!(threshold_status(None, &[entry(10.0)]), 0);
-    }
-
-    // CR-2
-    #[test]
-    fn cr_2_python_float_accepts_what_python_accepts() {
-        assert_eq!(python_float("1_0"), Some(10.0));
-        assert_eq!(python_float("1_0.5_0"), Some(10.5));
-        assert_eq!(python_float("1e1_0"), Some(1e10));
-        assert_eq!(python_float(" 12 "), Some(12.0));
-    }
-
-    // CR-2
-    #[test]
-    fn cr_2_python_float_rejects_misplaced_underscores() {
-        for raw in [
-            "_1", "1_", "1__0", "1_.5", "1._5", "1e_5", "1_e5", "-_1", "abc", "",
-        ] {
-            assert_eq!(python_float(raw), None, "{raw:?} should be rejected");
-        }
     }
 
     // CR-2

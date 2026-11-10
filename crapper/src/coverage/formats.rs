@@ -8,6 +8,8 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
+use crate::pynum::python_int;
+
 use super::paths::{lookup, Keyed};
 
 /// Line number to `(covered, total)`.
@@ -48,8 +50,8 @@ pub fn coverage_percent(covered: i64, total: i64) -> f64 {
 fn span_totals(hits: &LineHits, start: u32, end: u32) -> (i64, i64) {
     (i64::from(start)..=i64::from(end))
         .filter_map(|line| hits.get(&line))
-        .fold((0, 0), |(covered, total), (hit, count)| {
-            (covered + hit, total + count)
+        .fold((0_i64, 0_i64), |(covered, total), (hit, count)| {
+            (covered.saturating_add(*hit), total.saturating_add(*count))
         })
 }
 
@@ -168,14 +170,14 @@ fn parse_go_segment(line: &str) -> Option<(&str, GoSegment)> {
     let segment = GoSegment {
         start: leading_int(start)?,
         end: leading_int(end)?,
-        statements: statements.parse().ok()?,
-        hits: hits.parse().ok()?,
+        statements: python_int(statements)?,
+        hits: python_int(hits)?,
     };
     Some((file, segment))
 }
 
 fn leading_int(text: &str) -> Option<i64> {
-    text.split('.').next()?.parse().ok()
+    python_int(text.split('.').next()?)
 }
 
 /// Python `_go_percent`: statement coverage over the Go blocks that overlap the function's lines.
@@ -190,13 +192,16 @@ pub fn go_percent(
     let (covered, total) = segments
         .iter()
         .filter(|segment| segment.end >= i64::from(start) && segment.start <= i64::from(end))
-        .fold((0, 0), |(covered, total), segment| {
+        .fold((0_i64, 0_i64), |(covered, total), segment| {
             let hit = if segment.hits > 0 {
                 segment.statements
             } else {
                 0
             };
-            (covered + hit, total + segment.statements)
+            (
+                covered.saturating_add(hit),
+                total.saturating_add(segment.statements),
+            )
         });
     Some(coverage_percent(covered, total))
 }
@@ -241,7 +246,7 @@ fn record_method(
     let entry = JacocoMethod {
         missed: count_attr(counter, "missed")?,
         covered: count_attr(counter, "covered")?,
-        line: attr_or_zero(method, "line").trim().parse().unwrap_or(0),
+        line: python_int(attr_or_zero(method, "line")).unwrap_or(0),
     };
     found.get_mut_or_default(key).push(entry);
     Ok(())
@@ -249,8 +254,7 @@ fn record_method(
 
 fn count_attr(counter: roxmltree::Node, name: &str) -> Result<i64, String> {
     let text = attr_or_zero(counter, name).trim();
-    text.parse()
-        .map_err(|_| format!("invalid JaCoCo {name} count: {text:?}"))
+    python_int(text).ok_or_else(|| format!("invalid JaCoCo {name} count: {text:?}"))
 }
 
 fn attr_or_zero<'a, 'i>(node: roxmltree::Node<'a, 'i>, name: &'a str) -> &'a str {
@@ -277,12 +281,12 @@ pub fn jacoco_percent(
         return Some(method_percent(exact));
     }
     pool.iter()
-        .min_by_key(|method| (method.line - line).abs())
+        .min_by_key(|method| method.line.abs_diff(line))
         .map(method_percent)
 }
 
 fn method_percent(method: &JacocoMethod) -> f64 {
-    coverage_percent(method.covered, method.missed + method.covered)
+    coverage_percent(method.covered, method.missed.saturating_add(method.covered))
 }
 
 #[cfg(test)]
@@ -531,6 +535,101 @@ mod tests {
         assert_eq!(
             jacoco_percent(&index, &["demo.Board"], "place", 4),
             Some(75.0)
+        );
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_go_profile_numbers_follow_python_int() {
+        let parsed = profile("mode: set\nf.go:1_0.1,+2.2 1_0 +1\n");
+        assert_eq!(
+            parsed.get("f.go"),
+            Some(&vec![GoSegment {
+                start: 10,
+                end: 2,
+                statements: 10,
+                hits: 1
+            }])
+        );
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_go_profile_numbers_beyond_64_bits_are_clamped() {
+        let parsed =
+            profile("mode: set\nf.go:1.1,2.2 99999999999999999999999 99999999999999999999999\n");
+        assert_eq!(
+            parsed.get("f.go"),
+            Some(&vec![GoSegment {
+                start: 1,
+                end: 2,
+                statements: i64::MAX,
+                hits: i64::MAX
+            }])
+        );
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_go_profile_misplaced_underscore_is_an_error() {
+        assert!(parse_go_profile("mode: set\nf.go:1.1,2.2 1_ 1\n").is_err());
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_jacoco_counts_follow_python_int() {
+        let index = parse_jacoco_index(
+            r#"<report><class name="f/C"><method name="m" line="+0_1"><counter type="INSTRUCTION" missed="1_0" covered="+0_4"/></method></class></report>"#,
+        )
+        .expect("valid jacoco");
+        assert_eq!(
+            index.get("f.C#m"),
+            Some(&vec![JacocoMethod {
+                missed: 10,
+                covered: 4,
+                line: 1
+            }])
+        );
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_jacoco_count_that_is_not_python_int_is_an_error() {
+        let result = parse_jacoco_index(
+            r#"<report><class name="f/C"><method name="m" line="1"><counter type="INSTRUCTION" missed="1__0" covered="1"/></method></class></report>"#,
+        );
+        assert!(result.is_err());
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_clamped_go_statements_do_not_overflow() {
+        let parsed = profile(
+            "mode: set\nf.go:1.1,2.2 99999999999999999999 1\nf.go:1.1,2.2 99999999999999999999 0\n",
+        );
+        assert_eq!(
+            go_percent(&parsed, "f.go", 1, 2, &source_parts(&[])),
+            Some(100.0)
+        );
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_clamped_form_counts_do_not_overflow() {
+        let html = r#"<span class="pc" title="99999999999999999999 out of 99999999999999999999 forms covered">   1&nbsp;&nbsp;(if x 1)</span><span class="pc" title="99999999999999999999 out of 99999999999999999999 forms covered">   2&nbsp;&nbsp;(if x 1)</span>"#;
+        assert_eq!(percent_for_range(&parse_form_coverage(html), 1, 2), 100.0);
+    }
+
+    // CR-3
+    #[test]
+    fn cr_3_a_jacoco_method_line_at_the_extreme_does_not_overflow() {
+        let index = parse_jacoco_index(
+            r#"<report><class name="demo/Board"><method name="place" line="-99999999999999999999"><counter type="INSTRUCTION" missed="1" covered="0"/></method><method name="place" line="+5"><counter type="INSTRUCTION" missed="0" covered="2"/></method></class></report>"#,
+        )
+        .expect("valid jacoco");
+        assert_eq!(
+            jacoco_percent(&index, &["demo.Board"], "place", 1),
+            Some(100.0)
         );
     }
 }

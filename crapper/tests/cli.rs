@@ -688,3 +688,70 @@ fn cr_3_ac_26_an_unreadable_cloverage_html_exits_1() {
         "app.html",
     );
 }
+
+// CR-3
+#[test]
+fn cr_3_a_go_profile_with_python_style_integers_is_accepted() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/coverage/go/coverage.out",
+        "mode: set\nsrc/app.py:1_0.1,+2.2 1_0 +1\n",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_eq!(exit_code(&output), 0, "stderr was: {}", stderr(&output));
+    assert!(root.join(".metrics/crap.edn").is_file());
+}
+
+// CR-3
+#[test]
+fn cr_3_a_go_profile_with_integers_beyond_64_bits_is_accepted() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/coverage/go/coverage.out",
+        "mode: set\nsrc/app.py:1.1,2.2 99999999999999999999999 99999999999999999999999\nsrc/app.py:3.1,4.2 1 99999999999999999999999\n",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_eq!(exit_code(&output), 0, "stderr was: {}", stderr(&output));
+    assert!(root.join(".metrics/crap.edn").is_file());
+}
+
+// CR-3
+#[test]
+fn cr_3_a_jacoco_report_with_python_style_integers_is_accepted() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/site/jacoco/jacoco.xml",
+        "<report><package><class name=\"app\"><method name=\"f\" line=\"+0_1\"><counter type=\"INSTRUCTION\" missed=\"1_0\" covered=\"99999999999999999999999\"/></method></class></package></report>",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_eq!(exit_code(&output), 0, "stderr was: {}", stderr(&output));
+    assert!(root.join(".metrics/crap.edn").is_file());
+}
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_go_profile_with_a_misplaced_underscore_exits_1() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_file(
+        root,
+        "target/coverage/go/coverage.out",
+        "mode: set\nsrc/app.py:1.1,2.2 1_ 1\n",
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage"]);
+    assert_crash_exit_1(&output, root, "coverage.out");
+}

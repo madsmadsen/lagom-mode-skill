@@ -1,0 +1,8 @@
+CRAP Report
+===========
+Languages: go
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+Grade                          example.com/gofixture/calc             3  90.9%      3.0
+Sum                            example.com/gofixture/calc             2 100.0%      2.0
