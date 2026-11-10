@@ -13,6 +13,57 @@ fn coverage_toml() -> String {
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
 }
 
+/// The fixes registry, which names every difference from the original (MU-PB-3).
+fn fixes_toml() -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("parity/fixes.toml");
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
+}
+
+/// The fix id named by a comment, from the token after `Fix ` up to the next space.
+fn named_fix(comment: &str) -> Option<&str> {
+    if !comment.starts_with('#') {
+        return None;
+    }
+    let (_, rest) = comment.split_once("Fix ")?;
+    rest.split(' ').next()
+}
+
+/// MU-PB-3: every `allow_stdout_diff = true` run names, in the comment above it, a fix in fixes.toml.
+#[test]
+fn mu_pb_3_allow_stdout_diff_names_a_fix_in_fixes_toml() {
+    let coverage = coverage_toml();
+    let fixes = fixes_toml();
+    let lines: Vec<&str> = coverage.lines().collect();
+    let mut checked = 0;
+    for (i, line) in lines.iter().enumerate() {
+        if line.trim() != "allow_stdout_diff = true" {
+            continue;
+        }
+        checked += 1;
+        let comment = lines[..i]
+            .iter()
+            .rev()
+            .find(|l| !l.trim().is_empty())
+            .map_or("", |l| l.trim());
+        let id = named_fix(comment).unwrap_or_else(|| {
+            panic!(
+                "line {} allows a stdout diff but the comment above names no fix: {comment:?}",
+                i + 1
+            )
+        });
+        let entry = format!("id = \"{id}\"");
+        assert!(
+            fixes.lines().any(|l| l.trim() == entry),
+            "parity/fixes.toml has no {entry}, named above line {}",
+            i + 1
+        );
+    }
+    assert!(
+        checked > 0,
+        "parity/coverage.toml has no allow_stdout_diff line"
+    );
+}
+
 /// The flags in the Options block of `--help`: `-h`, `-s`, and every `--name`.
 fn help_flags() -> Vec<String> {
     let out = Command::new(env!("CARGO_BIN_EXE_mutator"))

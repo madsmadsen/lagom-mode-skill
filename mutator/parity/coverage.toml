@@ -18,7 +18,7 @@ name = "flag-help-short"
 fixture = "fixtures/python"
 args = ["-h"]
 expect_exit = 0
-# e6b7084 caps workers at half the cores, so the help text differs from the original on purpose.
+# Fix worker-cap-half-the-cores (parity/fixes.toml): e6b7084 caps workers at half the cores, so the help text differs from the original on purpose.
 allow_stdout_diff = true
 covers = ["-h", "exit 0"]
 
@@ -27,7 +27,7 @@ name = "flag-help-long"
 fixture = "fixtures/python"
 args = ["--help"]
 expect_exit = 0
-# e6b7084 caps workers at half the cores, so the help text differs from the original on purpose.
+# Fix worker-cap-half-the-cores (parity/fixes.toml): e6b7084 caps workers at half the cores, so the help text differs from the original on purpose.
 allow_stdout_diff = true
 covers = ["--help", "exit 0"]
 
