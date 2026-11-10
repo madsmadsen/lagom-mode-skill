@@ -10,7 +10,9 @@ use std::ffi::OsStr;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
+use regex::Regex;
 use serde_json::{Map, Value};
 
 use super::{coverage_report, exit_warning, nearest, run_shell, warn, Cmd};
@@ -25,7 +27,21 @@ const VITEST_CONFIGS: &[&str] = &[
     "vitest.config.cjs",
 ];
 
-const MANIFESTS: &[&str] = &["package.json", "package-lock.json", "npm-shrinkwrap.json"];
+/// Files restored after an install: the manifest and lockfile of every supported package manager.
+const MANIFESTS: &[&str] = &[
+    "package.json",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lockb",
+    "bun.lock",
+];
+
+static SEMVER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+        .expect("valid SemVer regex")
+});
 
 /// Manifest name and its bytes before an install (`None` when absent).
 type ManifestSnapshot = Vec<(PathBuf, Option<Vec<u8>>)>;
@@ -161,7 +177,7 @@ fn ensure_vitest_coverage_with(package: &Path, exec: &mut dyn FnMut(&Cmd, &Path)
 }
 
 fn install_provider(package: &Path, spec: &str, exec: &mut dyn FnMut(&Cmd, &Path) -> i32) -> bool {
-    let install = vitest_install_command(spec);
+    let install = vitest_install_command(package, spec);
     let code = restoring_manifests(package, || exec(&Cmd::Argv(install), package));
     let ready = code == Some(0) && provider_installed(package);
     if let Some(message) = provider_missing_warning(ready) {
@@ -251,6 +267,7 @@ fn vitest_version(package: &Path) -> Option<String> {
         Ok(data) => data
             .get("version")
             .and_then(Value::as_str)
+            .filter(|version| SEMVER.is_match(version))
             .map(str::to_owned),
         Err(error) => {
             warn(&format!("{}: {error}", installed.display()));
@@ -260,14 +277,62 @@ fn vitest_version(package: &Path) -> Option<String> {
 }
 
 fn vitest_provider_spec(version: Option<&str>) -> String {
-    match version.filter(|v| !v.is_empty()) {
+    match version {
         Some(version) => format!("@vitest/coverage-v8@{version}"),
         None => "@vitest/coverage-v8".to_string(),
     }
 }
 
-fn vitest_install_command(spec: &str) -> Vec<String> {
-    let mut command = strings(&["npm", "install", "--no-save", "--no-package-lock"]);
+/// The package manager that installs the coverage provider. A pnpm store wins, then the first
+/// lockfile, then the `packageManager` field of package.json. npm is the default.
+fn package_manager(package: &Path) -> &'static str {
+    if package.join("node_modules/.pnpm").is_dir() {
+        return "pnpm";
+    }
+    lockfile_manager(package)
+        .or_else(|| declared_manager(package))
+        .unwrap_or("npm")
+}
+
+/// Lockfiles that name a manager, in the order they are checked.
+const LOCKFILE_MANAGERS: &[(&str, &[&str])] = &[
+    ("pnpm", &["pnpm-lock.yaml"]),
+    ("yarn", &["yarn.lock"]),
+    ("bun", &["bun.lockb", "bun.lock"]),
+];
+
+fn lockfile_manager(package: &Path) -> Option<&'static str> {
+    LOCKFILE_MANAGERS
+        .iter()
+        .find(|(_, files)| files.iter().any(|file| package.join(file).is_file()))
+        .map(|(manager, _)| *manager)
+}
+
+/// The manager named by the `packageManager` field of package.json, such as `pnpm@9.15.9`.
+fn declared_manager(package: &Path) -> Option<&'static str> {
+    let field = package_json(package)
+        .ok()
+        .flatten()
+        .and_then(|data| {
+            data.get("packageManager")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        })
+        .unwrap_or_default();
+    ["pnpm", "yarn", "bun"]
+        .into_iter()
+        .find(|manager| field.starts_with(*manager))
+}
+
+/// The command that installs the coverage provider with `package`'s own package manager.
+/// Lifecycle scripts never run.
+fn vitest_install_command(package: &Path, spec: &str) -> Vec<String> {
+    let mut command = match package_manager(package) {
+        "pnpm" => strings(&["pnpm", "add", "-D", "--no-lockfile", "--ignore-scripts"]),
+        "yarn" => strings(&["yarn", "add", "-D", "--no-lockfile", "--ignore-scripts"]),
+        "bun" => strings(&["bun", "add", "-d", "--no-save", "--ignore-scripts"]),
+        _ => strings(&["npm", "install", "--no-save", "--ignore-scripts"]),
+    };
     command.push(spec.to_string());
     command
 }
@@ -734,7 +799,7 @@ mod tests {
                 "npm",
                 "install",
                 "--no-save",
-                "--no-package-lock",
+                "--ignore-scripts",
                 "@vitest/coverage-v8",
             ]))
         );
@@ -873,19 +938,206 @@ mod tests {
         assert_eq!(vitest_provider_spec(None), "@vitest/coverage-v8");
     }
 
-    // CR-14 the install never saves to package.json or the lockfile
+    /// The first command that `ensure_vitest_coverage_with` runs in `package`, or `None` when it runs none.
+    fn install_command_in(package: &Path) -> Option<Vec<String>> {
+        let mut seen = None;
+        ensure_vitest_coverage_with(package, &mut |cmd: &Cmd, _: &Path| -> i32 {
+            if let Cmd::Argv(parts) = cmd {
+                seen.get_or_insert_with(|| parts.clone());
+            }
+            0
+        });
+        seen
+    }
+
+    // CR-19 AC-28 AC-32: the npm install keeps the lockfile in force and runs no install script
     #[test]
-    fn cr_14_install_command_never_saves_to_manifests() {
+    fn cr_19_ac_28_ac_32_npm_install_has_no_package_lock_flag_and_ignores_scripts() {
+        let tmp = tempfile::tempdir().unwrap();
         assert_eq!(
-            vitest_install_command("@vitest/coverage-v8@4.1.11"),
-            strings(&[
+            install_command_in(tmp.path()),
+            Some(strings(&[
                 "npm",
                 "install",
                 "--no-save",
-                "--no-package-lock",
-                "@vitest/coverage-v8@4.1.11",
-            ])
+                "--ignore-scripts",
+                "@vitest/coverage-v8"
+            ]))
         );
+    }
+
+    // CR-18 AC-27 AC-32: pnpm-lock.yaml or node_modules/.pnpm selects pnpm
+    #[test]
+    fn cr_18_ac_27_pnpm_lockfile_or_store_selects_pnpm() {
+        let expected = Some(strings(&[
+            "pnpm",
+            "add",
+            "-D",
+            "--no-lockfile",
+            "--ignore-scripts",
+            "@vitest/coverage-v8",
+        ]));
+        let by_lock = tempfile::tempdir().unwrap();
+        write(by_lock.path(), "pnpm-lock.yaml", "lockfileVersion: '9.0'\n");
+        assert_eq!(install_command_in(by_lock.path()), expected);
+        let by_store = tempfile::tempdir().unwrap();
+        fs::create_dir_all(by_store.path().join("node_modules/.pnpm")).unwrap();
+        assert_eq!(install_command_in(by_store.path()), expected);
+    }
+
+    // CR-18 AC-27 AC-32: yarn.lock selects yarn
+    #[test]
+    fn cr_18_ac_27_yarn_lockfile_selects_yarn() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "yarn.lock", "");
+        assert_eq!(
+            install_command_in(tmp.path()),
+            Some(strings(&[
+                "yarn",
+                "add",
+                "-D",
+                "--no-lockfile",
+                "--ignore-scripts",
+                "@vitest/coverage-v8"
+            ]))
+        );
+    }
+
+    // CR-18 AC-27 AC-32: bun.lock or bun.lockb selects bun
+    #[test]
+    fn cr_18_ac_27_bun_lockfile_selects_bun() {
+        let expected = Some(strings(&[
+            "bun",
+            "add",
+            "-d",
+            "--no-save",
+            "--ignore-scripts",
+            "@vitest/coverage-v8",
+        ]));
+        for lock in ["bun.lock", "bun.lockb"] {
+            let tmp = tempfile::tempdir().unwrap();
+            write(tmp.path(), lock, "");
+            assert_eq!(install_command_in(tmp.path()), expected, "{lock}");
+        }
+    }
+
+    // CR-18 AC-27: the packageManager field decides only when no lockfile or store exists
+    #[test]
+    fn cr_18_ac_27_package_manager_field_selects_the_manager_after_the_lockfiles() {
+        let manager = |field: &str| {
+            let tmp = tempfile::tempdir().unwrap();
+            write(
+                tmp.path(),
+                "package.json",
+                &format!("{{\"packageManager\": \"{field}\"}}"),
+            );
+            install_command_in(tmp.path()).unwrap()[0].clone()
+        };
+        assert_eq!(manager("pnpm@9.15.9"), "pnpm");
+        assert_eq!(manager("yarn@4.1.0"), "yarn");
+        assert_eq!(manager("bun@1.1.0"), "bun");
+        assert_eq!(manager("npm@10.2.0"), "npm");
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "package.json",
+            "{\"packageManager\": \"pnpm@9.15.9\"}",
+        );
+        write(tmp.path(), "yarn.lock", "");
+        assert_eq!(install_command_in(tmp.path()).unwrap()[0], "yarn");
+        let both = tempfile::tempdir().unwrap();
+        write(both.path(), "yarn.lock", "");
+        write(both.path(), "pnpm-lock.yaml", "");
+        assert_eq!(install_command_in(both.path()).unwrap()[0], "pnpm");
+        let late = tempfile::tempdir().unwrap();
+        write(late.path(), "bun.lock", "");
+        write(late.path(), "yarn.lock", "");
+        assert_eq!(install_command_in(late.path()).unwrap()[0], "yarn");
+    }
+
+    // CR-18 AC-27: after the install, all seven manifests have their old bytes and no new one stays
+    #[test]
+    fn cr_18_ac_27_every_lockfile_is_restored_and_a_new_one_is_deleted() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write(root, "package.json", "{\"name\":\"demo\"}\n");
+        write(root, "pnpm-lock.yaml", "lock: one\n");
+        write(root, "yarn.lock", "yarn one\n");
+        write(root, "bun.lockb", "bun binary");
+        let ready = ensure_vitest_coverage_with(root, &mut |_: &Cmd, cwd: &Path| -> i32 {
+            fs::write(cwd.join("package.json"), "{}").unwrap();
+            fs::write(cwd.join("pnpm-lock.yaml"), "lock: two\n").unwrap();
+            fs::remove_file(cwd.join("yarn.lock")).unwrap();
+            fs::write(cwd.join("bun.lock"), "new").unwrap();
+            fs::write(cwd.join("package-lock.json"), "{}").unwrap();
+            fs::write(cwd.join("npm-shrinkwrap.json"), "{}").unwrap();
+            fs::create_dir_all(cwd.join("node_modules/@vitest/coverage-v8")).unwrap();
+            0
+        });
+        assert!(ready);
+        assert_eq!(
+            fs::read_to_string(root.join("package.json")).unwrap(),
+            "{\"name\":\"demo\"}\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("pnpm-lock.yaml")).unwrap(),
+            "lock: one\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("yarn.lock")).unwrap(),
+            "yarn one\n"
+        );
+        assert_eq!(fs::read(root.join("bun.lockb")).unwrap(), b"bun binary");
+        for gone in ["bun.lock", "package-lock.json", "npm-shrinkwrap.json"] {
+            assert!(!root.join(gone).exists(), "{gone} stays");
+        }
+    }
+
+    // CR-23 AC-32: a SemVer version with a pre-release and build part is kept in the spec
+    #[test]
+    fn cr_23_ac_32_a_semver_version_with_prerelease_and_build_is_pinned() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "node_modules/vitest/package.json",
+            "{\"version\": \"4.1.11-beta.1+build.2\"}",
+        );
+        assert_eq!(
+            install_command_in(tmp.path()).unwrap().last().unwrap(),
+            "@vitest/coverage-v8@4.1.11-beta.1+build.2"
+        );
+    }
+
+    // CR-23 AC-32: a version that is not SemVer gives a spec with no version
+    #[test]
+    fn cr_23_ac_32_a_version_that_is_not_semver_is_not_pinned() {
+        for bad in [
+            "file:../untrusted",
+            "4.1",
+            "v4.1.11",
+            "4.1.11\n",
+            "4.1.11 ",
+            "",
+        ] {
+            let tmp = tempfile::tempdir().unwrap();
+            write(
+                tmp.path(),
+                "node_modules/vitest/package.json",
+                &serde_json::json!({ "version": bad }).to_string(),
+            );
+            assert_eq!(
+                install_command_in(tmp.path()).unwrap().last().unwrap(),
+                "@vitest/coverage-v8",
+                "{bad:?}"
+            );
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        write(
+            tmp.path(),
+            "node_modules/vitest/package.json",
+            "{\"version\": 4}",
+        );
+        assert_eq!(vitest_version(tmp.path()), None);
     }
 
     // CR-14 only vitest commands need the coverage provider; the npm coverage script and c8 do not
