@@ -309,10 +309,13 @@ def run_setup(commands: list[str], project: Path) -> None:
         subprocess.run(["sh", "-c", command], cwd=project, env=env, check=True)
 
 
+GO_TEST_TIME = re.compile(rb"(\t)\d+\.\d+s(\t)")
+
+
 def normalize(stdout: bytes, project: Path) -> bytes:
     for variant in sorted({str(project), str(project.resolve())}, key=len, reverse=True):
         stdout = stdout.replace(variant.encode(), b"<ROOT>")
-    return stdout
+    return GO_TEST_TIME.sub(rb"\1<TIME>s\2", stdout)
 
 
 def metrics_root(project: Path, args: list[str]) -> Path:

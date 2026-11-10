@@ -38,7 +38,7 @@ Orchestrated by `CrapperOrchestrator`. Every Rust file was written by an impleme
 - `cargo build --release`, `cargo test`, `cargo clippy --all-targets`, `cargo fmt`: clean.
 - Crapper (original) on `src`: no function with CRAP >= 10 after step 18.
 - Dryer (original) on `src`: `No duplicate candidates found.`
-- Parity runner: 33 runs, 29 pass, 4 skipped (`clj`, `mvn`, `go` not installed), 0 diffs.
+- Parity runner: 33 runs, 33 pass, 0 skipped, 0 diffs (live `cr13-*` runs: see Live parity runs).
 
 ## Mutation gate
 
@@ -75,9 +75,22 @@ Same tool and flags as above, one scratch copy per group under /tmp, at most 4 r
 | G5 | Replaced the five hand-advanced `while`/`loop` scans (`balanced_end`, `without_strings_and_comments`/`blank_or_copy` (now `Option<usize>`), `extract_top_level_defns`, `skip_ignorable`, `skip_leading_metadata`) by bounded `for` loops with a `resume` index; deleted `skip_space_and_comment`. 9 new `cr_11_*` tests with exact values. | A wrong skip index now gives wrong output (fast assertion failure), never an endless loop. Behaviour on valid input is identical. |
 | G6 | Re-ran `clojure.rs`: 1 survivor (`0..form.len()` bound -> `1..`), fixed with `for _ in form`. Final: 95 killed, 0 survived, no hung mutant (hang detector found none). | Equivalent bound removed, not kept. |
 
+### Live parity runs (clj, mvn, go, java installed)
+
+Parity runner on a scratch copy (`/tmp/par2`, `/tmp/par3`), release binary, original from the pinned venv, `coverage` and `pytest` from a scratch venv on PATH, one run at a time with `timeout`.
+
+| Run | Result | Cause / action |
+| --- | --- | --- |
+| `cr13-python` | pass | |
+| `cr13-java` (mvn) | pass | |
+| `cr13-clojure` (clj) | pass | |
+| `cr13-go` | diff in stdout | Only the `go test` wall time (`0.261s` vs `0.264s`) in the `ok <pkg> <time> coverage: ...` line. Same coverage (22.2%), same table, same snapshot. Test-runner noise, not a port or original bug: `parity/run.py` `normalize` now replaces the tab-delimited elapsed time by `<TIME>` (`parity/test_normalize.py`, CR-PB-3 area). No `fixes.toml` entry, no `src` change, so no re-mutation. |
+
+Full run after the fix: 33 runs, 33 pass, 0 skip, 0 diffs; `parity/last-run.toml` rewritten (`skipped = []`). No candidate `fixes.toml` entry found. `cargo test` 321 pass, clippy clean.
+
 Files with no mutation sites: `lib.rs`, `main.rs`, `model.rs`, `languages/mod.rs`. `crap.rs`, `golang.rs`, `java.rs`, `ts.rs`, `metrics.rs` were already clean and were not changed.
 
-Final: every `src` file has 0 survivors. `cargo test`: 321 pass. `cargo clippy --all-targets`: clean. `parity/run.py` (scratch copy, release binary): 33 runs, 29 pass, 4 skip (`clj`, `mvn`, `go`), 0 diffs.
+Final: every `src` file has 0 survivors. `cargo test`: 321 pass. `cargo clippy --all-targets`: clean. `parity/run.py` (scratch copy, release binary): 33 runs, 29 pass, 4 skip (`clj`, `mvn`, `go`), 0 diffs. The 4 skips were closed later, see Live parity runs.
 
 Lint: `cargo clippy --all-targets` reports no issues (fixed `cloned_ref_to_slice_refs` in `rustpy.rs` and `unnecessary_map_or` in `clojure.rs`).
 
@@ -96,6 +109,6 @@ Lint: `cargo clippy --all-targets` reports no issues (fixed `cloned_ref_to_slice
 - AC-17 on the named CI runner (Ubuntu 22.04): timing was measured on macOS arm64 only.
 - AC-19 `cargo install --git <repo>`: the private repository URL is unknown. `cargo install --path crapper` succeeded and the installed binary printed `--help` with exit 0.
 - AC-22 CI check: `python3.12 parity/run.py --check-meta` and `tests/meta.rs` implement it; no CI job runs it.
-- `cr13-clojure`, `cr13-java`, `cr13-go`: default coverage commands need `clj`, `mvn` and `go`, which are not installed. Their command construction is tested with a recording executor (CR-13) but no live parity run exists. `cr13-python` passed with `coverage` and `pytest` installed in a scratch venv on PATH.
+- (closed) `cr13-clojure`, `cr13-java`, `cr13-go`, `cr13-python` now run live, see Live parity runs.
 - AC-11 "host with no Python": the replay tests (`tests/recorded.rs`) need no Python; they were not run on a host that lacks Python.
 - `uml_viewer_commit` checks (AC-5 of the main PRD): no `fixes.toml` entry changes snapshot shape, so none is needed.
