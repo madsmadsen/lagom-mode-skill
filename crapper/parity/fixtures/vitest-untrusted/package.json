@@ -1,0 +1,7 @@
+{
+  "name": "vitest-untrusted",
+  "private": true,
+  "scripts": {
+    "test": "vitest run"
+  }
+}

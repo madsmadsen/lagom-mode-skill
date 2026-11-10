@@ -1,0 +1,8 @@
+CRAP Report
+===========
+Languages: typescript
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+plain                          shapes                                 2   N/A       N/A
+method                         shapes.Box                             2   N/A       N/A

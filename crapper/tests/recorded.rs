@@ -27,6 +27,8 @@ struct Run {
     setup: Vec<String>,
     requires: Vec<String>,
     covers: Vec<String>,
+    env: Vec<String>,
+    fix: String,
 }
 
 struct Produced {
@@ -79,6 +81,8 @@ fn load_runs() -> Vec<Run> {
             setup: list_field(run, "setup"),
             requires: list_field(run, "requires"),
             covers: list_field(run, "covers"),
+            env: list_field(run, "env"),
+            fix: text_field(run, "fix"),
         })
         .collect()
 }
@@ -93,7 +97,7 @@ fn find_run(run_id: &str) -> Result<Run, String> {
 fn ids_where(pred: impl Fn(&Run) -> bool) -> Vec<String> {
     load_runs()
         .into_iter()
-        .filter(|run| pred(run))
+        .filter(|run| run.fix.is_empty() && pred(run))
         .map(|run| run.id)
         .collect()
 }
@@ -184,6 +188,29 @@ fn metrics_path(copy: &Path, args: &[String]) -> PathBuf {
     root.join(".metrics").join("crap.edn")
 }
 
+/// PATH with the `.stubs` directory of the fixture first, when the fixture has one.
+fn stubbed_path(project: &Path) -> std::ffi::OsString {
+    let mut paths = vec![project.join(".stubs")];
+    paths.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(paths).expect("PATH entries have no separator")
+}
+
+/// The `NAME=VALUE` entries of a run. `{project}` is the project path.
+fn run_env(entries: &[String], project: &Path) -> Vec<(String, String)> {
+    entries
+        .iter()
+        .filter_map(|entry| entry.split_once('='))
+        .map(|(name, value)| {
+            (
+                name.to_string(),
+                value.replace("{project}", &project.to_string_lossy()),
+            )
+        })
+        .collect()
+}
+
 fn produce(run: &Run) -> Result<Produced, String> {
     let root = tempfile::tempdir().map_err(|err| format!("tempdir: {err}"))?;
     let project = root.path().join("project");
@@ -193,6 +220,8 @@ fn produce(run: &Run) -> Result<Produced, String> {
     let done = Command::new(env!("CARGO_BIN_EXE_crapper"))
         .args(&run.args)
         .current_dir(&project)
+        .env("PATH", stubbed_path(&project))
+        .envs(run_env(&run.env, &project))
         .output()
         .map_err(|err| format!("{}: run crapper: {err}", run.id))?;
     Ok(Produced {

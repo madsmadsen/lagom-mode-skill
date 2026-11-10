@@ -475,3 +475,85 @@ setup = ["mkdir -p target/site/jacoco && printf '<?xml version=\"1.0\" encoding=
 requires = []
 covers = ["lenient:jacoco-doctype"]
 expect_exit = 0
+
+# Upstream fixes (fixes.toml). The original and the port differ on each of these runs on purpose.
+# They have `fix`, so the offline replay in tests/recorded.rs skips them and tests/fixes.rs checks them.
+
+# CR-18: pnpm project, the original installs with npm
+[[run]]
+id = "fix-vitest-package-manager"
+fixture = "vitest-pnpm"
+args = []
+setup = []
+requires = []
+covers = []
+fix = "vitest-package-manager"
+
+# CR-19: npm project with a lockfile
+[[run]]
+id = "fix-vitest-npm-lockfile"
+fixture = "vitest-npm-locked"
+args = []
+setup = []
+requires = []
+covers = []
+fix = "vitest-npm-lockfile"
+
+# CR-23: untrusted Vitest version and install scripts
+[[run]]
+id = "fix-vitest-untrusted-install"
+fixture = "vitest-untrusted"
+args = []
+setup = []
+requires = []
+covers = []
+fix = "vitest-untrusted-install"
+
+# CR-20: GIT_DIR and GIT_INDEX_FILE point to another repository
+[[run]]
+id = "fix-git-env"
+fixture = "changed-git-env"
+args = ["--changed", "--no-coverage"]
+setup = [
+  "git init -q",
+  "git -c user.name=parity -c user.email=parity@example.invalid add src/unchanged.py src/modified.py src/staged.py",
+  "git -c user.name=parity -c user.email=parity@example.invalid commit -qm base",
+  "printf 'def extra(x):\\n    if x:\\n        return 2\\n    return 3\\n' >> src/modified.py",
+  "printf 'def staged_extra(x):\\n    if x:\\n        return 2\\n    return 3\\n' >> src/staged.py",
+  "git add src/staged.py",
+  "git init -q .decoy",
+]
+env = ["GIT_DIR={project}/.decoy/.git", "GIT_INDEX_FILE={project}/.decoy/.git/index"]
+requires = []
+covers = []
+fix = "git-env"
+
+# CR-21: var, object method, class field, default export
+[[run]]
+id = "fix-ts-shapes"
+fixture = "ts-shapes"
+args = ["--no-coverage"]
+setup = []
+requires = []
+covers = []
+fix = "ts-shapes"
+
+# CR-22: route handlers in a factory
+[[run]]
+id = "fix-python-routes"
+fixture = "python-routes"
+args = ["--no-coverage"]
+setup = []
+requires = []
+covers = []
+fix = "python-routes"
+
+# CR-24: DOCTYPE with an internal subset
+[[run]]
+id = "fix-jacoco-doctype-subset"
+fixture = "jacoco-subset"
+args = ["--use-existing-coverage"]
+setup = []
+requires = []
+covers = []
+fix = "jacoco-doctype-subset"

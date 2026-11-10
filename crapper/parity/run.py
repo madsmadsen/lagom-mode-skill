@@ -341,8 +341,21 @@ def snapshot_of(edn: bytes | None):
         return ("invalid", str(err))
 
 
-def execute(prefix: list[str], args: list[str], project: Path) -> Outcome:
-    done = subprocess.run([*prefix, *args], cwd=project, capture_output=True)
+def run_env(run: dict, project: Path) -> dict[str, str]:
+    """Environment of the tool under test: a `.stubs` directory in the fixture goes first on PATH,
+    and each `env` entry of the run (`NAME=VALUE`, `{project}` is the project path) is set."""
+    env = dict(os.environ)
+    stubs = project / ".stubs"
+    if stubs.is_dir():
+        env["PATH"] = f"{stubs}{os.pathsep}{env.get('PATH', '')}"
+    for entry in run.get("env", []):
+        name, _, value = entry.partition("=")
+        env[name] = value.replace("{project}", str(project))
+    return env
+
+
+def execute(prefix: list[str], args: list[str], project: Path, env: dict[str, str]) -> Outcome:
+    done = subprocess.run([*prefix, *args], cwd=project, capture_output=True, env=env)
     edn = read_edn_bytes(project, args)
     return Outcome(done.returncode, normalize(done.stdout, project), edn, snapshot_of(edn))
 
@@ -355,7 +368,8 @@ def run_pair(run: dict, ctx: Context) -> tuple[Outcome, Outcome]:
         for project in (original_copy, port_copy):
             run_setup(run.get("setup", []), project)
         args = run.get("args", [])
-        return execute(ctx.original, args, original_copy), execute(ctx.port, args, port_copy)
+        original = execute(ctx.original, args, original_copy, run_env(run, original_copy))
+        return original, execute(ctx.port, args, port_copy, run_env(run, port_copy))
     finally:
         drop_copy(original_copy)
         drop_copy(port_copy)

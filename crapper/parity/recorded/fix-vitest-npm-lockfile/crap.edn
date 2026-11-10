@@ -1,0 +1,3 @@
+{:entries [
+  {:name "big", :namespace "big", :complexity 3, :coverage 40.0, :crap 4.944}
+]}

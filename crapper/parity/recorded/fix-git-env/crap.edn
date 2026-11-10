@@ -1,0 +1,8 @@
+{:entries [
+  {:name "extra", :namespace "modified", :complexity 2, :coverage nil, :crap nil}
+  {:name "modified", :namespace "modified", :complexity 2, :coverage nil, :crap nil}
+  {:name "staged", :namespace "staged", :complexity 2, :coverage nil, :crap nil}
+  {:name "staged_extra", :namespace "staged", :complexity 2, :coverage nil, :crap nil}
+  {:name "unchanged", :namespace "unchanged", :complexity 2, :coverage nil, :crap nil}
+  {:name "untracked", :namespace "untracked", :complexity 2, :coverage nil, :crap nil}
+]}

@@ -1,0 +1,8 @@
+#!/bin/sh
+# Stub of npm: --no-package-lock ignores the lockfile and takes the newest semver.
+version=7.5.0
+for arg in "$@"; do
+  [ "$arg" = "--no-package-lock" ] && version=7.9.0
+done
+mkdir -p node_modules/@vitest/coverage-v8 node_modules/semver
+printf '{"name":"semver","version":"%s"}\n' "$version" > node_modules/semver/package.json

@@ -40,13 +40,27 @@ def make_work_dir(run: dict, base: Path) -> Path:
     return work
 
 
-def run_original(python: str, args: list[str], work: Path) -> subprocess.CompletedProcess:
+def run_env(run: dict, work: Path) -> dict[str, str]:
+    """A `.stubs` directory in the fixture goes first on PATH. Each `env` entry of the run
+    (`NAME=VALUE`, `{project}` is the work directory) is set."""
+    env = dict(os.environ)
+    stubs = work / ".stubs"
+    if stubs.is_dir():
+        env["PATH"] = f"{stubs}{os.pathsep}{env.get('PATH', '')}"
+    for entry in run.get("env", []):
+        name, _, value = entry.partition("=")
+        env[name] = value.replace("{project}", str(work))
+    return env
+
+
+def run_original(python: str, run: dict, work: Path) -> subprocess.CompletedProcess:
     return subprocess.run(
-        [python, "-m", "crapper", *args],
+        [python, "-m", "crapper", *run["args"]],
         cwd=work,
         capture_output=True,
         text=True,
         check=False,
+        env=run_env(run, work),
     )
 
 
@@ -61,7 +75,7 @@ def metrics_root(work: Path, args: list[str]) -> Path:
 
 def record(run: dict, python: str, base: Path) -> int:
     work = make_work_dir(run, base)
-    result = run_original(python, run["args"], work)
+    result = run_original(python, run, work)
     out = RECORDED / run["id"]
     if out.exists():
         shutil.rmtree(out)

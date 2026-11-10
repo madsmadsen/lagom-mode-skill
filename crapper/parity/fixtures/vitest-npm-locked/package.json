@@ -1,0 +1,10 @@
+{
+  "name": "vitest-npm-locked",
+  "private": true,
+  "scripts": {
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "semver": "^7.5.0"
+  }
+}

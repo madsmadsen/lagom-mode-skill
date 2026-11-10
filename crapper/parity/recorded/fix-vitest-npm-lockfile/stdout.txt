@@ -1,0 +1,7 @@
+CRAP Report
+===========
+Languages: typescript
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+big                            big                                    3  40.0%      4.9

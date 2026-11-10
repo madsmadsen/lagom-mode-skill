@@ -1,0 +1,11 @@
+#!/bin/sh
+# Stub of npm: it fails on a file: spec, and on an install that would run install scripts.
+ignore=no
+for arg in "$@"; do
+  case "$arg" in
+    *file:*) echo "npm error stub: local path spec" >&2; exit 1;;
+    --ignore-scripts) ignore=yes;;
+  esac
+done
+[ "$ignore" = yes ] || { echo "npm error stub: an install script would run" >&2; exit 1; }
+mkdir -p node_modules/@vitest/coverage-v8

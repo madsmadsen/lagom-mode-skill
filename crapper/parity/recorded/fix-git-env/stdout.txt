@@ -1,0 +1,12 @@
+CRAP Report
+===========
+Languages: python
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+extra                          modified                               2   N/A       N/A
+modified                       modified                               2   N/A       N/A
+staged                         staged                                 2   N/A       N/A
+staged_extra                   staged                                 2   N/A       N/A
+unchanged                      unchanged                              2   N/A       N/A
+untracked                      untracked                              2   N/A       N/A
