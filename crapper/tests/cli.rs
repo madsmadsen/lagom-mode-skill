@@ -192,6 +192,38 @@ fn cr_7_ac_4_changed_selects_modified_staged_and_untracked() {
     assert!(!out.contains("before_fn"));
 }
 
+// CR-20, AC-29
+#[test]
+fn cr_20_ac_29_changed_ignores_git_variables_of_another_repository() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path().join("project");
+    let other = temp.path().join("other");
+    fs::create_dir_all(&root).expect("mkdir project");
+    fs::create_dir_all(&other).expect("mkdir other");
+    git(&root, &["init", "-q"]);
+    git(&other, &["init", "-q"]);
+    write_file(&root, "committed.py", "def kept_fn(x):\n    return x\n");
+    git(&root, &["add", "."]);
+    git(&root, &["commit", "-q", "-m", "init"]);
+    write_file(
+        &root,
+        "untracked.py",
+        "def untracked_fn(x):\n    return x\n",
+    );
+
+    let root_text = root.to_str().expect("utf-8 temp path");
+    let output = Command::new(env!("CARGO_BIN_EXE_crapper"))
+        .args(["--root", root_text, "--changed", "--no-coverage"])
+        .env("GIT_DIR", other.join(".git"))
+        .env("GIT_INDEX_FILE", other.join(".git/index"))
+        .output()
+        .expect("crapper binary runs");
+    assert_eq!(exit_code(&output), 0, "stderr was: {}", stderr(&output));
+    let out = stdout(&output);
+    assert!(out.contains("untracked_fn"), "stdout was: {out}");
+    assert!(!out.contains("kept_fn"));
+}
+
 // CR-3
 #[test]
 fn cr_3_no_source_files_prints_message_and_exits_0() {
@@ -785,7 +817,7 @@ fn cr_3_a_jacoco_report_with_garbage_in_the_doctype_is_accepted() {
     write_file(
         root,
         "target/site/jacoco/jacoco.xml",
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE r\"&\\=2[eport PUBLIC \"x\">\n<report/>\n",
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE r\"&\\=2eport PUBLIC \"x\">\n<report/>\n",
     );
 
     let output = crapper_in(root, &["--use-existing-coverage"]);

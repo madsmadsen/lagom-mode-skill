@@ -216,8 +216,20 @@ struct GitError {
     message: String,
 }
 
+/// Removes every `GIT_*` variable from `command`. A run inside a Git hook
+/// must read the repository of the project (CR-20), not the repository
+/// that set these variables, such as `GIT_DIR` or `GIT_INDEX_FILE`.
+fn without_git_variables(command: &mut Command) -> &mut Command {
+    for (name, _) in std::env::vars_os() {
+        if name.to_string_lossy().starts_with("GIT_") {
+            command.env_remove(name);
+        }
+    }
+    command
+}
+
 fn git(root: &Path, args: &[&str]) -> Result<Output, GitError> {
-    Command::new("git")
+    without_git_variables(&mut Command::new("git"))
         .arg("-C")
         .arg(root)
         .args(args)
