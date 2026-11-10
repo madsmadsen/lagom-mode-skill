@@ -105,10 +105,25 @@ Lint: `cargo clippy --all-targets` reports no issues (fixed `cloned_ref_to_slice
 ## Not reachable here (blockers)
 
 - Mutation gate: closed (see Gate closure).
-- AC-18 CI matrix (macOS x86_64, Linux x86_64 and arm64): only macOS arm64 is available. No CI file was written because CI lives outside `crapper/`.
-- AC-17 on the named CI runner (Ubuntu 22.04): timing was measured on macOS arm64 only.
+- AC-18 CI matrix: macOS arm64 and, in qemu guests, Ubuntu 22.04 arm64 and x86_64 are done (see Linux guests). macOS x86_64 is not available here. No CI file was written because CI lives outside `crapper/`.
+- AC-17 on the named CI runner (Ubuntu 22.04 x86_64): measured in a qemu TCG guest (emulated, slow), see Linux guests. A real x86_64 runner is not available here.
 - AC-19 `cargo install --git <repo>`: the private repository URL is unknown. `cargo install --path crapper` succeeded and the installed binary printed `--help` with exit 0.
 - AC-22 CI check: `python3.12 parity/run.py --check-meta` and `tests/meta.rs` implement it; no CI job runs it.
 - (closed) `cr13-clojure`, `cr13-java`, `cr13-go`, `cr13-python` now run live, see Live parity runs.
-- AC-11 "host with no Python": the replay tests (`tests/recorded.rs`) need no Python; they were not run on a host that lacks Python.
+- (closed) AC-11 "host with no Python": `cargo test` ran on Ubuntu 22.04 guests with every Python interpreter removed, see Linux guests.
 - `uml_viewer_commit` checks (AC-5 of the main PRD): no `fixes.toml` entry changes snapshot shape, so none is needed.
+
+## Linux guests (arm64 and x86_64, Ubuntu 22.04, glibc 2.35)
+
+Scripts: `ci/linux-vm/` (`vm.sh`, `guest-setup.sh`, `guest-test.sh`, `guest-timing.sh`, `guest-nopython.sh`). Official Ubuntu 22.04 cloud images, cloud-init, ssh.
+arm64 guest: qemu with HVF (native speed). x86_64 guest: qemu with TCG (emulated, about 10 times slower). Nothing is shared with the guest: sources go in as a tar stream
+(`git ls-files`, so no `target/`, no `.metrics`), and cargo builds in the guest's own disk. Rust 1.99.1 stable (rustup, minimal + clippy + rustfmt).
+
+| Step | Action | Result |
+| --- | --- | --- |
+| L1 | First arm64 run. 6 tests in `tests/recorded.rs` failed. | Cause: my copy script excluded every directory called `target`, and the fixtures keep their stored coverage under `target/coverage/`. Not a crapper bug. The copy now uses `git ls-files`. |
+| L2 | `cargo build --release`, `cargo test`, `cargo clippy --all-targets` on both architectures. | arm64: build ok, 321 tests pass, clippy 0 warnings. x86_64: build ok, 321 tests pass, clippy 0 warnings. |
+| L3 | AC-11/AC-18: clone of each guest, `dpkg --purge` of all python3 packages, `which python3` and `command -v python` print nothing, no executable `python*` file on disk, fresh `target`. Same three commands. | arm64: 321 pass, clippy 0. x86_64: 321 pass, clippy 0. `tests/recorded.rs` (AC-11) passes with no Python on both. |
+| L4 | AC-17 (CR-NFR-2): `parity/run.py --only <the six *-existing runs> --timing` with the pinned original (Python 3.12.16 from uv, tree-sitter 0.26.1, tree-sitter-language-pack 1.25.0), release port, median of 5. All six runs matched the original. | arm64 (native): original 0.027 to 0.039 s, port 0.001 to 0.002 s. x86_64 (TCG, emulated): original 0.335 to 0.498 s, port 0.015 to 0.023 s. The port is lower on all six fixtures on both. |
+
+The x86_64 times are not comparable with a real Ubuntu 22.04 runner (both sides are slowed by the emulator, the ratio is about 20 to 30 times as on arm64). The AC-17 relation (port median lower than original median) holds in the guest; the absolute numbers say nothing about a real runner.
