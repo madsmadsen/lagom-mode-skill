@@ -397,3 +397,54 @@ fn cr_3_unwritable_metrics_location_exits_1() {
     let output = crapper_in(root, &["--no-coverage"]);
     assert_eq!(exit_code(&output), 1);
 }
+
+fn choose_row(out: &str) -> String {
+    out.lines()
+        .find(|line| line.starts_with("choose"))
+        .expect("report has a choose row")
+        .to_string()
+}
+
+// CR-13, CR-3
+#[test]
+fn cr_13_cr_3_failed_coverage_command_status_3_reads_no_reports() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_lcov(root, &lcov_record("src/app.py", 6, 1));
+
+    let output = crapper_in(root, &["--coverage-command", "exit 3"]);
+    assert_eq!(exit_code(&output), 0);
+    let row = choose_row(&stdout(&output));
+    assert!(row.contains("  0.0%"), "row was: {row}");
+    assert!(!row.contains("100.0%"), "row was: {row}");
+}
+
+// CR-13, CR-3
+#[test]
+fn cr_13_cr_3_failed_coverage_command_status_1_reads_no_reports() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_lcov(root, &lcov_record("src/app.py", 6, 1));
+
+    let output = crapper_in(root, &["--coverage-command", "exit 1"]);
+    assert_eq!(exit_code(&output), 0);
+    let row = choose_row(&stdout(&output));
+    assert!(row.contains("  0.0%"), "row was: {row}");
+    assert!(!row.contains("100.0%"), "row was: {row}");
+}
+
+// CR-13, CR-3
+#[test]
+fn cr_13_cr_3_successful_coverage_command_reads_reports() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(root, "src/app.py", CHOOSE_SOURCE);
+    write_lcov(root, &lcov_record("src/app.py", 6, 1));
+
+    let output = crapper_in(root, &["--coverage-command", "true"]);
+    assert_eq!(exit_code(&output), 0);
+    let row = choose_row(&stdout(&output));
+    assert!(row.contains("100.0%"), "row was: {row}");
+}

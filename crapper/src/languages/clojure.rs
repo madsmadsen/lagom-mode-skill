@@ -84,11 +84,6 @@ fn line_end(source: &[char], index: usize) -> usize {
     skip_while(source, index, |ch| ch != '\n')
 }
 
-/// Index just after the next line break, or the end of `source`.
-fn comment_end(source: &[char], index: usize) -> usize {
-    (line_end(source, index) + 1).min(source.len())
-}
-
 fn skip_space(source: &[char], index: usize) -> usize {
     skip_while(source, index, char::is_whitespace)
 }
@@ -113,11 +108,7 @@ fn string_end(source: &[char], start: usize) -> usize {
 }
 
 fn char_literal_end(source: &[char], index: usize) -> usize {
-    let first = index + 1;
-    if first >= source.len() {
-        return source.len();
-    }
-    skip_while(source, first + 1, |ch| {
+    skip_while(source, index + 2, |ch| {
         !(ch.is_whitespace() || CHAR_DELIMITERS.contains(&ch))
     })
 }
@@ -206,19 +197,15 @@ fn form_end(source: &[char], index: usize) -> usize {
     }
 }
 
-fn blank_span(source: &[char], start: usize, end: usize, out: &mut String) {
-    out.extend(
-        source[start..end]
-            .iter()
-            .map(|&ch| if ch == '\n' { '\n' } else { ' ' }),
-    );
+fn blank_span(start: usize, end: usize, out: &mut String) {
+    out.extend(std::iter::repeat_n(' ', end - start));
 }
 
 /// Copies or blanks the token at `index` into `out`; returns the index after it.
 fn blank_or_copy(source: &[char], index: usize, out: &mut String) -> usize {
     if starts_with_at(source, index, "#_") {
         let end = form_end(source, index + 2);
-        blank_span(source, index, end, out);
+        blank_span(index, end, out);
         return end;
     }
     let end = match source[index] {
@@ -230,7 +217,7 @@ fn blank_or_copy(source: &[char], index: usize, out: &mut String) -> usize {
             return index + 1;
         }
     };
-    blank_span(source, index, end, out);
+    blank_span(index, end, out);
     end
 }
 
@@ -248,6 +235,7 @@ fn without_strings_and_comments(source: &[char]) -> String {
 }
 
 /// Tracks the bracket depth of a form body while counting its top-level forms.
+#[derive(Default)]
 struct FormCounter {
     depth: u32,
     in_form: bool,
@@ -258,8 +246,7 @@ impl FormCounter {
     fn new() -> Self {
         Self {
             depth: 1,
-            in_form: false,
-            forms: 0,
+            ..Self::default()
         }
     }
 
@@ -277,9 +264,6 @@ impl FormCounter {
     }
 
     fn close(&mut self) {
-        if self.depth == 1 {
-            self.in_form = false;
-        }
         self.depth -= 1;
     }
 
@@ -329,7 +313,7 @@ fn pairwise_clause_count(form_type: &str, remaining: i64) -> i64 {
 
 /// Decisions added by one `cond`-style form whose name starts at `match_start`.
 fn count_clauses(text: &[char], form_type: &str, match_start: usize) -> i64 {
-    let body_start = skip_while(text, match_start + 1, |ch| !ch.is_whitespace() && ch != ')');
+    let body_start = skip_while(text, match_start, |ch| !ch.is_whitespace() && ch != ')');
     let remaining = count_top_level_forms(text, body_start) - form_skip(form_type);
     match form_type {
         "some->" | "some->>" => remaining,
@@ -341,9 +325,7 @@ fn count_cond_decisions(clean: &str) -> i64 {
     let chars = chars_of(clean);
     COND.captures_iter(clean)
         .map(|caps| {
-            let start = clean[..caps.get(0).map_or(0, |whole| whole.start())]
-                .chars()
-                .count();
+            let start = clean[..caps.get_match().start()].chars().count();
             count_clauses(&chars, &caps[1], start)
         })
         .sum()
@@ -366,7 +348,7 @@ fn to_u32(complexity: i64) -> u32 {
 fn skip_reader(source: &[char], index: usize, line: u32) -> Option<(usize, u32)> {
     let end = match source[index] {
         '\\' => return Some((char_literal_end(source, index), line)),
-        ';' => comment_end(source, index),
+        ';' => line_end(source, index),
         '"' => string_end(source, index),
         '#' if starts_with_at(source, index, "#_") => form_end(source, index + 2),
         _ => return None,
@@ -393,7 +375,7 @@ fn skip_leading_metadata(form: &[char], mut index: usize) -> usize {
 }
 
 fn keyword_ends(form: &[char], after: usize) -> bool {
-    form.get(after).map_or(true, |ch| NAME_STOPS.contains(ch))
+    form.get(after).is_none_or(|ch| NAME_STOPS.contains(ch))
 }
 
 fn defn_keyword_end(form: &[char], index: usize) -> Option<usize> {
@@ -852,5 +834,192 @@ mod tests {
     #[test]
     fn cr_9_keyword_call_at_top_level_is_not_a_defn() {
         assert!(extract_functions("(:defn m)\n").is_empty());
+    }
+
+    // CR-9: an empty string closes at its second quote, so the following `if` is seen.
+    #[test]
+    fn cr_9_empty_string_closes_at_its_second_quote() {
+        assert_eq!(cyclomatic_complexity("(defn f [] \"\" (if x 1 0))"), 2);
+    }
+
+    // CR-9: a string closes at its own closing quote, not at its opening quote or first character.
+    #[test]
+    fn cr_9_string_closes_at_its_closing_quote() {
+        assert_eq!(cyclomatic_complexity("(defn f [] \"abc\" (if x 1 0))"), 2);
+    }
+
+    // CR-9: escaped quotes and parentheses inside a string neither end it nor add decisions.
+    #[test]
+    fn cr_9_escaped_quote_and_parens_inside_string_are_blanked() {
+        let source = "(defn f [x]\n  \"(if x 1 0) \\\" (when\"\n  (if x 1 0))";
+        assert_eq!(cyclomatic_complexity(source), 2);
+    }
+
+    // CR-9: a string with no closing quote runs to the end of the text.
+    #[test]
+    fn cr_9_unterminated_string_blanks_to_end_of_text() {
+        assert_eq!(cyclomatic_complexity("(defn f [] \"(if x 1 0)"), 1);
+    }
+
+    // CR-9: a `#_` discard directly followed by another `#_` leaves the next defn extracted.
+    #[test]
+    fn cr_9_adjacent_nested_discards_keep_the_next_defn() {
+        assert_eq!(
+            extract_functions("#_#_(a) (defn f [] 1)"),
+            vec![Found {
+                name: "f".to_string(),
+                start_line: 1,
+                end_line: 1,
+                complexity: 1,
+            }]
+        );
+    }
+
+    // CR-9: a discarded atom ends at a delimiter, so a `#_` inside it is not read as a discard.
+    #[test]
+    fn cr_9_discarded_atom_stops_at_delimiter() {
+        assert_eq!(
+            extract_functions("#_ a#_(defn gone [] 1)\n(defn kept [] 1)\n"),
+            vec![
+                Found {
+                    name: "gone".to_string(),
+                    start_line: 1,
+                    end_line: 1,
+                    complexity: 1,
+                },
+                Found {
+                    name: "kept".to_string(),
+                    start_line: 2,
+                    end_line: 2,
+                    complexity: 1,
+                },
+            ]
+        );
+    }
+
+    // CR-9: a `#_` at the very end of the text discards nothing and does not panic.
+    #[test]
+    fn cr_9_discard_at_end_of_text_is_empty() {
+        assert_eq!(
+            extract_functions("(defn f [] 1)\n#_"),
+            vec![Found {
+                name: "f".to_string(),
+                start_line: 1,
+                end_line: 1,
+                complexity: 1,
+            }]
+        );
+    }
+
+    // CR-9: a multi-line discard advances the line count of the defn after it.
+    #[test]
+    fn cr_9_multiline_discard_keeps_later_line_numbers() {
+        assert_eq!(
+            extract_functions("(defn a [] 1)\n#_ (x\n y)\n(defn b [] 1)\n"),
+            vec![
+                Found {
+                    name: "a".to_string(),
+                    start_line: 1,
+                    end_line: 1,
+                    complexity: 1,
+                },
+                Found {
+                    name: "b".to_string(),
+                    start_line: 4,
+                    end_line: 4,
+                    complexity: 1,
+                },
+            ]
+        );
+    }
+
+    // CR-9: a multi-line string before a defn keeps that defn's line numbers.
+    #[test]
+    fn cr_9_multiline_string_keeps_later_line_numbers() {
+        assert_eq!(
+            extract_functions("(defn a [] \"x\n\ny\")\n(defn b [] 1)\n"),
+            vec![
+                Found {
+                    name: "a".to_string(),
+                    start_line: 1,
+                    end_line: 3,
+                    complexity: 1,
+                },
+                Found {
+                    name: "b".to_string(),
+                    start_line: 4,
+                    end_line: 4,
+                    complexity: 1,
+                },
+            ]
+        );
+    }
+
+    // CR-11: a top-level `(if ...)` at the start of the text is counted.
+    #[test]
+    fn cr_11_decision_at_start_of_text_is_counted() {
+        assert_eq!(cyclomatic_complexity("(if x 1 0)"), 2);
+    }
+
+    // CR-11: a nested form that closes does not end the top-level clause it sits in.
+    #[test]
+    fn cr_11_nested_form_does_not_start_a_new_clause() {
+        assert_eq!(cyclomatic_complexity("(cond (a)b)"), 1);
+    }
+
+    // CR-11: a `cond` with an odd number of forms has one clause per complete pair.
+    #[test]
+    fn cr_11_odd_cond_counts_only_complete_pairs() {
+        assert_eq!(
+            cyclomatic_complexity("(defn f [x] (cond (a x) 1 (b x)))"),
+            2
+        );
+    }
+
+    // CR-11: a `case` with an even number of clauses has no trailing default.
+    #[test]
+    fn cr_11_even_case_has_no_default_clause() {
+        assert_eq!(cyclomatic_complexity("(defn f [x] (case x 1 :a 2 :b))"), 3);
+    }
+
+    // CR-11: a `condp` with no clauses has negative clauses, clamped to complexity 0.
+    #[test]
+    fn cr_11_negative_clause_count_clamps_to_zero() {
+        assert_eq!(
+            extract_functions("(defn f [x] (condp =))"),
+            vec![Found {
+                name: "f".to_string(),
+                start_line: 1,
+                end_line: 1,
+                complexity: 0,
+            }]
+        );
+    }
+
+    // CR-8: an empty source root keeps a leading slash in the path.
+    #[test]
+    fn cr_8_empty_source_root_does_not_strip_path() {
+        assert_eq!(
+            namespace_from_path("/proj/demo/core.clj", ""),
+            ".proj.demo.core"
+        );
+    }
+
+    // CR-8: a `.` source root keeps the leading `./` in the path.
+    #[test]
+    fn cr_8_dot_source_root_does_not_strip_path() {
+        assert_eq!(
+            namespace_from_path("./proj/demo/core.clj", "."),
+            "..proj.demo.core"
+        );
+    }
+
+    // CR-8: a non-empty source root is stripped from the path.
+    #[test]
+    fn cr_8_named_source_root_is_stripped() {
+        assert_eq!(
+            namespace_from_path("/proj/demo/core.clj", "/proj"),
+            "demo.core"
+        );
     }
 }
