@@ -31,8 +31,8 @@ mutator makes small changes to the code and runs the tests after each change. A 
 
 ## 4. Non-goals
 
-1. The port does not add languages, mutation rules, or flags that the original does not have.
-2. The port does not change the mutation rules or the outcome rules of the original. A bug fix is not a change of rules.
+1. The port does not add languages, mutation rules, or flags that the original does not have. The upstream fixes in section 5.4 are the only exception.
+2. The port does not change the mutation rules or the outcome rules of the original. A bug fix is not a change of rules. The upstream fixes in section 5.4 are the only exception.
 3. The port is private. It is not published to crates.io.
 
 ## 5. Functional requirements
@@ -69,6 +69,22 @@ The original imports code from a crapper checkout for the work in this section. 
 - MU-20: The port exits `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives.
 - MU-21: When a mutant times out, or its test time is within 10% of its timeout, the port runs that mutant once more with 2 times the timeout. The outcome of this second run is the outcome of the mutant. This behavior differs from the original, and `mutator/parity/fixes.toml` lists it.
 
+### 5.4 Upstream fixes
+
+Each requirement in this section comes from an open issue of the original, and differs from the original at the pinned commit. Each one has an entry in `mutator/parity/fixes.toml` (MU-PB-3) and a test (MU-PB-4).
+
+- MU-22: In TypeScript and JavaScript, the port treats the import specifiers `'.'` and `'..'` as relative imports ([issue 29](https://github.com/unclebob/mutator/issues/29)). It resolves each one to the `index.<ext>` file in that directory. If that file is the mutated file, the port copies the test file into the worker, so the test loads the mutant.
+- MU-23: In Python, the port makes these mutants ([issue 10](https://github.com/unclebob/mutator/issues/10)):
+  1. `is` to `is not`, and `is not` to `is`.
+  2. `in` to `not in`, and `not in` to `in`.
+  3. `//` to `/`, and `/` to `//`.
+  4. `%` to `*`.
+  5. `**` to `*`.
+  6. `@` to `*`.
+  7. `+=` to `-=`, and `-=` to `+=`.
+  8. `*=` to `/=`, and `/=` to `*=`.
+- MU-24: In Python, the coverage line of a site in an `elif` condition, in an `except` clause, or in a `case` guard is the first line of that clause ([issue 9](https://github.com/unclebob/mutator/issues/9)). The port does not use the first line of the enclosing `if`, `try`, or `match` statement. A site on a clause line that no test runs is an uncovered site (MU-16).
+
 ## 6. Non-functional requirements
 
 - MU-NFR-1: Determinism. Two runs on the same files give the same outcome for each mutant. A mutant near its timeout gets a stable outcome through MU-21.
@@ -103,6 +119,9 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 11. AC-11 (Goal 3): The fixtures for Clojure, Java, Go, TypeScript, and Rust pass with the port on a host that has no Python installed and no crapper checkout. The expected results come from an earlier parity run.
 12. AC-12 (MU-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
 13. AC-13 (MU-21, MU-NFR-1): On a fixture with a mutant whose test time is within 10% of its timeout, the port runs the mutant a second time with 2 times the timeout. Five runs on this fixture give the same outcome for each mutant and byte-identical snapshots.
+14. AC-14 (MU-22): On the TypeScript fixture of issue 29, where `src/calc/index.test.ts` imports `big` from `'.'`, the mutant `>` to `>=` on line 2 of `src/calc/index.ts` is killed.
+15. AC-15 (MU-23): A scan run on the file `src/demo/ops2.py` from issue 10 lists a site for each of the operators `is`, `in`, `@`, `//`, `%`, `**`, `+=`, and `+`. A scan run on a file with `is not`, `not in`, `-=`, `*=`, and `/=` lists a site for each of them.
+16. AC-16 (MU-24): On the fixture of issue 9, where the tests cover line 2 and do not cover lines 4 and 5, the two sites on line 4 are uncovered sites and the site on line 2 runs. The same rule holds for a site in an `except` clause and in a `case` guard whose line no test runs.
 
 ## 9. Risks
 
