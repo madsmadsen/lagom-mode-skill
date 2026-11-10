@@ -69,16 +69,16 @@ fn report_dir(report: &Path) -> &Path {
     report.parent().unwrap_or_else(|| Path::new("."))
 }
 
-fn make_report_dir(report: &Path) {
-    fs::create_dir_all(report_dir(report))
-        .unwrap_or_else(|err| panic!("cannot create {}: {err}", report_dir(report).display()));
+fn make_report_dir(report: &Path) -> Result<(), String> {
+    let dir = report_dir(report);
+    fs::create_dir_all(dir).map_err(|err| format!("cannot create {}: {err}", dir.display()))
 }
 
-fn remove_if_present(path: &Path) {
-    if let Err(err) = fs::remove_file(path) {
-        if err.kind() != ErrorKind::NotFound {
-            panic!("cannot remove {}: {err}", path.display());
-        }
+fn remove_if_present(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("cannot remove {}: {err}", path.display())),
     }
 }
 
@@ -348,20 +348,20 @@ fn cover_python_package(
     files: &[PathBuf],
     package: &Path,
     exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
-) {
-    let report = coverage_report(root, package, "python");
+) -> Result<(), String> {
+    let report = coverage_report(root, package, "python")?;
     let py = python_executable(package);
     if !ensure_python_module(&py, package, "coverage", exec) {
         warn(&format!(
             "coverage is missing in {}. Python coverage will score 0%.",
             package.display()
         ));
-        return;
+        return Ok(());
     }
     let data_file = report_dir(&report).join(".coverage");
-    make_report_dir(&report);
-    remove_if_present(&report);
-    remove_if_present(&data_file);
+    make_report_dir(&report)?;
+    remove_if_present(&report)?;
+    remove_if_present(&data_file)?;
     let kind = python_kind(&py, package, exec);
     let (run_cmd, lcov_cmd) = python_coverage_commands(
         &py,
@@ -372,16 +372,22 @@ fn cover_python_package(
     );
     let code = exec(&run_cmd, package);
     record_python_lcov(package, code, &data_file, &lcov_cmd, exec);
+    Ok(())
 }
 
-fn cover_python_with(root: &Path, files: &[PathBuf], exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
+fn cover_python_with(
+    root: &Path,
+    files: &[PathBuf],
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) -> Result<(), String> {
     for package in python_roots(root, files) {
-        cover_python_package(root, files, &package, exec);
+        cover_python_package(root, files, &package, exec)?;
     }
+    Ok(())
 }
 
-pub(crate) fn cover_python(root: &Path, files: &[PathBuf]) {
-    cover_python_with(root, files, &mut run_shell);
+pub(crate) fn cover_python(root: &Path, files: &[PathBuf]) -> Result<(), String> {
+    cover_python_with(root, files, &mut run_shell)
 }
 
 fn run_rust_module(
@@ -389,14 +395,15 @@ fn run_rust_module(
     module: &Path,
     kind: &str,
     exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
-) {
-    let report = coverage_report(root, module, "rust");
-    make_report_dir(&report);
-    remove_if_present(&report);
+) -> Result<(), String> {
+    let report = coverage_report(root, module, "rust")?;
+    make_report_dir(&report)?;
+    remove_if_present(&report)?;
     let code = exec(&rust_coverage_command(kind, &report), module);
     if let Some(message) = exit_warning("Rust", code, Some(module)) {
         warn(&message);
     }
+    Ok(())
 }
 
 fn cover_rust_with(
@@ -405,22 +412,23 @@ fn cover_rust_with(
     has_tool: &dyn Fn(&str) -> bool,
     home: &Path,
     exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
-) {
+) -> Result<(), String> {
     let modules = rust_modules(root, files);
     if modules.is_empty() {
         warn("No Cargo.toml; skipping Rust coverage.");
-        return;
+        return Ok(());
     }
     let Some(kind) = rust_kind(has_tool, home, exec) else {
-        return;
+        return Ok(());
     };
     for module in &modules {
-        run_rust_module(root, module, kind, exec);
+        run_rust_module(root, module, kind, exec)?;
     }
+    Ok(())
 }
 
-pub(crate) fn cover_rust(root: &Path, files: &[PathBuf]) {
-    cover_rust_with(root, files, &on_path, &home(), &mut run_shell);
+pub(crate) fn cover_rust(root: &Path, files: &[PathBuf]) -> Result<(), String> {
+    cover_rust_with(root, files, &on_path, &home(), &mut run_shell)
 }
 
 #[cfg(test)]
@@ -773,7 +781,7 @@ mod tests {
     fn cr_13_remove_if_present_deletes_an_existing_file() {
         let tmp = tempdir().unwrap();
         let file = write(tmp.path(), "lcov.info", "");
-        remove_if_present(&file);
+        remove_if_present(&file).expect("removes");
         assert!(!file.exists());
     }
 
@@ -781,17 +789,66 @@ mod tests {
     #[test]
     fn cr_13_remove_if_present_ignores_a_missing_file() {
         let tmp = tempdir().unwrap();
-        remove_if_present(&tmp.path().join("absent.info"));
+        remove_if_present(&tmp.path().join("absent.info")).expect("ignores");
     }
 
     // CR-13
     #[test]
-    #[should_panic(expected = "cannot remove")]
-    fn cr_13_remove_if_present_panics_on_any_other_failure() {
+    fn cr_13_remove_if_present_reports_any_other_failure() {
         let tmp = tempdir().unwrap();
         let dir = tmp.path().join("report");
         fs::create_dir(&dir).unwrap();
-        remove_if_present(&dir);
+        let err = remove_if_present(&dir).expect_err("removal fails");
+        assert!(err.contains("cannot remove"), "{err}");
+    }
+
+    // CR-3, AC-26
+    #[test]
+    fn cr_3_ac_26_an_uncreatable_report_directory_is_an_error() {
+        let tmp = tempdir().unwrap();
+        let blocker = write(tmp.path(), "blocker", "");
+        let report = blocker.join("report").join("lcov.info");
+        let err = make_report_dir(&report).expect_err("cannot create");
+        assert!(err.contains("cannot create"), "{err}");
+    }
+
+    // CR-3, AC-26
+    #[test]
+    fn cr_3_ac_26_a_python_package_outside_the_root_is_an_error_and_runs_nothing() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("root");
+        fs::create_dir(&root).unwrap();
+        let outside = tmp.path().join("outside");
+        write(&outside, "pyproject.toml", "[project]\nname = \"out\"\n");
+        let source = write(&outside, "app.py", "def run():\n    return 1\n");
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            0
+        };
+        let err = cover_python_with(&root, &[source], &mut exec).expect_err("outside the root");
+        assert!(err.contains("is not in the subpath of"), "{err}");
+        assert!(calls.is_empty());
+    }
+
+    // CR-3, AC-26
+    #[test]
+    fn cr_3_ac_26_a_rust_module_outside_the_root_is_an_error_and_runs_nothing() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().join("root");
+        fs::create_dir(&root).unwrap();
+        let outside = tmp.path().join("outside");
+        write(&outside, "Cargo.toml", "[package]\nname = \"out\"\n");
+        let lib = write(&outside, "src/lib.rs", "pub fn read_text() {}\n");
+        let mut calls = Vec::new();
+        let mut exec = |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            0
+        };
+        let err = cover_rust_with(&root, &[lib], &|_: &str| true, tmp.path(), &mut exec)
+            .expect_err("outside the root");
+        assert!(err.contains("is not in the subpath of"), "{err}");
+        assert!(calls.is_empty());
     }
 
     // CR-13
@@ -908,7 +965,7 @@ mod tests {
             "pub fn read_text() {}\n",
         );
         let module = resolve(&tmp.path().join("src-tauri"));
-        let report = coverage_report(tmp.path(), &module, "rust");
+        let report = coverage_report(tmp.path(), &module, "rust").expect("report path");
         write(
             tmp.path(),
             "target/coverage/rust/src-tauri/lcov.info",
@@ -920,7 +977,7 @@ mod tests {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             2
         };
-        cover_rust_with(tmp.path(), &[lib], &has_tool, tmp.path(), &mut exec);
+        cover_rust_with(tmp.path(), &[lib], &has_tool, tmp.path(), &mut exec).expect("covers");
         assert_eq!(
             calls,
             vec![(rust_coverage_command("llvm-cov", &report), module)]
@@ -939,7 +996,8 @@ mod tests {
             calls.push(cmd.clone());
             0
         };
-        cover_rust_with(tmp.path(), &[lib], &|_: &str| true, tmp.path(), &mut exec);
+        cover_rust_with(tmp.path(), &[lib], &|_: &str| true, tmp.path(), &mut exec)
+            .expect("covers");
         assert!(calls.is_empty());
     }
 
@@ -954,7 +1012,8 @@ mod tests {
             calls.push(cmd.clone());
             1
         };
-        cover_rust_with(tmp.path(), &[lib], &|_: &str| false, tmp.path(), &mut exec);
+        cover_rust_with(tmp.path(), &[lib], &|_: &str| false, tmp.path(), &mut exec)
+            .expect("covers");
         assert_eq!(
             calls,
             vec![argv(&["cargo", "install", "cargo-llvm-cov", "--locked"])]
@@ -977,7 +1036,7 @@ mod tests {
             "tests/test_box.py",
             "def test_choose():\n    assert True\n",
         );
-        let report = coverage_report(&root, &root, "python");
+        let report = coverage_report(&root, &root, "python").expect("report path");
         let data = report_dir(&report).join(".coverage");
         let (run, lcov) = python_coverage_commands("python3", "pytest", &data, &report, "src");
         let mut calls = Vec::new();
@@ -988,7 +1047,7 @@ mod tests {
             }
             0
         };
-        cover_python_with(&root, &[source, test], &mut exec);
+        cover_python_with(&root, &[source, test], &mut exec).expect("covers");
         assert_eq!(
             calls,
             vec![
@@ -1006,7 +1065,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let root = resolve(tmp.path());
         let source = write(&root, "demo/app.py", "def run():\n    return 1\n");
-        let report = coverage_report(&root, &root, "python");
+        let report = coverage_report(&root, &root, "python").expect("report path");
         let data = report_dir(&report).join(".coverage");
         let (run, _lcov) = python_coverage_commands("python3", "unittest", &data, &report, "demo");
         let mut calls = Vec::new();
@@ -1014,7 +1073,7 @@ mod tests {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             0
         };
-        cover_python_with(&root, &[source], &mut exec);
+        cover_python_with(&root, &[source], &mut exec).expect("covers");
         assert_eq!(
             calls,
             vec![
@@ -1035,7 +1094,7 @@ mod tests {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             1
         };
-        cover_python_with(&root, &[source], &mut exec);
+        cover_python_with(&root, &[source], &mut exec).expect("covers");
         assert_eq!(
             calls,
             vec![

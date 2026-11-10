@@ -11,7 +11,7 @@ items = ["flag:-h", "flag:--help", "flag:--root", "flag:-s", "flag:--source-root
          "cr6:skip-dirs","cr7:changed","cr10:no-data",
          "crash:broken-symlink","crash:unreadable-source","crash:symlink-loop",
          "crash:go-profile-fields","crash:go-profile-number","crash:go-profile-range","crash:jacoco-xml",
-         "crash:jacoco-count","crash:unreadable-lcov","crash:unreadable-html",
+         "crash:jacoco-count","crash:unreadable-lcov","crash:unreadable-html","crash:package-outside-root",
          "lenient:go-ints","lenient:go-huge","lenient:jacoco-ints"]
 
 # Existing-report runs: read the fixture's checked-in coverage reports only.
@@ -418,6 +418,15 @@ args = ["--use-existing-coverage"]
 setup = ["mkdir -p target/coverage && printf '<span title=\"1 out of 2 forms covered\">1&nbsp;' > target/coverage/app.html && chmod 000 target/coverage/app.html"]
 requires = []
 covers = ["crash:unreadable-html"]
+expect_exit = 1
+
+[[run]]
+id = "crash-package-outside-root"
+fixture = "crash"
+args = []
+setup = ["mkdir ../aaa-ext && printf 'def f(x):\\n    return x\\n' > ../aaa-ext/app.py && printf '[project]\\nname = \"ext\"\\n' > ../aaa-ext/pyproject.toml && ln -s ../../aaa-ext/app.py src/ext_app.py"]
+requires = []
+covers = ["crash:package-outside-root"]
 expect_exit = 1
 
 # Python int() leniency: the original accepts these numbers; the port must too.

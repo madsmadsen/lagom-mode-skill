@@ -379,7 +379,7 @@ fn coverage_bundle(
     if options.use_existing_coverage {
         return load_bundle(root).map(Some);
     }
-    let status = run_coverage(root, files, options.coverage_command.as_deref());
+    let status = run_coverage(root, files, options.coverage_command.as_deref())?;
     if options.coverage_command.is_some() && matches!(status, Some(code) if code != 0) {
         return Ok(Some(CoverageBundle::default()));
     }

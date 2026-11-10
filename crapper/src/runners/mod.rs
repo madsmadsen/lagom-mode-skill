@@ -154,21 +154,31 @@ pub(crate) fn modules_with(
     modules.into_iter().collect()
 }
 
-pub(crate) fn coverage_report(root: &Path, module: &Path, language: &str) -> PathBuf {
+pub(crate) fn coverage_report(
+    root: &Path,
+    module: &Path,
+    language: &str,
+) -> Result<PathBuf, String> {
     let root = resolved(root);
     let module = resolved(module);
     let base = root.join("target").join("coverage").join(language);
     if module == root {
-        return base.join("lcov.info");
+        return Ok(base.join("lcov.info"));
     }
     let slug = module
         .strip_prefix(&root)
-        .expect("a module found under the project root lies under it")
+        .map_err(|_| {
+            format!(
+                "{} is not in the subpath of {}",
+                module.display(),
+                root.display()
+            )
+        })?
         .components()
         .map(|part| part.as_os_str().to_string_lossy().into_owned())
         .collect::<Vec<_>>()
         .join("__");
-    base.join(slug).join("lcov.info")
+    Ok(base.join(slug).join("lcov.info"))
 }
 
 fn unlink(path: &Path) {
@@ -400,30 +410,43 @@ fn custom_exit_warning(code: i32) -> Option<String> {
     ))
 }
 
-type CoverFn = fn(&Path, &[PathBuf]);
+type CoverFn = fn(&Path, &[PathBuf]) -> Result<(), String>;
 
 /// Each language's cover function, in the order they run.
 const COVERAGE_RUNNERS: &[(&str, CoverFn)] = &[
-    ("clojure", cover_clojure),
-    ("java", cover_java),
-    ("go", cover_go),
+    ("clojure", |root, files| {
+        cover_clojure(root, files);
+        Ok(())
+    }),
+    ("java", |root, files| {
+        cover_java(root, files);
+        Ok(())
+    }),
+    ("go", |root, files| {
+        cover_go(root, files);
+        Ok(())
+    }),
     ("typescript", typescript_cov::cover_typescript),
     ("python", rustpy::cover_python),
     ("rust", rustpy::cover_rust),
 ];
 
-pub fn run_coverage(root: &Path, files: &[PathBuf], command: Option<&str>) -> Option<i32> {
+pub fn run_coverage(
+    root: &Path,
+    files: &[PathBuf],
+    command: Option<&str>,
+) -> Result<Option<i32>, String> {
     let root = resolved(root);
     if let Some(text) = command.filter(|text| !text.is_empty()) {
-        return Some(run_custom(&root, text));
+        return Ok(Some(run_custom(&root, text)));
     }
     let languages: HashSet<&str> = files.iter().filter_map(|file| language_of(file)).collect();
     for (language, cover) in COVERAGE_RUNNERS {
         if languages.contains(language) {
-            cover(&root, files);
+            cover(&root, files)?;
         }
     }
-    Some(0)
+    Ok(Some(0))
 }
 
 #[cfg(test)]
@@ -536,15 +559,15 @@ mod tests {
         fs::create_dir_all(root.join("src-tauri")).unwrap();
         fs::create_dir_all(root.join("a/b")).unwrap();
         assert_eq!(
-            coverage_report(&root, &root, "rust"),
+            coverage_report(&root, &root, "rust").expect("report path"),
             root.join("target/coverage/rust/lcov.info")
         );
         assert_eq!(
-            coverage_report(&root, &root.join("src-tauri"), "rust"),
+            coverage_report(&root, &root.join("src-tauri"), "rust").expect("report path"),
             root.join("target/coverage/rust/src-tauri/lcov.info")
         );
         assert_eq!(
-            coverage_report(&root, &root.join("a/b"), "rust"),
+            coverage_report(&root, &root.join("a/b"), "rust").expect("report path"),
             root.join("target/coverage/rust/a__b/lcov.info")
         );
     }
@@ -588,15 +611,15 @@ mod tests {
     #[test]
     fn cr_13_custom_command_status_is_returned() {
         let dir = tempdir().unwrap();
-        assert_eq!(run_coverage(dir.path(), &[], Some("exit 3")), Some(3));
-        assert_eq!(run_coverage(dir.path(), &[], Some("true")), Some(0));
+        assert_eq!(run_coverage(dir.path(), &[], Some("exit 3")), Ok(Some(3)));
+        assert_eq!(run_coverage(dir.path(), &[], Some("true")), Ok(Some(0)));
     }
 
     // CR-13 an empty --coverage-command is no command, so the per-language path runs and returns 0
     #[test]
     fn cr_13_empty_command_is_no_command() {
         let dir = tempdir().unwrap();
-        assert_eq!(run_coverage(dir.path(), &[], Some("")), Some(0));
+        assert_eq!(run_coverage(dir.path(), &[], Some("")), Ok(Some(0)));
     }
 
     type Calls = Vec<(String, PathBuf)>;
@@ -718,7 +741,43 @@ mod tests {
             root.join("main.go"),
             root.join("a.clj"),
         ];
-        assert_eq!(run_coverage(&root, &files, None), Some(0));
+        assert_eq!(run_coverage(&root, &files, None), Ok(Some(0)));
+    }
+
+    // CR-3, AC-26 a module outside the project root is an error naming both paths
+    #[test]
+    fn cr_3_ac_26_a_module_outside_the_root_is_an_error_naming_both_paths() {
+        let dir = tempdir().unwrap();
+        let base = resolved(dir.path());
+        let root = base.join("root");
+        let ext = base.join("ext");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&ext).unwrap();
+        assert_eq!(
+            coverage_report(&root, &ext, "python"),
+            Err(format!(
+                "{} is not in the subpath of {}",
+                ext.display(),
+                root.display()
+            ))
+        );
+    }
+
+    // CR-3, AC-26 a python package outside the project root stops run_coverage with an error
+    #[test]
+    fn cr_3_ac_26_run_coverage_stops_with_an_error_for_a_python_package_outside_the_root() {
+        let dir = tempdir().unwrap();
+        let base = resolved(dir.path());
+        let root = base.join("root");
+        fs::create_dir_all(&root).unwrap();
+        let app = touch(&base, "aaa-ext/app.py", "def run():\n    return 1\n");
+        touch(
+            &base,
+            "aaa-ext/pyproject.toml",
+            "[project]\nname = \"ext\"\n",
+        );
+        let message = run_coverage(&root, &[app], None).unwrap_err();
+        assert!(message.contains("is not in the subpath of"), "{message}");
     }
 
     // CR-13 nearest checks a directory start first, and the directory itself counts

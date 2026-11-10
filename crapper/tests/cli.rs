@@ -755,3 +755,23 @@ fn cr_3_ac_26_a_go_profile_with_a_misplaced_underscore_exits_1() {
     let output = crapper_in(root, &["--use-existing-coverage"]);
     assert_crash_exit_1(&output, root, "coverage.out");
 }
+
+// CR-3, AC-26
+#[test]
+fn cr_3_ac_26_a_python_package_outside_the_root_exits_1_with_one_stderr_line() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let parent = temp.path();
+    write_file(parent, "aaa-ext/app.py", "def f(x):\n    return x\n");
+    write_file(
+        parent,
+        "aaa-ext/pyproject.toml",
+        "[project]\nname = \"ext\"\n",
+    );
+
+    let root = parent.join("root");
+    fs::create_dir_all(root.join("src")).expect("mkdir");
+    symlink(parent.join("aaa-ext/app.py"), root.join("src/ext_app.py")).expect("symlink");
+
+    let output = crapper_in(&root, &[]);
+    assert_crash_exit_1(&output, &root, "is not in the subpath of");
+}

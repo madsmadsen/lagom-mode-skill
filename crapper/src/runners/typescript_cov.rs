@@ -34,19 +34,24 @@ type ManifestSnapshot = Vec<(PathBuf, Option<Vec<u8>>)>;
 #[derive(Debug)]
 struct PackageJsonError(String);
 
-pub(crate) fn cover_typescript(root: &Path, files: &[PathBuf]) {
-    cover_typescript_with(root, files, &mut run_shell);
+pub(crate) fn cover_typescript(root: &Path, files: &[PathBuf]) -> Result<(), String> {
+    cover_typescript_with(root, files, &mut run_shell)
 }
 
-fn cover_typescript_with(root: &Path, files: &[PathBuf], exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
+fn cover_typescript_with(
+    root: &Path,
+    files: &[PathBuf],
+    exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
+) -> Result<(), String> {
     let packages = typescript_packages(root, files);
     if packages.is_empty() {
         warn("No package.json; skipping TypeScript coverage.");
-        return;
+        return Ok(());
     }
     for package in &packages {
-        cover_package_with(root, package, files, exec);
+        cover_package_with(root, package, files, exec)?;
     }
+    Ok(())
 }
 
 fn cover_package_with(
@@ -54,21 +59,27 @@ fn cover_package_with(
     package: &Path,
     files: &[PathBuf],
     exec: &mut dyn FnMut(&Cmd, &Path) -> i32,
-) {
-    let Some((report_dir, command)) = plan_package(root, package, files) else {
-        return;
+) -> Result<(), String> {
+    let Some((report_dir, command)) = plan_package(root, package, files)? else {
+        return Ok(());
     };
     if let Some(command) = ready_for_run(package, &report_dir, command, exec) {
         run_report(package, command, exec);
     }
+    Ok(())
 }
 
 /// The report directory and command for one package; `None` when the package is skipped.
-fn plan_package(root: &Path, package: &Path, files: &[PathBuf]) -> Option<(PathBuf, Vec<String>)> {
-    let report = coverage_report(root, package, "typescript");
-    let report_dir = report.parent()?.to_path_buf();
-    let command = planned_command(package, files, &report_dir)?;
-    Some((report_dir, command))
+fn plan_package(
+    root: &Path,
+    package: &Path,
+    files: &[PathBuf],
+) -> Result<Option<(PathBuf, Vec<String>)>, String> {
+    let report = coverage_report(root, package, "typescript")?;
+    let Some(report_dir) = report.parent().map(Path::to_path_buf) else {
+        return Ok(None);
+    };
+    Ok(planned_command(package, files, &report_dir).map(|command| (report_dir, command)))
 }
 
 fn planned_command(package: &Path, files: &[PathBuf], report_dir: &Path) -> Option<Vec<String>> {
@@ -548,7 +559,8 @@ mod tests {
         cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             0
-        });
+        })
+        .expect("covers");
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].1, fs::canonicalize(root.join("web")).unwrap());
         let Cmd::Argv(parts) = &calls[0].0 else {
@@ -573,7 +585,8 @@ mod tests {
         cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             0
-        });
+        })
+        .expect("covers");
         assert!(calls.is_empty());
     }
 
@@ -588,7 +601,8 @@ mod tests {
         cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             0
-        });
+        })
+        .expect("covers");
         assert!(calls.is_empty());
     }
 
@@ -603,7 +617,8 @@ mod tests {
         cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             0
-        });
+        })
+        .expect("covers");
         assert!(calls.is_empty());
     }
 
@@ -628,7 +643,8 @@ mod tests {
         cover_typescript_with(root, &[api, web], &mut |cmd: &Cmd, cwd: &Path| {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             1
-        });
+        })
+        .expect("covers");
         let cwds: Vec<PathBuf> = calls.iter().map(|(_, cwd)| cwd.clone()).collect();
         assert_eq!(
             cwds,
@@ -651,6 +667,7 @@ mod tests {
         );
         let source = write(root, "src/app.ts", "export const n = 1\n");
         let report_dir = coverage_report(root, root, "typescript")
+            .expect("report path")
             .parent()
             .unwrap()
             .to_path_buf();
@@ -663,9 +680,33 @@ mod tests {
             ran = true;
             stale_present_at_run = stale.exists();
             0
-        });
+        })
+        .expect("covers");
         assert!(ran);
         assert!(!stale_present_at_run);
+    }
+
+    // CR-3, AC-26
+    #[test]
+    fn cr_3_ac_26_a_typescript_package_outside_the_root_is_an_error_and_runs_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("root");
+        fs::create_dir(&root).unwrap();
+        let outside = tmp.path().join("outside");
+        write(
+            &outside,
+            "package.json",
+            r#"{"scripts":{"test":"node --test"}}"#,
+        );
+        let source = write(&outside, "src/a.ts", "export const a = 1\n");
+        let mut calls: Calls = Vec::new();
+        let err = cover_typescript_with(&root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
+            calls.push((cmd.clone(), cwd.to_path_buf()));
+            0
+        })
+        .expect_err("outside the root");
+        assert!(err.contains("is not in the subpath of"), "{err}");
+        assert!(calls.is_empty());
     }
 
     // CR-14 a vitest package without its coverage provider installs it, then runs vitest
@@ -683,7 +724,8 @@ mod tests {
                 fs::create_dir_all(cwd.join("node_modules/@vitest/coverage-v8")).unwrap();
             }
             0
-        });
+        })
+        .expect("covers");
         assert_eq!(calls.len(), 2);
         assert!(is_install(&calls[0].0));
         assert_eq!(
@@ -714,7 +756,8 @@ mod tests {
         cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             1
-        });
+        })
+        .expect("covers");
         assert_eq!(calls.len(), 1);
         assert!(is_install(&calls[0].0));
     }
@@ -732,7 +775,8 @@ mod tests {
         cover_typescript_with(root, &[source], &mut |cmd: &Cmd, cwd: &Path| {
             calls.push((cmd.clone(), cwd.to_path_buf()));
             0
-        });
+        })
+        .expect("covers");
         assert_eq!(calls.len(), 1);
         assert!(!is_install(&calls[0].0));
     }
@@ -752,7 +796,8 @@ mod tests {
                 fs::create_dir_all(cwd.join("node_modules/@vitest/coverage-v8")).unwrap();
             }
             0
-        });
+        })
+        .expect("covers");
         assert_eq!(fs::read_to_string(&package_json).unwrap(), original);
     }
 
