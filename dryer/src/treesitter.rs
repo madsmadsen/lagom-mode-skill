@@ -14,6 +14,7 @@ fn language_for(grammar: &str) -> Option<Language> {
         "rust" => Some(tree_sitter_rust::LANGUAGE.into()),
         "typescript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
         "tsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        "javascript" => Some(tree_sitter_javascript::LANGUAGE.into()),
         _ => None,
     }
 }
@@ -103,6 +104,16 @@ mod tests {
             let tree = parse(grammar, source.as_bytes());
             assert!(!tree.root_node().has_error(), "{grammar}");
         }
+    }
+
+    // DR-14: the javascript grammar parses JSX without error nodes.
+    #[test]
+    fn dr14_parse_reads_javascript_with_jsx() {
+        let tree = parse(
+            "javascript",
+            b"const f = (xs) => <div>{xs.length}</div>;\nfunction g(a) { return a + 1; }\n",
+        );
+        assert!(!tree.root_node().has_error());
     }
 
     // DR-8: a Python function reports 1-based start and end lines.

@@ -10,6 +10,8 @@ const B_PY: &str = "def sum_cost(entries, rate):\n    running = 0\n    for entry
 const TSX: &str = "export function totalPrice(items: Item[], tax: number): number {\n  let subtotal = 0;\n  for (const item of items) {\n    subtotal += item.price * item.quantity;\n  }\n  const result = subtotal + subtotal * tax;\n  return result;\n}\n";
 const TS: &str = "export function sumCost(entries: Item[], rate: number): number {\n  let running = 0;\n  for (const entry of entries) {\n    running += entry.cost * entry.count;\n  }\n  const final = running + running * rate;\n  return final;\n}\n";
 const JAVA: &str = "class Totals {\n    int totalPrice(int[] items, int tax) {\n        int subtotal = 0;\n        for (int item : items) {\n            subtotal += item * tax;\n        }\n        int result = subtotal + subtotal * tax;\n        result = result + 1;\n        return result;\n    }\n}\n";
+const JSX_A: &str = "export function totalPrice(items, tax) {\n  let subtotal = 0;\n  for (const item of items) {\n    subtotal += item.price * item.quantity;\n  }\n  const result = subtotal + subtotal * tax;\n  return <span>{result}</span>;\n}\n";
+const JSX_B: &str = "export function sumCost(entries, rate) {\n  let running = 0;\n  for (const entry of entries) {\n    running += entry.cost * entry.count;\n  }\n  const final = running + running * rate;\n  tally = tally + 1;\n  return <span>{final}</span>;\n}\n";
 
 const PAIR_BLOCK: &str = "DUPLICATE score=0.86\n  a.py:1-7\n  b.py:1-6\n";
 const NO_CANDIDATES: &str = "No duplicate candidates found.\n";
@@ -208,20 +210,59 @@ fn dr6_skipped_directories_are_not_compared() {
     );
 }
 
-// DR-5
+// DR-5, DR-14
 #[test]
 fn dr5_unknown_extensions_are_ignored() {
     let project = Project::new();
     project
         .write("a.txt", A_PY)
         .write("b.txt", B_PY)
-        .write("c.js", A_PY)
-        .write("d.js", B_PY)
+        .write("c.rb", A_PY)
+        .write("d.rb", B_PY)
         .write("e.d.ts", TS)
         .write("f.d.ts", TS);
 
     let out = project.run(&[]);
     assert_eq!(text_of(&out), NO_SOURCES);
+}
+
+// DR-14, AC-11, AC-9: the test of fix js-read-as-typescript in parity/fixes.toml.
+// The original prints "No source files to analyze." here.
+#[test]
+fn dr14_jsx_only_project_reports_the_pair() {
+    let project = Project::new();
+    project
+        .write("src/a.jsx", JSX_A)
+        .write("src/b.jsx", JSX_B)
+        .write("src/a.test.jsx", JSX_A);
+
+    let out = project.run(&["--threshold", "0.8"]);
+    assert_eq!(
+        text_of(&out),
+        "DUPLICATE score=0.85\n  src/a.jsx:1-8\n  src/b.jsx:1-9\n"
+    );
+    let high = project.run(&["--threshold", "0.9"]);
+    assert_eq!(text_of(&high), NO_CANDIDATES);
+    let edn = project.run(&["--edn", "--threshold", "0.8"]);
+    assert!(text_of(&edn).contains(":language \"typescript\""));
+}
+
+// DR-14
+#[test]
+fn dr14_each_javascript_extension_is_scanned() {
+    let a_js = JSX_A.replace("<span>{result}</span>", "result");
+    let b_js = JSX_B.replace("<span>{final}</span>", "final");
+    for ext in ["js", "mjs", "cjs"] {
+        let project = Project::new();
+        project
+            .write(&format!("a.{ext}"), &a_js)
+            .write(&format!("b.{ext}"), &b_js);
+
+        let out = project.run(&["--threshold", "0.5"]);
+        let text = text_of(&out);
+        assert!(text.starts_with("DUPLICATE score="), "{ext}: {text}");
+        assert_ne!(text, NO_SOURCES, "{ext}");
+    }
 }
 
 // DR-5

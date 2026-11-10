@@ -19,6 +19,10 @@ const EXTENSIONS: &[(&str, Language)] = &[
     (".tsx", Language::TypeScript),
     (".mts", Language::TypeScript),
     (".cts", Language::TypeScript),
+    (".js", Language::TypeScript),
+    (".jsx", Language::TypeScript),
+    (".mjs", Language::TypeScript),
+    (".cjs", Language::TypeScript),
     (".rs", Language::Rust),
     (".py", Language::Python),
 ];
@@ -62,10 +66,18 @@ const TEST_SUFFIXES: &[&str] = &[
     ".spec.mts",
     ".test.cts",
     ".spec.cts",
+    ".test.js",
+    ".spec.js",
+    ".test.jsx",
+    ".spec.jsx",
+    ".test.mjs",
+    ".spec.mjs",
+    ".test.cjs",
+    ".spec.cjs",
     "_test.py",
 ];
 
-// DR-5: a `.d.ts` declaration is never analyzed, and the suffix is looked up
+// DR-5, DR-14: a `.d.ts` declaration is never analyzed, and the suffix is looked up
 // with Python Path.suffix rules.
 pub fn language_of(path: &Path) -> Option<Language> {
     let name = file_name_of(path);
@@ -113,10 +125,10 @@ fn file_name_of(path: &Path) -> String {
 }
 
 // Python Path.suffix: the text from the last dot, unless the dot is the first
-// or last byte of the name.
+// byte of the name. A trailing dot gives ".", which matches no extension.
 fn suffix_of(name: &str) -> &str {
     match name.rfind('.') {
-        Some(index) if index > 0 && index < name.len() - 1 => &name[index..],
+        Some(index) if index > 0 => &name[index..],
         _ => "",
     }
 }
@@ -343,6 +355,68 @@ mod tests {
             vec![
                 resolve(&proj.join("src/app.py")),
                 resolve(&proj.join("src/widget.cts"))
+            ]
+        );
+    }
+
+    // DR-14
+    #[test]
+    fn dr14_language_of_reads_javascript_as_typescript() {
+        for name in ["a/b.js", "b.jsx", "b.mjs", "b.cjs"] {
+            assert_eq!(
+                language_of(Path::new(name)),
+                Some(Language::TypeScript),
+                "{name}"
+            );
+        }
+        assert_eq!(language_of(Path::new("types.d.ts")), None);
+        assert_eq!(language_of(Path::new("x.json")), None);
+        assert_eq!(language_of(Path::new("x.JS")), None);
+    }
+
+    // DR-14
+    #[test]
+    fn dr14_is_test_file_recognizes_javascript_test_names() {
+        for name in [
+            "ui/a.test.js",
+            "ui/a.spec.js",
+            "ui/a.test.jsx",
+            "ui/a.spec.jsx",
+            "ui/a.test.mjs",
+            "ui/a.spec.mjs",
+            "ui/a.test.cjs",
+            "ui/a.spec.cjs",
+        ] {
+            assert!(is_test_file(Path::new(name)), "{name}");
+        }
+        for name in ["src/app.js", "src/app.jsx"] {
+            assert!(!is_test_file(Path::new(name)), "{name}");
+        }
+    }
+
+    // DR-14
+    #[test]
+    fn dr14_iter_source_files_keeps_javascript_and_skips_its_tests() {
+        let (_tmp, proj) = project();
+        for rel in [
+            "src/a.jsx",
+            "src/b.js",
+            "src/c.mjs",
+            "src/d.cjs",
+            "src/a.test.jsx",
+            "src/b.spec.js",
+            "src/types.d.ts",
+        ] {
+            write(&proj, rel);
+        }
+        let found = iter_source_files(std::slice::from_ref(&proj));
+        assert_eq!(
+            found,
+            vec![
+                resolve(&proj.join("src/a.jsx")),
+                resolve(&proj.join("src/b.js")),
+                resolve(&proj.join("src/c.mjs")),
+                resolve(&proj.join("src/d.cjs"))
             ]
         );
     }

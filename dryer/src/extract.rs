@@ -26,9 +26,15 @@ const JAVA_NESTED: &[&str] = &[
     "lambda_expression",
 ];
 
+// DR-14: JavaScript files (JSX included) are parsed with the JavaScript grammar, which accepts JSX.
 fn typescript_grammar(path: &str) -> &'static str {
     if path.ends_with(".tsx") {
         "tsx"
+    } else if [".js", ".jsx", ".mjs", ".cjs"]
+        .iter()
+        .any(|ext| path.ends_with(ext))
+    {
+        "javascript"
     } else {
         "typescript"
     }
@@ -395,6 +401,36 @@ export function outer(ws: number[]): number[] {
         assert_eq!((entries[0].start_line, entries[0].end_line), (1, 3));
     }
 
+    // DR-14: .js, .jsx, .mjs and .cjs paths select the javascript grammar.
+    #[test]
+    fn dr14_javascript_paths_select_the_javascript_grammar() {
+        let source = "export const View = (xs) => {\n  return <div>{xs.length}</div>;\n};\n";
+        for path in ["ui/view.js", "ui/view.jsx", "ui/view.mjs", "ui/view.cjs"] {
+            let mut interner = Interner::new();
+            let (entries, warning) =
+                entries_in_source(Language::TypeScript, source, path, path, &mut interner);
+            assert_eq!(warning, None, "{path}");
+            assert_eq!(entries.len(), 1, "{path}");
+            assert_eq!(entries[0].language, Language::TypeScript, "{path}");
+            assert_eq!(entries[0].file, path);
+            assert_eq!(
+                (entries[0].start_line, entries[0].end_line),
+                (1, 3),
+                "{path}"
+            );
+        }
+    }
+
+    // DR-14: JavaScript functions and class methods are candidates.
+    #[test]
+    fn dr14_javascript_class_method_and_function_are_candidates() {
+        let source = "export function alpha(xs) {\n  return xs;\n}\nexport class Box {\n  run(ys) {\n    return ys;\n  }\n}\n";
+        assert_eq!(
+            spans(Language::TypeScript, "a.js", source),
+            vec![(1, 3), (5, 7)]
+        );
+    }
+
     // DR-11: Rust candidates are functions and methods with a body; functions in mod tests,
     // closures, and functions nested in a function body are excluded.
     #[test]
@@ -449,6 +485,21 @@ def outer(xs):
             spans(Language::Python, "a.py", source),
             vec![(1, 5), (3, 4)]
         );
+    }
+
+    // DR-11: a Rust function in a module not named tests is a candidate.
+    #[test]
+    fn dr11_rust_function_in_a_module_not_named_tests_is_compared() {
+        let source =
+            "mod inner {\n    fn gamma(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n";
+        assert_eq!(spans(Language::Rust, "a.rs", source), vec![(2, 4)]);
+    }
+
+    // DR-11: a TypeScript function declared inside a function is not a candidate.
+    #[test]
+    fn dr11_typescript_function_declared_inside_a_function_is_not_compared() {
+        let source = "export function outer(xs: number[]): number[] {\n  function inner(ys: number[]): number[] {\n    return ys;\n  }\n  return inner(xs);\n}\n";
+        assert_eq!(spans(Language::TypeScript, "a.ts", source), vec![(1, 6)]);
     }
 
     // DR-8: the end line of a function is its last occupied row.
