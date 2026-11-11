@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+# SPDX-License-Identifier: MIT
 """Parity runner for the Rust port of crapper (CR-PB-1..6, AC-1, AC-8, AC-17, AC-20..24).
 
 Usage:
@@ -29,6 +31,8 @@ PARITY = Path(__file__).resolve().parent
 CRATE = PARITY.parent
 APPROVER = "Mads Madsen"
 LICENSE_TITLE = "MIT License"
+HEADER_COPYRIGHT = "// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>"
+HEADER_SPDX = "// SPDX-License-Identifier: MIT"
 LANGUAGE_FIXTURES = ["clojure", "java", "go", "typescript", "rust", "python"]
 TIMING_RUNS = 5
 HEADER_LINES = 10
@@ -630,6 +634,8 @@ def rs_header_problems(path: Path, crate: Path, upstream: dict) -> list[str]:
         problems.append(f"AC-20: {rel}: header upstream-commit is not {upstream['commit']}")
     if not header.get("upstream-path"):
         problems.append(f"AC-20: {rel}: header lacks upstream-path (use 'none' if no counterpart)")
+    if lines[:2] != [HEADER_COPYRIGHT, HEADER_SPDX]:
+        problems.append(f"AC-20: {rel}: header does not start with the copyright and SPDX lines")
     return problems
 
 

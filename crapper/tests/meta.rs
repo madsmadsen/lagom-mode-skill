@@ -1,7 +1,8 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 // upstream: https://github.com/unclebob/crapper
 // upstream-commit: 6fd92c4c9bcc56efb64a2f8743d5a2993bcfd42d
 // upstream-path: none
-// license: MIT
 
 // Offline checks over the repository files: license, upstream headers, parity
 // pin, last parity run, fixes, fixtures, and coverage mapping.
@@ -20,10 +21,11 @@ const LANGUAGES: &[(&str, &str)] = &[
 ];
 const REPORT_DIRS: &[&str] = &["target", "coverage", "htmlcov", "jacoco"];
 const APPROVER: &str = "Mads Madsen";
+const HEADER_COPYRIGHT: &str = "// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>";
+const HEADER_LICENSE: &str = "// SPDX-License-Identifier: MIT";
 const HEADER_REPO: &str = "// upstream: https://github.com/unclebob/crapper";
 const HEADER_COMMIT_PREFIX: &str = "// upstream-commit: ";
 const HEADER_PATH_PREFIX: &str = "// upstream-path: ";
-const HEADER_LICENSE: &str = "// license: MIT";
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -92,24 +94,28 @@ fn rs_files(dirs: &[&str]) -> Vec<PathBuf> {
 }
 
 fn header_ok(text: &str, commit: &str) -> bool {
-    let lines: Vec<&str> = text.lines().take(4).collect();
+    let lines: Vec<&str> = text.lines().take(5).collect();
     match lines.as_slice() {
-        [repo, pin, path, license] => {
-            *repo == HEADER_REPO
+        [copyright, license, repo, pin, path] => {
+            *copyright == HEADER_COPYRIGHT
+                && *license == HEADER_LICENSE
+                && *repo == HEADER_REPO
                 && pin.strip_prefix(HEADER_COMMIT_PREFIX) == Some(commit)
                 && path
                     .strip_prefix(HEADER_PATH_PREFIX)
                     .is_some_and(|v| !v.trim().is_empty())
-                && *license == HEADER_LICENSE
         }
         _ => false,
     }
 }
 
 #[test]
-// AC-20 (license), CR-NFR-5 (license is MIT)
+// AC-20, CR-NFR-5: MIT under the copyright of Mads Madsen, with credit to the original
 fn ac_20_license_is_0bsd() {
-    assert!(read("LICENSE").starts_with("MIT License"));
+    let license = read("LICENSE");
+    assert!(license.starts_with("MIT License"));
+    assert!(license.contains("Copyright (c) 2026 Mads Madsen <mads@onmadsen.com>"));
+    assert!(license.contains("based on crapper by Robert C. Martin"));
 }
 
 #[test]

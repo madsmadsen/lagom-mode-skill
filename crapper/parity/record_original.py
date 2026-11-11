@@ -1,3 +1,5 @@
+# Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+# SPDX-License-Identifier: MIT
 """Record the ORIGINAL Python crapper's output for every run in coverage.toml.
 
 For each run: copy the fixture into a fresh temporary directory, run its

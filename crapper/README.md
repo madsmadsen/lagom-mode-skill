@@ -2,7 +2,7 @@
 
 Rust port of [crapper](https://github.com/unclebob/crapper) by Robert C. Martin. It scores each function with the CRAP metric `CRAP = CC² × (1 − coverage)³ + CC` for Clojure, Java, Go, TypeScript (and JavaScript), Rust, and Python. It needs no Python at run time.
 
-Requirements: `docs/prd/crapper.md` (CR-*). License: MIT (`LICENSE`).
+Requirements: `docs/prd/crapper.md` (CR-*). License: MIT (`LICENSE`). Copyright (C) 2026 Mads Madsen. crapper is based on crapper by Robert C. Martin, which uses the BSD Zero Clause License.
 
 ## Install
 

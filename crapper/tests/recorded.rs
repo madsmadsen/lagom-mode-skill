@@ -1,7 +1,8 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 // upstream: https://github.com/unclebob/crapper
 // upstream-commit: 6fd92c4c9bcc56efb64a2f8743d5a2993bcfd42d
 // upstream-path: none
-// license: MIT
 
 //! Offline replay of the parity runs in `parity/coverage.toml`.
 //! Each run executes the Rust binary in a copy of its fixture and compares the

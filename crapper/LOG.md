@@ -213,3 +213,12 @@ Read first: `git diff 4384d65 HEAD -- docs/prd/crapper.md`. The new items are CR
 - The install notice (CR-15) still says "package.json and the lockfile are restored afterward". The command itself is on stderr from `run_shell` (`+ (cwd) pnpm add ...`), which is what AC-27 asks for.
 - `yarn add --no-lockfile` and `bun add --no-save` flags are as the PRD states. The repository tests use stub tools, not live installs.
 
+
+
+## 2026-11-11: License holder and credit (CR-NFR-5, AC-20)
+
+- Mads Madsen chose: MIT, copyright Mads Madsen <mads@onmadsen.com>, credit "based on crapper by Robert C. Martin" in LICENSE and README.
+- `LICENSE`: copyright line is now Mads Madsen. An acknowledgment paragraph names the original and its license.
+- Every `.rs` file in `src/` and `tests/` and every parity `.py` script starts with `Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `SPDX-License-Identifier: MIT`. The old per-file license credit to Robert C. Martin is gone. The reference to the matching upstream file stays, for the parity checks.
+- `Cargo.toml` names the author. README names the copyright holder and the original. `tests/meta.rs` (AC-20) and `parity/run.py --check-meta` now require the two new header lines and the new LICENSE text. `--check-meta` reports only the seven unapproved `fixes.toml` entries.
+- Proof: `cargo fmt --check` clean, `cargo clippy --all-targets` no issues, `cargo test` 401 passed, 1 ignored. Only comments, metadata and test checks changed, so the crapper, dryer and mutator gates were not rerun.
