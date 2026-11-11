@@ -1,4 +1,5 @@
-// Derived from dryer by Robert C. Martin (https://github.com/unclebob/dryer), BSD Zero Clause License.
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 // Ports the Python entry point (src/dryer/cli.py `main`).
 
 fn main() {

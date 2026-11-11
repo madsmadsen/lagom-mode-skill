@@ -1,4 +1,5 @@
-// Derived from dryer by Robert C. Martin (https://github.com/unclebob/dryer), BSD Zero Clause License.
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 // Ports src/dryer/cli.py: GitStatusError, _git, _changed_files, _positionals, _tracked_source,
 // _changed_source, _explicit_files, _selected, _apply_filters, select_files.
 

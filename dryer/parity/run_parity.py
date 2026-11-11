@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+# SPDX-License-Identifier: MIT
 """Parity runner: the Rust port of dryer against the pinned Python original.
 
 Usage:

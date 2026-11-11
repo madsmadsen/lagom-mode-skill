@@ -1,4 +1,5 @@
-// Derived from dryer by Robert C. Martin (https://github.com/unclebob/dryer), BSD Zero Clause License.
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! Port of `dryer/src/dryer/clojure_read.py`: reads Clojure source into forms
 //! and normalizes them the way dry4clj does.
 //!

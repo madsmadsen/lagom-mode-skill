@@ -2,6 +2,7 @@
 name = "dryer"
 version = "0.1.0"
 edition = "2021"
+authors = ["Mads Madsen <mads@onmadsen.com>"]
 license = "MIT"
 publish = false
 description = "Structural duplicate finder for Clojure, Java, Go, TypeScript, Rust, and Python."

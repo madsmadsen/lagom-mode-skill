@@ -94,4 +94,4 @@ Options for the runner:
 
 ## License
 
-dryer uses the MIT License. See [LICENSE](LICENSE). The original dryer by Robert C. Martin uses the BSD Zero Clause License.
+dryer uses the MIT License. See [LICENSE](LICENSE). Copyright (C) 2026 Mads Madsen. dryer is based on dryer by Robert C. Martin, which uses the BSD Zero Clause License.

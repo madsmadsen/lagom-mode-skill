@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! End-to-end tests for the `dryer` binary. Each test runs the compiled CLI in
 //! a fresh project directory named `proj` and checks what a user would see.
 

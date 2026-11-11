@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! Replays the parity suite against the compiled port.
 //!
 //! Each case in `parity/coverage.toml` runs on a fresh copy of its fixture and

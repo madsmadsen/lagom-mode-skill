@@ -142,3 +142,12 @@ Start: the mutator port found 16 survivors: `astnorm.rs` (6), `clojure.rs` (3), 
 9. `shape.rs` 101, 102 (equivalent for sorted, unique ids): `shared_count` now steps with iterator `next()`, with no step literal.
 10. A mutant at `Reader::get` in `clojure.rs` (`pos += 1` to `pos += 0`) makes the reader loop and allocate without end. The mutator ends it as a timeout and counts it as killed. No code change.
 11. Result in the scratch copy: 197 sites, 197 killed, 0 survivors, 0 uncovered. `cargo test` 215 pass, clippy clean. crapper `--threshold 9.99` exit 0. dryer `--threshold 0.8` exit 0. `parity/run_parity.py` (venv with tree-sitter-language-pack): 33 cases, 0 failed, 1 awaiting approval (`js-read-as-typescript`, unchanged).
+
+
+## 2026-11-11: License holder and credit (DR-NFR-5)
+
+- Mads Madsen chose: MIT, copyright Mads Madsen <mads@onmadsen.com>, credit "based on dryer by Robert C. Martin" in LICENSE and README.
+- `LICENSE`: copyright line is now Mads Madsen. An acknowledgment paragraph names the original and its license.
+- Every `.rs` file in `src/` and `tests/` and every parity `.py` script starts with `Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `SPDX-License-Identifier: MIT`. The old per-file license credit to Robert C. Martin is gone. The reference to the matching upstream file stays, for the parity checks.
+- `Cargo.toml` names the author. README names the copyright holder and the original.
+- Proof: `cargo fmt --check` clean, `cargo clippy --all-targets` no issues, `cargo test` 215 passed. Only comments, metadata and test checks changed, so the crapper, dryer and mutator gates were not rerun.

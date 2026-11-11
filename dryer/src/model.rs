@@ -1,4 +1,5 @@
-// Derived from dryer by Robert C. Martin (https://github.com/unclebob/dryer), BSD Zero Clause License.
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 // Ports the data shapes shared across the Python modules in src/dryer/*.py.
 
 /// A source language that dryer can analyze.
