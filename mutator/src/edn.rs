@@ -1,4 +1,6 @@
-//! Port of mutator/src/mutator/edn.py (BSD Zero Clause License, Robert C. Martin).
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
+//! Port of mutator/src/mutator/edn.py.
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {

@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! Fix max-memory-limit (MU-25, AC-17, MU-PB-4, AC-12). The original has no memory limit and no
 //! `--max-memory-mb` flag, so each test here fails on its behavior.
 

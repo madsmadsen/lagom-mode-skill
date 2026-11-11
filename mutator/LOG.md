@@ -173,3 +173,12 @@ Gates (scratch copy under `/tmp`, own `CARGO_TARGET_DIR`, 2 workers, `ulimit -t 
   through the binary): 0 survivors, 0 uncovered in each.
 - `parity/run.py` against the pinned original: all runs PASS, none FAIL or DIFF-ALLOWED.
 - Not done: the Linux build of `memory.rs` (the 4-line `sysconf` plus `/proc` glue) was not built or run on a Linux guest. The `/proc` parsing is tested on macOS with a fake `/proc`.
+
+
+## 2026-11-11: License holder and credit (MU-NFR-4)
+
+- Mads Madsen chose: MIT, copyright Mads Madsen <mads@onmadsen.com>, credit "based on mutator by Robert C. Martin" in LICENSE and README.
+- `LICENSE`: copyright line is now Mads Madsen. An acknowledgment paragraph names the original and its license.
+- Every `.rs` file in `src/` and `tests/` and every parity `.py` script starts with `Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `SPDX-License-Identifier: MIT`. The old per-file license credit to Robert C. Martin is gone. The reference to the matching upstream file stays, for the parity checks.
+- `Cargo.toml` names the author. README names the copyright holder and the original.
+- Proof: `cargo fmt --check` clean, `cargo clippy --all-targets` no issues, `cargo test` 515 passed. Only comments, metadata and test checks changed, so the crapper, dryer and mutator gates were not rerun.

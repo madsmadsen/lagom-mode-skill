@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! AC-9 (MU-10, MU-11) and MU-16, simulated.
 //!
 //! A fake `cargo` on a restricted PATH stands in for the toolchain. The PATH holds only the fake

@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! End-to-end checks of MU-15 timeouts and the compile-failure rule (AC-4).
 
 mod common;

@@ -5,8 +5,9 @@ port of [mutator](https://github.com/unclebob/mutator) by Robert C. Martin. It n
 `crapper` checkout. It writes the same `.metrics/mutate/<namespace>.edn` snapshots that
 [uml-viewer](https://github.com/unclebob/uml-viewer) reads.
 
-License: MIT License (see `LICENSE`). Each source file names the file of the original,
-or of crapper, that it ports.
+License: MIT License (see `LICENSE`). Copyright (C) 2026 Mads Madsen. mutator is based on
+mutator by Robert C. Martin, which uses the BSD Zero Clause License. For the parity checks, each source file
+names the file of the original, or of crapper, that it matches.
 
 ## Install
 

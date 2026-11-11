@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! End-to-end checks of the upstream fixes of PRD section 5.4: MU-22 (AC-14), MU-23 (AC-15),
 //! and MU-24 (AC-16). Each test fails on the behavior of the original.
 

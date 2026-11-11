@@ -1,4 +1,6 @@
-//! Port of crapper languages/golang.py (BSD Zero Clause License, Robert C. Martin).
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
+//! Port of crapper languages/golang.py.
 //!
 //! Functions are namespaced by their package import path. Methods are namespaced by their
 //! receiver type (`import/path.Widget`). The import path comes from the nearest `go.mod`.

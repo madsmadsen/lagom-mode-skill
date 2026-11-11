@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! Checks `parity/coverage.toml` against the CLI help (AC-1) and the README table
 //! rows, one per language (MU-12).
 

@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! Shared helpers for the end-to-end tests. Every test runs the built `mutator` binary.
 #![allow(dead_code)]
 

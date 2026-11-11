@@ -1,4 +1,6 @@
-//! Port of mutator/src/mutator/runner.py (BSD Zero Clause License, Robert C. Martin).
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
+//! Port of mutator/src/mutator/runner.py.
 
 use std::ffi::{OsStr, OsString};
 use std::fs;

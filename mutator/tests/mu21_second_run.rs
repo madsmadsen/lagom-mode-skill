@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! End-to-end checks of MU-21 second runs (AC-13) and MU-NFR-1 determinism.
 
 mod common;

@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! Checks the parity records: `parity/fixes.toml` (MU-PB-3, MU-PB-4, AC-12) and
 //! `parity/upstream.toml` (MU-PB-1). The crate has no TOML dependency, so the files
 //! are read with plain string matching.

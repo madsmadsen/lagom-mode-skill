@@ -1,5 +1,7 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! Resident memory of a process group (MU-25). The original has no memory limit, so this file
-//! has no counterpart in it. License: MIT License, as the rest of the port.
+//! has no counterpart in it.
 
 const BYTES_PER_MIB: u64 = 1024 * 1024;
 

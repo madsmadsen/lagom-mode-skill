@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! AC-2, AC-11, AC-12 (base); MU-5, MU-8, MU-9, MU-12.
 //!
 //! The golden files in `tests/golden/<lang>/` come from the ORIGINAL Python mutator, run on each

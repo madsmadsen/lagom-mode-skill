@@ -2,6 +2,8 @@
 name = "mutator"
 version = "0.1.0"
 edition = "2024"
+authors = ["Mads Madsen <mads@onmadsen.com>"]
+license = "MIT"
 
 [dependencies]
 chrono = "0.4.45"

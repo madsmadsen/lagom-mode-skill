@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+# SPDX-License-Identifier: MIT
 """Parity runner: the original mutator (Python) against the Rust port.
 
 Run from the repository root:

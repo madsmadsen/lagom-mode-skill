@@ -1,6 +1,8 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! mutator: mutation testing for Clojure, Java, Go, TypeScript, Rust, and Python.
 //!
-//! A Rust port of github.com/unclebob/mutator (BSD Zero Clause License).
+//! Based on mutator by Robert C. Martin (https://github.com/unclebob/mutator).
 
 pub mod bind;
 pub mod cli;

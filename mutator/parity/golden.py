@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+# SPDX-License-Identifier: MIT
 """Write tests/golden/<lang>/ from the ORIGINAL mutator on each parity fixture (AC-11).
 
 Run: /tmp/mu/venv/bin/python mutator/parity/golden.py

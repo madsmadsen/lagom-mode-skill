@@ -1,4 +1,6 @@
-//! Port of crapper languages/__init__.py (BSD Zero Clause License, Robert C. Martin).
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
+//! Port of crapper languages/__init__.py.
 
 pub mod clojure;
 pub mod golang;

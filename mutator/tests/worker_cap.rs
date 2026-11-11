@@ -1,3 +1,5 @@
+// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
+// SPDX-License-Identifier: MIT
 //! Fix worker-cap-half-the-cores (MU-17, MU-PB-4, AC-12).
 
 use std::process::Command;
