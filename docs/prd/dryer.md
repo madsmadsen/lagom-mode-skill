@@ -60,7 +60,7 @@ Each requirement in this section comes from an open issue or pull request of the
 - DR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port is lower than the median wall-clock time of 5 runs of the original. Both run on one named CI runner: Linux x86_64, Ubuntu 22.04. The time of the original includes Python start-up and excludes the clone and the install.
 - DR-NFR-3: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
 - DR-NFR-4: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
-- DR-NFR-5: License. The port uses the MIT License. Each file that derives from the original names its source.
+- DR-NFR-5: License. The port uses the MIT License. `dryer/LICENSE` names Mads Madsen (`mads@onmadsen.com`) as the copyright holder. It also says that the port is based on dryer by Robert C. Martin, which uses the BSD Zero Clause License. Each `.rs` file starts with the lines `// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `// SPDX-License-Identifier: MIT`. Each file that matches a file of the original names that file.
 
 ## 7. Parity and bug fixes
 
