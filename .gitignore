@@ -1,0 +1,25 @@
+# Build and tool output
+target/
+.metrics/
+.work/
+.cache/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets and keys
+.env
+.env.*
+*.pem
+*.key
+id_rsa*
+id_ed25519*
+
+# Local editor, OS, and agent state
+.DS_Store
+.idea/
+.vscode/
+.claude/settings.local.json

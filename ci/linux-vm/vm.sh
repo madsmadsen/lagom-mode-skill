@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Linux guests for the three ports, on a macOS arm64 host with qemu from Homebrew.
-# Scratch state lives in $WORK (default /tmp/linux-vm). Nothing is shared with the guest:
+# Scratch state lives in $WORK (default $TMPDIR/linux-vm, mode 700). Nothing is shared with the guest:
 # sources are copied in as a tar stream and built on the guest's own disk.
 #
 #   vm.sh fetch                  download the Ubuntu 22.04 (glibc 2.35) cloud images
@@ -12,9 +12,12 @@
 #   vm.sh stop   ARCH            shut the guest down, then kill qemu if it lingers
 #   vm.sh kill                   kill every qemu started from $WORK
 # ARCH is arm64 or x86_64.
+# VM_NET=restricted boots the guest with no network except the ssh port forward. Use it after
+# setup, when the guest builds code that you do not trust (cargo then needs --offline).
 set -euo pipefail
 
-WORK=${WORK:-/tmp/linux-vm}
+WORK=${WORK:-${TMPDIR:-/tmp}/linux-vm}
+WORK=${WORK%/}
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 QEMU_DIR=${QEMU_DIR:-/opt/homebrew/bin}
@@ -33,9 +36,14 @@ arch_check() {
 guest_ssh() { ssh "${SSH_OPTS[@]}" -p "$PORT" dev@127.0.0.1 "$@"; }
 
 cmd_fetch() {
-  mkdir -p "$WORK"
+  mkdir -p -m 700 "$WORK"
+  local base=https://cloud-images.ubuntu.com/jammy/current
+  curl -sS -L -o "$WORK/SHA256SUMS" "$base/SHA256SUMS"
   for img in jammy-server-cloudimg-arm64.img jammy-server-cloudimg-amd64.img; do
-    [ -f "$WORK/$img" ] || curl -sS -L -o "$WORK/$img" "https://cloud-images.ubuntu.com/jammy/current/$img"
+    [ -f "$WORK/$img" ] || curl -sS -L -o "$WORK/$img" "$base/$img"
+    # Refuse an image whose checksum differs from the published SHA256SUMS.
+    (cd "$WORK" && grep -E " \*?$img\$" SHA256SUMS | shasum -a 256 -c -) || {
+      echo "checksum mismatch for $img; removed it" >&2; rm -f "$WORK/$img"; exit 1; }
   done
   [ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N "" -f "$KEY"
 }
@@ -57,9 +65,11 @@ cmd_clone() {
 
 cmd_start() {
   arch_check "$1"; local name=$2
+  local nic="user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$PORT-:22"
+  [ "${VM_NET:-}" = restricted ] && nic+=",restrict=on"
   local common=(-m "${VM_MEM:-6G}" -smp "${VM_CPUS:-6}" -display none -serial "file:$WORK/$name.serial.log"
     -daemonize -pidfile "$WORK/$1.pid"
-    -nic "user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:$PORT-:22"
+    -nic "$nic"
     -drive "file=$WORK/$name.qcow2,if=virtio,format=qcow2")
   [ -f "$WORK/$name-seed.iso" ] && common+=(-drive "file=$WORK/$name-seed.iso,if=virtio,format=raw,readonly=on")
   if [ "$1" = arm64 ]; then

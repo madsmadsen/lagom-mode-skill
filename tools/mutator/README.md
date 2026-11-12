@@ -15,8 +15,6 @@ names the file of the original, or of crapper, that it matches.
 cargo install --git https://github.com/madsmadsen/lagom-mode-skill mutator
 ```
 
-A user needs read access to the repository.
-
 ## Run
 
 ```bash
@@ -63,4 +61,3 @@ the exit codes and the snapshots. See `parity/README.md`.
 cargo build
 cargo test
 cargo clippy --all-targets -- -D warnings
-```

@@ -116,7 +116,7 @@ A port differs from its original only where `tools/<tool>/parity/fixes.toml` lis
 
 ## Development
 
-Read `AGENTS.md` before you change anything. In short:
+Read `AGENTS.md` before you change anything, and `CONTRIBUTING.md` before you run the code of a pull request. In short:
 
 1. Write the failing test first, with the requirement ID in its name.
 2. In the folder of the tool, run `cargo build --release`, `cargo test`, `cargo clippy --all-targets`, and `cargo fmt`.
