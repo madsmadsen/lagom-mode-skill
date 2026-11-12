@@ -2,7 +2,7 @@
 name: crapper
 description: >
   Score each function with the CRAP metric (complexity and missing test
-  coverage) and act on the result. Use inside feature-loop at the unit gates
+  coverage) and act on the result. Use inside lagom-mode at the unit gates
   and the feature gates, or when the user asks for function complexity.
 ---
 

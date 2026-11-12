@@ -1,14 +1,16 @@
 ---
-name: feature-loop
+name: lagom-mode
 description: >
   Implement one small feature through a fixed loop in its own Git worktree.
   Each behavior gets a failing test first. Quality gates (crapper, dryer,
   mutator) decide when the work is done. The loop ends by fast-forwarding the
   source branch. Use when the user asks for a feature, a change, or a fix, or
-  runs /feature-loop. Based on ub-mode by Robert C. Martin.
+  runs /lagom-mode. Based on ub-mode by Robert C. Martin.
 ---
 
-# feature-loop
+# lagom-mode
+
+Lagom is Swedish for "just enough, not too much". Do the smallest change that the gates accept, and nothing more.
 
 Every time you are asked to make a change, run the loop in this file. The loop follows three phases:
 
@@ -78,7 +80,7 @@ When one of these happens, stop the loop. Keep the worktree and the loop branch.
 Make every edit, test run, gate run, and commit inside the loop worktree. Do not change files in another worktree. The only exception is the fast-forward in step 12.
 
 1. Record the source branch and the base commit. Run `git branch --show-current` and `git rev-parse HEAD`. If the output of the first command is empty, HEAD is detached. Stop (stop condition 2).
-2. Create the worktree on a new branch from the base commit: `git worktree add -b feature-loop/<short-feature-name> <path> <base-commit>`. Write the worktree path, the loop branch, the source branch, and the base commit at the top of the log. Go into the worktree. Do the next steps there.
+2. Create the worktree on a new branch from the base commit: `git worktree add -b lagom-mode/<short-feature-name> <path> <base-commit>`. Write the worktree path, the loop branch, the source branch, and the base commit at the top of the log. Go into the worktree. Do the next steps there.
 3. Write one failing test for the next behavior of the feature.
 4. Run the test. Make sure that it fails for the reason that you expect. Write the failure reason in the log. Do not change production code before this step is done.
 5. Make the smallest change that makes the test pass.
@@ -88,9 +90,9 @@ Make every edit, test run, gate run, and commit inside the loop worktree. Do not
 9. If the feature has more behavior, go to step 3.
 10. Run the feature gates on the feature files. If a gate fails, refactor or add tests, then run the tests and go to step 7.
 11. Run `git rev-parse <source-branch>`. If the source branch moved since the base commit, run `git rebase <source-branch>` in the worktree. Write the rebase and the new base commit in the log. Then run all tests and the feature gates again. If the rebase has a conflict, stop (stop condition 4). Go to step 12 only if the tests and the gates pass.
-12. Find the worktree that has the source branch checked out with `git worktree list`. In that worktree, run `git merge --ff-only feature-loop/<short-feature-name>`. This makes no merge commit. If the command fails because that worktree has uncommitted changes, stop (stop condition 3). Never move the source branch with `git branch -f` or `git update-ref`.
+12. Find the worktree that has the source branch checked out with `git worktree list`. In that worktree, run `git merge --ff-only lagom-mode/<short-feature-name>`. This makes no merge commit. If the command fails because that worktree has uncommitted changes, stop (stop condition 3). Never move the source branch with `git branch -f` or `git update-ref`.
 13. If the source branch tracks a remote branch, push the source branch. If the remote rejects the push, stop (stop condition 5).
-14. Remove the loop worktree with `git worktree remove <path>`. Delete the loop branch with `git branch -d feature-loop/<short-feature-name>`. If the worktree has uncommitted changes, do not remove it. Report the changes for a decision by the developer.
+14. Remove the loop worktree with `git worktree remove <path>`. Delete the loop branch with `git branch -d lagom-mode/<short-feature-name>`. If the worktree has uncommitted changes, do not remove it. Report the changes for a decision by the developer.
 15. Report the log.
 
 # First Make it Work

@@ -2,7 +2,7 @@
 name: dryer
 description: >
   Find code that repeats in a similar shape and remove the duplication. Use
-  inside feature-loop at the unit gates and the feature gates, or when the
+  inside lagom-mode at the unit gates and the feature gates, or when the
   user asks for duplicate code.
 ---
 
@@ -58,6 +58,6 @@ For each pair, open the two forms at the lines in the report. Then do one of the
 1. Extract the shared shape into one function. Give the differences to it as arguments. Call it from both places.
 2. If the two forms look alike but mean different things in the domain, change one of them so that its shape differs. Write the reason in the log.
 
-Writing the reason alone does not pass the gate. The pair stays in `:candidates` until its score is below 0.8. If you cannot lower the score within 5 tries, stop and report the pair and your reason (stop condition 1 of feature-loop).
+Writing the reason alone does not pass the gate. The pair stays in `:candidates` until its score is below 0.8. If you cannot lower the score within 5 tries, stop and report the pair and your reason (stop condition 1 of lagom-mode).
 
-Run the tests after each change. Pin the behavior before you extract, as in the Refactoring rule of feature-loop.
+Run the tests after each change. Pin the behavior before you extract, as in the Refactoring rule of lagom-mode.

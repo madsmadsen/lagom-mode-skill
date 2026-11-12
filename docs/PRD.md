@@ -16,7 +16,7 @@ The loop is based on [ub-mode](https://github.com/unclebob/ub-mode) by Robert C.
 
 | Part | Directory | PRD | Content |
 | --- | --- | --- | --- |
-| Skills | `skills/` | [skills.md](prd/skills.md) | The `feature-loop` skill and one skill for each tool. |
+| Skills | `skills/` | [skills.md](prd/skills.md) | The `lagom-mode` skill and one skill for each tool. |
 | crapper | `crapper/` | [crapper.md](prd/crapper.md) | Rust port of crapper: CRAP score for each function. |
 | dryer | `dryer/` | [dryer.md](prd/dryer.md) | Rust port of dryer: pairs of code with the same structure. |
 | mutator | `mutator/` | [mutator.md](prd/mutator.md) | Rust port of mutator: mutation testing. |
@@ -49,7 +49,7 @@ The parts are independent:
 1. Skills work and port work can overlap. The skills ship first and use the Python originals. The skills PRD states how each original goes on the PATH (one wrapper script per tool) and that the mutator original needs a crapper checkout at ../crapper.
 2. A port replaces its original only after it passes its parity criteria and Mads Madsen approves.
 3. The ports can come in any order, because no port depends on another. `[ASSUMPTION]` crapper comes first, because the skills need it in every gate.
-4. The development of this repository uses `feature-loop` with the tools that are installed at that time.
+4. The development of this repository uses `lagom-mode` with the tools that are installed at that time.
 
 ### 5.2 Ports
 
@@ -59,7 +59,7 @@ The parts are independent:
 4. A port does not share code with another port. A duplicated piece of code is accepted as the cost of independence.
 5. The ports build with the Rust stable toolchain. They run on macOS 14 or later and on Linux, on arm64 and x86_64.
 6. A user installs each port with one `cargo install --git` command. The README of each port states this command. The skills do not.
-7. Each port uses the MIT License. `feature-loop` keeps the MIT License notice of ub-mode.
+7. Each port uses the MIT License. `lagom-mode` keeps the MIT License notice of ub-mode.
 
 ### 5.3 Documents and traceability
 
@@ -85,7 +85,7 @@ Each `[ASSUMPTION]` label in this document and in the four part PRDs is an open 
 
 1. AC-1 (section 2, item 1): For each of `crapper/`, `dryer/`, and `mutator/`, `cargo metadata` lists no path dependency and no git dependency on another package in this repository.
 2. AC-2 (section 2, item 2): No file under `skills/` mentions `cargo` or this repository. A search under `skills/` for `cargo` and for `deterministic-coding` finds no match.
-3. AC-3 (section 2, item 3): Each command, positional file argument, flag, exit code, and output that a skill under `skills/` names, including `feature-loop`, appears in section 5 of the skills PRD.
+3. AC-3 (section 2, item 3): Each command, positional file argument, flag, exit code, and output that a skill under `skills/` names, including `lagom-mode`, appears in section 5 of the skills PRD.
 4. AC-4 (section 1, determinism): crapper PRD AC-10, dryer PRD AC-7, and mutator PRD AC-13 pass. On each port's fixtures, after any tool install, two runs of each SK-8 gate command give the same exit code and byte-identical snapshots.
 5. AC-5 (section 3, uml-viewer user): Each `fixes.toml` entry that changes snapshot keys or shape has the fields `uml_viewer_commit` and `uml_viewer_checked_on`, and the fixture snapshot of that entry renders with no error in uml-viewer at that commit.
 

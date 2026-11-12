@@ -3,7 +3,7 @@ name: mutator
 description: >
   Run mutation tests: change the code in small ways and check that a test
   fails. Cover uncovered sites, kill survivors, delete dead code. Use inside
-  feature-loop at the unit gates and the feature gates, or when the user asks
+  lagom-mode at the unit gates and the feature gates, or when the user asks
   whether the tests really check the code.
 ---
 

@@ -1,8 +1,8 @@
-# PRD: feature-loop skills
+# PRD: lagom-mode skills
 
 Status: Draft 1. Owner and approver: Mads Madsen. Date: 2026-11-07.
 
-This document states the requirements for the agent skills in the `skills/` directory. The main skill, `feature-loop`, makes an agent implement one small feature through a fixed loop with quality gates. It is based on [ub-mode](https://github.com/unclebob/ub-mode) by Robert C. Martin.
+This document states the requirements for the agent skills in the `skills/` directory. The main skill, `lagom-mode`, makes an agent implement one small feature through a fixed loop with quality gates. It is based on [ub-mode](https://github.com/unclebob/ub-mode) by Robert C. Martin.
 
 ## 1. Problem
 
@@ -17,7 +17,7 @@ Agents that work in parallel in one checkout also see the changes of each other.
 | Term | Meaning |
 | --- | --- |
 | Skill | A `SKILL.md` file that tells an agent how to do one kind of work. |
-| Loop | The fixed sequence of steps that `feature-loop` runs for one feature. |
+| Loop | The fixed sequence of steps that `lagom-mode` runs for one feature. |
 | Finish | The successful end of a loop: SK-14, SK-16, and SK-18 succeed. |
 | Stop | The end of a loop after a failure: SK-9, SK-12, SK-14, SK-15, or SK-16. |
 | Unit | One behavior of the feature: one failing test and the code that makes it pass. |
@@ -29,7 +29,7 @@ Agents that work in parallel in one checkout also see the changes of each other.
 
 ## 3. Goals
 
-1. An agent that loads `feature-loop` implements one small feature through a fixed loop. It finishes only when all gates pass. Otherwise it stops and reports.
+1. An agent that loads `lagom-mode` implements one small feature through a fixed loop. It finishes only when all gates pass. Otherwise it stops and reports.
 2. Each loop runs in its own worktree, so changes by other agents do not affect its gates.
 3. The skills work in any agent that reads `SKILL.md` files, for example Claude Code, omp, Cursor, and Grok.
 
@@ -52,7 +52,7 @@ The skills use three commands from the `PATH`: `crapper`, `dryer`, and `mutator`
 
 ## 6. The loop
 
-The steps come from ub-mode. `feature-loop` adds the worktree, the order, and the stop conditions.
+The steps come from ub-mode. `lagom-mode` adds the worktree, the order, and the stop conditions.
 
 ```mermaid
 flowchart TD
@@ -81,27 +81,27 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 
 - SK-1: Each skill is one `SKILL.md` file with YAML frontmatter that has `name` and `description`, the same format as ub-mode.
 - SK-2: A skill must not need a tool or a feature that only one agent has.
-- SK-3: `feature-loop` names the three tool skills and tells the agent when to load each one.
+- SK-3: `lagom-mode` names the three tool skills and tells the agent when to load each one.
 
-### 7.2 Main skill: feature-loop
+### 7.2 Main skill: lagom-mode
 
-- SK-4: `feature-loop` keeps the three phases of ub-mode, "First Make it Work", "Then Make it Right", and "Practice", and keeps each rule of ub-mode. One rule changes: ub-mode pushes to the main line at the end, and `feature-loop` integrates into the source branch (SK-14 to SK-16).
-- SK-5: `feature-loop` states the loop of section 6 as numbered steps, in that order.
-- SK-6: `feature-loop` tells the agent to write one failing test, run it, and record the failure reason before it changes production code.
+- SK-4: `lagom-mode` keeps the three phases of ub-mode, "First Make it Work", "Then Make it Right", and "Practice", and keeps each rule of ub-mode. One rule changes: ub-mode pushes to the main line at the end, and `lagom-mode` integrates into the source branch (SK-14 to SK-16).
+- SK-5: `lagom-mode` states the loop of section 6 as numbered steps, in that order.
+- SK-6: `lagom-mode` tells the agent to write one failing test, run it, and record the failure reason before it changes production code.
 - SK-7: A unit or a feature passes its gates when all of these are true at once:
   1. All tests pass.
   2. crapper reports no function with a CRAP score higher than 9.99 in the checked files.
   3. dryer reports no candidate pair with a score of 0.8 or more in the checked files.
   4. mutator exits `0` for the checked files, and the snapshots have 0 uncovered sites in the checked functions.
 - SK-8: The unit gates run `crapper --changed --threshold 9.99`, `dryer --changed --threshold 0.8`, and `mutator --changed`. The feature gates run the same three commands without `--changed`, with the feature files as positional arguments. The agent gets the feature files with `git diff --name-only <base-commit>`.
-- SK-9: `feature-loop` sets a retry limit of 5 tries for each gate. If a gate still fails after the limit, the agent stops and reports the failure and the log. It does not lower a threshold, delete a test, or edit a gate command to pass.
-- SK-10: `feature-loop` tells the agent to keep a log of each action and its reason, and to report the log at the end.
-- SK-11: `feature-loop` tells the agent to commit each unit after its unit gates pass. Each commit message states why, what changed, and how the agent proved it.
-- SK-25: `feature-loop` lists every stop condition (SK-9, SK-12, SK-14, SK-15, SK-16) in one numbered list.
+- SK-9: `lagom-mode` sets a retry limit of 5 tries for each gate. If a gate still fails after the limit, the agent stops and reports the failure and the log. It does not lower a threshold, delete a test, or edit a gate command to pass.
+- SK-10: `lagom-mode` tells the agent to keep a log of each action and its reason, and to report the log at the end.
+- SK-11: `lagom-mode` tells the agent to commit each unit after its unit gates pass. Each commit message states why, what changed, and how the agent proved it.
+- SK-25: `lagom-mode` lists every stop condition (SK-9, SK-12, SK-14, SK-15, SK-16) in one numbered list.
 
 ### 7.3 Worktree
 
-- SK-12: At the start of a loop, the agent records the source branch and the base commit. It creates a new worktree on a new branch `feature-loop/<short-feature-name>` from the base commit. If the loop starts on a detached HEAD, the agent stops before it creates the worktree and asks for a source branch.
+- SK-12: At the start of a loop, the agent records the source branch and the base commit. It creates a new worktree on a new branch `lagom-mode/<short-feature-name>` from the base commit. If the loop starts on a detached HEAD, the agent stops before it creates the worktree and asks for a source branch.
 - SK-13: The agent makes every edit, test run, gate run, and commit inside the loop worktree. It does not change files in another worktree, except the fast-forward in SK-14.
 - SK-14: After the feature gates pass, the agent fast-forwards the source branch to the loop branch with `git merge --ff-only`. It runs the command in the worktree that has the source branch checked out. It makes no merge commit. If the command fails because that worktree has uncommitted changes, the agent stops and reports.
 - SK-15: If the source branch moved since the base commit, the agent rebases the loop branch onto the new tip of the source branch. Then it runs all tests and the feature gates again, and does SK-14 only if they pass. If the rebase has a conflict, the agent stops and reports.
@@ -121,7 +121,7 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 ## 8. Non-functional requirements
 
 - SK-NFR-1: Isolation. Two loops that run at the same time in two worktrees of one repository do not change the gate results of each other.
-- SK-NFR-2: License. `feature-loop` keeps the MIT License notice of ub-mode.
+- SK-NFR-2: License. `lagom-mode` keeps the MIT License notice of ub-mode.
 
 ## 9. Acceptance criteria
 
@@ -134,13 +134,13 @@ The sample features run on the sample Rust project `samples/rust-todo`, a comman
 5. Add a `--tag <name>` option to `add`, and a `--tag <name>` filter to `list`.
 
 1. AC-1 (SK-1, SK-3, SK-4, SK-5, SK-20 to SK-25): `docs/skill-checklist.md` has one item for each of these requirements. Mads Madsen inspects the skills and records pass or fail for each item. All items pass.
-2. AC-2 (SK-7, SK-9): An agent loads `feature-loop` and gets a small feature request. The agent ends with all four conditions of SK-7 true for the feature files, or with a stop report after the retry limit. Mads Madsen reviews the log for the 5 sample features.
+2. AC-2 (SK-7, SK-9): An agent loads `lagom-mode` and gets a small feature request. The agent ends with all four conditions of SK-7 true for the feature files, or with a stop report after the retry limit. Mads Madsen reviews the log for the 5 sample features.
 3. AC-3 (SK-6): In the log of each sample feature, every unit has a run of its failing test, with the failure reason recorded, before the first change to production code in that unit.
 4. AC-4 (SK-8): In one sample feature, unit 1 and unit 3 add two functions that dryer scores 0.8 or more. The unit gates pass, the feature gates fail, and the agent removes the duplication before it finishes.
 5. AC-5 (SK-9): For every sample feature, a script finds no change to a gate command or a threshold under `skills/`, and no deleted test file in the diff of the loop branch.
 6. AC-6 (SK-12): A loop that starts on a detached HEAD stops before it runs `git worktree add`, and asks for a source branch.
 7. AC-7 (SK-12, SK-13, SK-NFR-1): Two agents run two loops in one repository at the same time. Each loop log shows its own worktree, and no commit in one loop branch contains a file change from the other loop.
-8. AC-8 (SK-14, SK-18): After a loop that finishes, the source branch points to the last commit of the loop, and the history has no merge commit. `git worktree list` does not show the loop worktree, and `git branch --list feature-loop/*` does not show the loop branch.
+8. AC-8 (SK-14, SK-18): After a loop that finishes, the source branch points to the last commit of the loop, and the history has no merge commit. `git worktree list` does not show the loop worktree, and `git branch --list lagom-mode/*` does not show the loop branch.
 9. AC-9 (SK-14, SK-19): The worktree that has the source branch checked out has uncommitted changes when the feature gates pass. The agent stops and reports, and the loop worktree and the loop branch still exist.
 10. AC-10 (SK-15): Another commit lands on the source branch while a loop runs. At the end, the log shows a rebase, a second run of the feature gates, and then the fast-forward.
 11. AC-11 (SK-15, SK-19): The rebase has a conflict. The agent stops and reports, and the loop worktree and the loop branch still exist.
