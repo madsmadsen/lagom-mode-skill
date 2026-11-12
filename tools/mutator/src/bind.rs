@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/functions.py.
+//! Port of src/mutator/functions.py.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::Path;

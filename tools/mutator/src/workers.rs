@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/workers.py.
+//! Port of src/mutator/workers.py.
 //!
 //! Each worker is a directory under target/mutation-workers. Project files are linked in. The file
 //! under test is a private copy, so workers can mutate it at the same time without touching the

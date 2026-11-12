@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/runner.py.
+//! Port of src/mutator/runner.py.
 
 use std::ffi::{OsStr, OsString};
 use std::fs;

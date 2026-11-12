@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/metrics.py.
+//! Port of src/mutator/metrics.py.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs;

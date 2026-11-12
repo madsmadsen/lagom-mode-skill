@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of crapper/src/crapper/runners.py.
+//! Port of crapper src/crapper/runners.py.
 
 use crate::discover::{is_test_file, language_of};
 use crate::fs_util::resolve;

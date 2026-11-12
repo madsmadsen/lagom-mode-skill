@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/engine.py.
+//! Port of src/mutator/engine.py.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;

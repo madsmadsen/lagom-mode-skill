@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of `dryer/astnorm.py`: normalize a tree-sitter subtree the way dry4clj
+//! Port of `src/dryer/astnorm.py`: normalize a tree-sitter subtree the way dry4clj
 //! normalizes a Clojure form.
 //!
 //! The name in call position stays: `filter`, `Println`, `map`, an operator, the

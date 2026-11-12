@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/edn.py.
+//! Port of src/mutator/edn.py.
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {

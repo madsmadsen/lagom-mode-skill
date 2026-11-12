@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/report.py.
+//! Port of src/mutator/report.py.
 
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap, HashSet};

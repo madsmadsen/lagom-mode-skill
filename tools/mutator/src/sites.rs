@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/sites.py.
+//! Port of src/mutator/sites.py.
 
 use tree_sitter::Node;
 

@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-// Ports dryer/src/dryer/report.py: text and EDN reports. The text layout matches dry4clj.
+// Ports src/dryer/report.py: text and EDN reports. The text layout matches dry4clj.
 
 use std::fs;
 use std::io;

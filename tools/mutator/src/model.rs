@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/model.py.
+//! Port of src/mutator/model.py.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 

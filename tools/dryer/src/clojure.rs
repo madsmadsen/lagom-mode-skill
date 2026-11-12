@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of `dryer/src/dryer/clojure_read.py`: reads Clojure source into forms
+//! Port of `src/dryer/clojure_read.py`: reads Clojure source into forms
 //! and normalizes them the way dry4clj does.
 //!
 //! Names in argument position, keywords, and literals become generic markers.

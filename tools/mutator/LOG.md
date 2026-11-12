@@ -187,3 +187,4 @@ Gates (scratch copy under `/tmp`, own `CARGO_TARGET_DIR`, 2 workers, `ulimit -t 
 
 - Moved the crate from `mutator/` to `tools/mutator/`. Reason: Mads Madsen asked for one `tools/` folder for the three ports. Paths in the crate are relative to the crate or to the runner file, so no code changed. Updated the docs that name the old path.
 - Ran `cargo clean --profile dev`, then `cargo test`, `cargo clippy --all-targets`, and `cargo fmt --check`. Reason: the old test binaries kept the absolute path of the crate in `CARGO_BIN_EXE_mutator`, and cargo did not rebuild them after the move. All tests pass, with 0 clippy warnings.
+- Changed the upstream file names in the header comments of `src/*.rs` from `mutator/src/...` to `src/...`, the path in the original repository. Reason: after the move to `tools/`, a path that starts with `mutator/` looked like a path in this repository. Comments only. `cargo build` and `cargo fmt --check` pass.

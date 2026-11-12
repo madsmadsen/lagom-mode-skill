@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/cli.py.
+//! Port of src/mutator/cli.py.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

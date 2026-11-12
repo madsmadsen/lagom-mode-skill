@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of the tree-sitter-clojure node shapes that mutator/src/mutator/sites.py walks.
+//! Port of the tree-sitter-clojure node shapes that src/mutator/sites.py walks.
 
 /// A Clojure form: its tree-sitter-clojure kind, its byte span, and its child forms.
 #[derive(Clone, Debug, PartialEq, Eq)]

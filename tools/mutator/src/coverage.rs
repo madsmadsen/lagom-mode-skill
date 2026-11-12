@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of mutator/src/mutator/coverage.py and the crapper/src/crapper/coverage.py loaders
+//! Port of src/mutator/coverage.py and the crapper src/crapper/coverage.py loaders
 //! it uses.
 //!
 //! Reports are read with lossy UTF-8 and sorted before merging, so the result does not depend

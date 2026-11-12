@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-// Ports dryer/src/dryer/scan.py: read source files and pair the forms that clear the threshold.
+// Ports src/dryer/scan.py: read source files and pair the forms that clear the threshold.
 
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};

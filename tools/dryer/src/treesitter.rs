@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-//! Port of `dryer/treesitter.py`: parser setup and small node helpers.
+//! Port of `src/dryer/treesitter.py`: parser setup and small node helpers.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
