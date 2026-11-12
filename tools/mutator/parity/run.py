@@ -5,11 +5,11 @@
 
 Run from the repository root:
 
-    /tmp/mu/venv/bin/python mutator/parity/run.py
+    /tmp/mu/venv/bin/python tools/mutator/parity/run.py
 
 Each [[run]] in coverage.toml runs twice, in two copies of its fixture: once
 with the original (`python -m mutator` from the venv) and once with the port
-(MUTATOR_BIN, default mutator/target/debug/mutator). Both sides must agree on:
+(MUTATOR_BIN, default tools/mutator/target/debug/mutator). Both sides must agree on:
 
 - the exit code;
 - every file under .metrics/ after the original's EDN reader parses the .edn

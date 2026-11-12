@@ -13,7 +13,7 @@ mutator makes one small change (a mutant) to the code, then runs the tests. If a
 
 ## Install
 
-The install instructions are in `mutator/README.md` in the `deterministic-coding` repository. Run `mutator --help` to make sure that the command is on the `PATH`.
+The install instructions are in `tools/mutator/README.md` in the `deterministic-coding` repository. Run `mutator --help` to make sure that the command is on the `PATH`.
 
 ## Run
 

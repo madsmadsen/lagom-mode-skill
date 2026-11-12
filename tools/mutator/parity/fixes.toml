@@ -1,5 +1,5 @@
 # MU-PB-3: every difference from the original. MU-PB-6: Mads Madsen approves each entry.
-# Each entry names a test (MU-PB-4, AC-12) in `mutator/tests/`.
+# Each entry names a test (MU-PB-4, AC-12) in `tools/mutator/tests/`.
 
 [[fix]]
 id = "second-run-near-timeout"

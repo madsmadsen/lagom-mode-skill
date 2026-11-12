@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 """Write tests/golden/<lang>/ from the ORIGINAL mutator on each parity fixture (AC-11).
 
-Run: /tmp/mu/venv/bin/python mutator/parity/golden.py
+Run: /tmp/mu/venv/bin/python tools/mutator/parity/golden.py
 Each golden folder holds: scan.out, run.out, run.exit, and snapshots/<path>.edn (tested-at removed).
 The Rust test tests/fixtures_langs.rs replays the port on the same fixtures and compares.
 """

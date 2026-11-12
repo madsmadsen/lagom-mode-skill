@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Tests for parity/run.py normalize() (CR-PB-3: output differences from the original).
 
-Stdlib only. Run from crapper/: python3.12 -m unittest parity/test_normalize.py
+Stdlib only. Run from tools/crapper/: python3.12 -m unittest parity/test_normalize.py
 """
 
 from __future__ import annotations

@@ -82,7 +82,10 @@ cmd_push() {
   arch_check "$1"
   guest_ssh 'rm -rf ~/src && mkdir -p ~/src'
   # git decides what ships: tracked and untracked files minus .gitignore (target/, .metrics/, .work/).
-  (cd "$REPO" && git ls-files -z -co --exclude-standard -- crapper dryer mutator ci/linux-vm \
+  # The crates land in ~/src/<crate>, next to ~/src/ci/linux-vm, so the guest scripts keep their paths.
+  (cd "$REPO/tools" && git ls-files -z -co --exclude-standard -- crapper dryer mutator \
+    | COPYFILE_DISABLE=1 tar -c --no-xattrs --no-mac-metadata --null -T -) | guest_ssh 'tar -x --warning=no-unknown-keyword -C ~/src'
+  (cd "$REPO" && git ls-files -z -co --exclude-standard -- ci/linux-vm \
     | COPYFILE_DISABLE=1 tar -c --no-xattrs --no-mac-metadata --null -T -) | guest_ssh 'tar -x --warning=no-unknown-keyword -C ~/src'
 }
 

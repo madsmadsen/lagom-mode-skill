@@ -12,7 +12,7 @@ names the file of the original, or of crapper, that it matches.
 ## Install
 
 ```bash
-cargo install --git <URL of this repository> --path mutator mutator
+cargo install --git <URL of this repository> --path tools/mutator mutator
 ```
 
 Use the repository URL that your team uses. A user needs read access to the repository.

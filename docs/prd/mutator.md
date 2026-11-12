@@ -2,7 +2,7 @@
 
 Status: Draft 1. Owner and approver: Mads Madsen. Date: 2026-11-07.
 
-This document states the requirements for `mutator`, a Rust port of [mutator](https://github.com/unclebob/mutator) by Robert C. Martin. The port is one Cargo crate in the `mutator/` directory. It does not depend on another crate or tool in this repository.
+This document states the requirements for `mutator`, a Rust port of [mutator](https://github.com/unclebob/mutator) by Robert C. Martin. The port is one Cargo crate in the `tools/mutator/` directory. It does not depend on another crate or tool in this repository.
 
 ## 1. Problem
 
@@ -12,7 +12,7 @@ mutator makes small changes to the code and runs the tests after each change. A 
 
 | Term | Meaning |
 | --- | --- |
-| Original | The Python mutator at the commit pinned in `mutator/parity/upstream.toml`. |
+| Original | The Python mutator at the commit pinned in `tools/mutator/parity/upstream.toml`. |
 | Port | The Rust mutator that this document specifies. |
 | Mutant | A copy of the code with one small change, for example `<` to `<=`. |
 | Site | A place in the code where mutator can make a mutant. |
@@ -25,7 +25,7 @@ mutator makes small changes to the code and runs the tests after each change. A 
 
 ## 3. Goals
 
-1. The port is a drop-in replacement for the original: same command name, same flags, same exit codes, same snapshots. The only differences are the bug fixes in `mutator/parity/fixes.toml` (section 7).
+1. The port is a drop-in replacement for the original: same command name, same flags, same exit codes, same snapshots. The only differences are the bug fixes in `tools/mutator/parity/fixes.toml` (section 7).
 2. The port supports the six languages of the original: Clojure, Java, Go, TypeScript (with JavaScript), Rust, and Python.
 3. The port needs no Python and no checkout of another repository at run time. A Python project still needs Python to run its own tests.
 
@@ -67,12 +67,12 @@ The original imports code from a crapper checkout for the work in this section. 
 - MU-18: Before each run that is not a scan run, the port restores the source files from `target/mutator-backup/`, the same as the original.
 - MU-19: If a snapshot exists, the port runs differentially. It reruns the survivors and every site in a function whose text changed. `--mutate-all` reruns all sites.
 - MU-20: The port exits `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives.
-- MU-21: When a mutant times out, or its test time is within 10% of its timeout, the port runs that mutant once more with 2 times the timeout. The outcome of this second run is the outcome of the mutant. This behavior differs from the original, and `mutator/parity/fixes.toml` lists it.
-- MU-25: The port limits the memory of each mutant test run. The limit is the total resident memory of all processes in the process group of the test command. The default limit is 4096 MiB. The flag `--max-memory-mb N` sets the limit to `N` MiB, and `--max-memory-mb 0` turns the limit off. The port rejects a value that is not a whole number of 0 or more, with exit code `1`. While a mutant test run waits, the port reads the memory of the process group at least once each second. If the memory is over the limit, the port kills the process group with `SIGKILL`, and the mutant counts as killed. The baseline run has no memory limit. MU-21 does not run a mutant again because of the memory limit. This behavior differs from the original, and `mutator/parity/fixes.toml` lists it.
+- MU-21: When a mutant times out, or its test time is within 10% of its timeout, the port runs that mutant once more with 2 times the timeout. The outcome of this second run is the outcome of the mutant. This behavior differs from the original, and `tools/mutator/parity/fixes.toml` lists it.
+- MU-25: The port limits the memory of each mutant test run. The limit is the total resident memory of all processes in the process group of the test command. The default limit is 4096 MiB. The flag `--max-memory-mb N` sets the limit to `N` MiB, and `--max-memory-mb 0` turns the limit off. The port rejects a value that is not a whole number of 0 or more, with exit code `1`. While a mutant test run waits, the port reads the memory of the process group at least once each second. If the memory is over the limit, the port kills the process group with `SIGKILL`, and the mutant counts as killed. The baseline run has no memory limit. MU-21 does not run a mutant again because of the memory limit. This behavior differs from the original, and `tools/mutator/parity/fixes.toml` lists it.
 
 ### 5.4 Upstream fixes
 
-Each requirement in this section comes from an open issue of the original, and differs from the original at the pinned commit. Each one has an entry in `mutator/parity/fixes.toml` (MU-PB-3) and a test (MU-PB-4).
+Each requirement in this section comes from an open issue of the original, and differs from the original at the pinned commit. Each one has an entry in `tools/mutator/parity/fixes.toml` (MU-PB-3) and a test (MU-PB-4).
 
 - MU-22: In TypeScript and JavaScript, the port treats the import specifiers `'.'` and `'..'` as relative imports ([issue 29](https://github.com/unclebob/mutator/issues/29)). It resolves each one to the `index.<ext>` file in that directory. If that file is the mutated file, the port copies the test file into the worker, so the test loads the mutant.
 - MU-23: In Python, the port makes these mutants ([issue 10](https://github.com/unclebob/mutator/issues/10)):
@@ -91,23 +91,23 @@ Each requirement in this section comes from an open issue of the original, and d
 - MU-NFR-1: Determinism. Two runs on the same files give the same outcome for each mutant. A mutant near its timeout gets a stable outcome through MU-21.
 - MU-NFR-2: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
 - MU-NFR-3: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
-- MU-NFR-4: License. The port uses the MIT License. `mutator/LICENSE` names Mads Madsen (`mads@onmadsen.com`) as the copyright holder. It also says that the port is based on mutator by Robert C. Martin, which uses the BSD Zero Clause License. Each `.rs` file starts with the lines `// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `// SPDX-License-Identifier: MIT`. Each file that matches a file of the original, or of the crapper code that the original imports, names that file.
+- MU-NFR-4: License. The port uses the MIT License. `tools/mutator/LICENSE` names Mads Madsen (`mads@onmadsen.com`) as the copyright holder. It also says that the port is based on mutator by Robert C. Martin, which uses the BSD Zero Clause License. Each `.rs` file starts with the lines `// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `// SPDX-License-Identifier: MIT`. Each file that matches a file of the original, or of the crapper code that the original imports, names that file.
 - MU-NFR-5: Crash safety. If a run stops because of a signal, the next run restores the source files from the backup (MU-18).
 
 ## 7. Parity and bug fixes
 
 The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original and the crapper checkout that the original needs by a clone at the pinned commits, and runs the original with Python. The port fixes known bugs of the original and does not copy them.
 
-- MU-PB-1: `mutator/parity/upstream.toml` records the pinned commit of the original and of the crapper checkout that the original needs.
+- MU-PB-1: `tools/mutator/parity/upstream.toml` records the pinned commit of the original and of the crapper checkout that the original needs.
 - MU-PB-2: A change of a pinned commit needs a new parity run.
-- MU-PB-3: Each bug fix has an entry in `mutator/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
+- MU-PB-3: Each bug fix has an entry in `tools/mutator/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
 - MU-PB-4: Each bug fix has a test that fails on the behavior of the original and passes on the port.
 - MU-PB-5: A bug that comes from Python only needs no entry if the port cannot have it. An example is `bugs/python-tests-run-with-mutators-virtualenv.md` in the original.
-- MU-PB-6: Mads Madsen approves each entry in `mutator/parity/fixes.toml`.
+- MU-PB-6: Mads Madsen approves each entry in `tools/mutator/parity/fixes.toml`.
 
 ## 8. Acceptance criteria
 
-1. AC-1 (MU-2, MU-3, MU-4): `mutator/parity/coverage.toml` maps every flag of the original and every row of the README table (MU-12) to at least one fixture run. For each entry, the original and the port give the same exit code and the same snapshots after both are parsed as EDN. A difference that `fixes.toml` lists does not count as a failure.
+1. AC-1 (MU-2, MU-3, MU-4): `tools/mutator/parity/coverage.toml` maps every flag of the original and every row of the README table (MU-12) to at least one fixture run. For each entry, the original and the port give the same exit code and the same snapshots after both are parsed as EDN. A difference that `fixes.toml` lists does not count as a failure.
 2. AC-2 (MU-5, MU-8): A parity fixture exists for each of the six languages.
 3. AC-3 (MU-14): On a fixture with a failing test, the port exits `2`, and each snapshot file keeps its previous bytes.
 4. AC-4 (MU-15): On a fixture with a mutant that times out and a mutant that does not compile, the port counts both as killed. With a baseline shorter than 0.2 seconds and `--timeout-factor 10`, the timeout is 2 seconds.

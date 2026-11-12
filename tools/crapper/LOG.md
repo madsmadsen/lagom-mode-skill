@@ -222,3 +222,8 @@ Read first: `git diff 4384d65 HEAD -- docs/prd/crapper.md`. The new items are CR
 - Every `.rs` file in `src/` and `tests/` and every parity `.py` script starts with `Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `SPDX-License-Identifier: MIT`. The old per-file license credit to Robert C. Martin is gone. The reference to the matching upstream file stays, for the parity checks.
 - `Cargo.toml` names the author. README names the copyright holder and the original. `tests/meta.rs` (AC-20) and `parity/run.py --check-meta` now require the two new header lines and the new LICENSE text. `--check-meta` reports only the seven unapproved `fixes.toml` entries.
 - Proof: `cargo fmt --check` clean, `cargo clippy --all-targets` no issues, `cargo test` 401 passed, 1 ignored. Only comments, metadata and test checks changed, so the crapper, dryer and mutator gates were not rerun.
+
+## 2026-11-12: moved to tools/crapper
+
+- Moved the crate from `crapper/` to `tools/crapper/`. Reason: Mads Madsen asked for one `tools/` folder for the three ports. Paths in the crate are relative to the crate or to the runner file, so no code changed. Updated the docs that name the old path.
+- Ran `cargo clean --profile dev`, then `cargo test`, `cargo clippy --all-targets`, and `cargo fmt --check`. Reason: the old test binaries kept the absolute path of the crate in `CARGO_BIN_EXE_crapper`, and cargo did not rebuild them after the move. All tests pass, with 0 clippy warnings.

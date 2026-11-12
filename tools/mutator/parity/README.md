@@ -8,7 +8,7 @@ every entry in `coverage.toml` on both, then compares the results.
 From the repository root, with the original's venv (it provides the original
 mutator and its EDN reader):
 
-    /tmp/mu/venv/bin/python mutator/parity/run.py
+    /tmp/mu/venv/bin/python tools/mutator/parity/run.py
 
 Options:
 
@@ -19,7 +19,7 @@ Options:
 Environment:
 
 - `ORIGINAL_PYTHON`: interpreter for the original (default `/tmp/mu/venv/bin/python`).
-- `MUTATOR_BIN`: the port binary (default `mutator/target/debug/mutator`).
+- `MUTATOR_BIN`: the port binary (default `tools/mutator/target/debug/mutator`).
 
 ## Pinned sources
 

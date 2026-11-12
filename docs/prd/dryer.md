@@ -2,7 +2,7 @@
 
 Status: Draft 1. Owner and approver: Mads Madsen. Date: 2026-11-07.
 
-This document states the requirements for `dryer`, a Rust port of [dryer](https://github.com/unclebob/dryer) by Robert C. Martin. The port is one Cargo crate in the `dryer/` directory. It does not depend on another crate or tool in this repository.
+This document states the requirements for `dryer`, a Rust port of [dryer](https://github.com/unclebob/dryer) by Robert C. Martin. The port is one Cargo crate in the `tools/dryer/` directory. It does not depend on another crate or tool in this repository.
 
 ## 1. Problem
 
@@ -12,7 +12,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 
 | Term | Meaning |
 | --- | --- |
-| Original | The Python dryer at the commit pinned in `dryer/parity/upstream.toml`. |
+| Original | The Python dryer at the commit pinned in `tools/dryer/parity/upstream.toml`. |
 | Port | The Rust dryer that this document specifies. |
 | Form | A unit of code that dryer compares, for example a function. |
 | Candidate pair | Two forms with a similarity score at or above the threshold. |
@@ -22,7 +22,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 
 ## 3. Goals
 
-1. The port is a drop-in replacement for the original: same command name, same flags, same exit codes, same snapshot. The only differences are the bug fixes in `dryer/parity/fixes.toml` (section 7).
+1. The port is a drop-in replacement for the original: same command name, same flags, same exit codes, same snapshot. The only differences are the bug fixes in `tools/dryer/parity/fixes.toml` (section 7).
 2. The port supports the six languages of the original: Clojure, Java, Go, TypeScript (with JavaScript), Rust, and Python.
 3. The port needs no Python at run time.
 
@@ -50,7 +50,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 
 ### 5.1 Upstream fixes
 
-Each requirement in this section comes from an open issue or pull request of the original, and differs from the original at the pinned commit. Each one has an entry in `dryer/parity/fixes.toml` (DR-PB-3) and a test (DR-PB-4).
+Each requirement in this section comes from an open issue or pull request of the original, and differs from the original at the pinned commit. Each one has an entry in `tools/dryer/parity/fixes.toml` (DR-PB-3) and a test (DR-PB-4).
 
 - DR-14: The port reads `.js`, `.jsx`, `.mjs`, and `.cjs` files as language `typescript` ([issue 17](https://github.com/unclebob/dryer/issues/17), [PR 16](https://github.com/unclebob/dryer/pull/16)). It parses these files with the JavaScript grammar, which also parses JSX. It treats a file whose name ends in `.test.js`, `.spec.js`, `.test.jsx`, `.spec.jsx`, `.test.mjs`, `.spec.mjs`, `.test.cjs`, or `.spec.cjs` as a test file and does not scan it. A `.d.ts` file stays out of the scan.
 
@@ -60,22 +60,22 @@ Each requirement in this section comes from an open issue or pull request of the
 - DR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port is lower than the median wall-clock time of 5 runs of the original. Both run on one named CI runner: Linux x86_64, Ubuntu 22.04. The time of the original includes Python start-up and excludes the clone and the install.
 - DR-NFR-3: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
 - DR-NFR-4: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
-- DR-NFR-5: License. The port uses the MIT License. `dryer/LICENSE` names Mads Madsen (`mads@onmadsen.com`) as the copyright holder. It also says that the port is based on dryer by Robert C. Martin, which uses the BSD Zero Clause License. Each `.rs` file starts with the lines `// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `// SPDX-License-Identifier: MIT`. Each file that matches a file of the original names that file.
+- DR-NFR-5: License. The port uses the MIT License. `tools/dryer/LICENSE` names Mads Madsen (`mads@onmadsen.com`) as the copyright holder. It also says that the port is based on dryer by Robert C. Martin, which uses the BSD Zero Clause License. Each `.rs` file starts with the lines `// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `// SPDX-License-Identifier: MIT`. Each file that matches a file of the original names that file.
 
 ## 7. Parity and bug fixes
 
 The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them.
 
-- DR-PB-1: `dryer/parity/upstream.toml` records the pinned commit of the original.
+- DR-PB-1: `tools/dryer/parity/upstream.toml` records the pinned commit of the original.
 - DR-PB-2: A change of the pinned commit needs a new parity run.
-- DR-PB-3: Each bug fix has an entry in `dryer/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
+- DR-PB-3: Each bug fix has an entry in `tools/dryer/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
 - DR-PB-4: Each bug fix has a test that fails on the behavior of the original and passes on the port.
 - DR-PB-5: A bug that comes from Python only needs no entry if the port cannot have it.
-- DR-PB-6: Mads Madsen approves each entry in `dryer/parity/fixes.toml`.
+- DR-PB-6: Mads Madsen approves each entry in `tools/dryer/parity/fixes.toml`.
 
 ## 8. Acceptance criteria
 
-1. AC-1 (DR-2, DR-3, DR-4): `dryer/parity/coverage.toml` maps every flag of the original and every row of the README table (DR-11) to at least one fixture run. For each entry, the original and the port give the same exit code and the same snapshot after both are parsed as EDN. A difference that `fixes.toml` lists does not count as a failure.
+1. AC-1 (DR-2, DR-3, DR-4): `tools/dryer/parity/coverage.toml` maps every flag of the original and every row of the README table (DR-11) to at least one fixture run. For each entry, the original and the port give the same exit code and the same snapshot after both are parsed as EDN. A difference that `fixes.toml` lists does not count as a failure.
 2. AC-2 (DR-5, DR-8): A parity fixture exists for each of the six languages.
 3. AC-3 (DR-13): `dryer --format xml` exits `2`.
 4. AC-4 (DR-7): On a fixture with a modified, a staged, and an untracked source file, the original and the port, both run with `--changed`, select the same files and write the same snapshot.
