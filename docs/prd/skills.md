@@ -121,7 +121,7 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 ## 8. Non-functional requirements
 
 - SK-NFR-1: Isolation. Two loops that run at the same time in two worktrees of one repository do not change the gate results of each other.
-- SK-NFR-2: License. `lagom-mode` keeps the MIT License notice of ub-mode.
+- SK-NFR-2: License. Each skill folder has a `LICENSE` file with the MIT License, Mads Madsen as the copyright holder, and an acknowledgment of Robert C. Martin. The `LICENSE` of `lagom-mode` also keeps the MIT License notice of ub-mode.
 
 ## 9. Acceptance criteria
 

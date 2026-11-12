@@ -12,7 +12,7 @@ crapper gives each function a CRAP score. A high score means the function is com
 
 ## Install
 
-The install instructions are in `tools/crapper/README.md` in the `deterministic-coding` repository. Run `crapper --help` to make sure that the command is on the `PATH`.
+The install instructions are in the README of the Rust port of crapper. Run `crapper --help` to make sure that the command is on the `PATH`.
 
 ## Run
 

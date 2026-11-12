@@ -12,7 +12,7 @@ dryer compares each function or method with the others in the same language. It 
 
 ## Install
 
-The install instructions are in `tools/dryer/README.md` in the `deterministic-coding` repository. Run `dryer --help` to make sure that the command is on the `PATH`.
+The install instructions are in the README of the Rust port of dryer. Run `dryer --help` to make sure that the command is on the `PATH`.
 
 ## Run
 

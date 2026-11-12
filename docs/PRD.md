@@ -1,8 +1,8 @@
-# PRD: Deterministic Coding
+# PRD: lagom-mode-skill
 
 Status: Draft 4. Owner and approver: Mads Madsen. Date: 2026-11-07.
 
-This document states the overall goal of the `deterministic-coding` repository and the preferences for its development. Four PRDs state the requirements of the parts. Each statement that comes from a guess and not from a source carries the label `[ASSUMPTION]`.
+This document states the overall goal of the `lagom-mode-skill` repository and the preferences for its development. Four PRDs state the requirements of the parts. Each statement that comes from a guess and not from a source carries the label `[ASSUMPTION]`.
 
 ## 1. Goal
 
@@ -59,7 +59,7 @@ The parts are independent:
 4. A port does not share code with another port. A duplicated piece of code is accepted as the cost of independence.
 5. The ports build with the Rust stable toolchain. They run on macOS 14 or later and on Linux, on arm64 and x86_64.
 6. A user installs each port with one `cargo install --git` command. The README of each port states this command. The skills do not.
-7. Each port uses the MIT License. `lagom-mode` keeps the MIT License notice of ub-mode.
+7. Each `LICENSE` file in this repository is the MIT License, with Mads Madsen as the copyright holder and an acknowledgment of Robert C. Martin. The `LICENSE` of `lagom-mode` and the `LICENSE` at the root also keep the MIT License notice of ub-mode, because the MIT License requires it in each copy.
 
 ### 5.3 Documents and traceability
 
@@ -84,7 +84,7 @@ Each `[ASSUMPTION]` label in this document and in the four part PRDs is an open 
 ## 8. Acceptance criteria
 
 1. AC-1 (section 2, item 1): For each of `tools/crapper/`, `tools/dryer/`, and `tools/mutator/`, `cargo metadata` lists no path dependency and no git dependency on another package in this repository.
-2. AC-2 (section 2, item 2): No file under `skills/` mentions `cargo` or this repository. A search under `skills/` for `cargo` and for `deterministic-coding` finds no match.
+2. AC-2 (section 2, item 2): No file under `skills/` mentions `cargo` or this repository. A search under `skills/` for `cargo` and for `lagom-mode-skill` finds no match.
 3. AC-3 (section 2, item 3): Each command, positional file argument, flag, exit code, and output that a skill under `skills/` names, including `lagom-mode`, appears in section 5 of the skills PRD.
 4. AC-4 (section 1, determinism): crapper PRD AC-10, dryer PRD AC-7, and mutator PRD AC-13 pass. On each port's fixtures, after any tool install, two runs of each SK-8 gate command give the same exit code and byte-identical snapshots.
 5. AC-5 (section 3, uml-viewer user): Each `fixes.toml` entry that changes snapshot keys or shape has the fields `uml_viewer_commit` and `uml_viewer_checked_on`, and the fixture snapshot of that entry renders with no error in uml-viewer at that commit.
