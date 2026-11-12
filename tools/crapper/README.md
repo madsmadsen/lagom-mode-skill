@@ -7,10 +7,10 @@ Requirements: `docs/prd/crapper.md` (CR-*). License: MIT (`LICENSE`). Copyright 
 ## Install
 
 ```bash
-cargo install --git <repository-url> crapper
+cargo install --git https://github.com/madsmadsen/lagom-mode-skill crapper
 ```
 
-`<repository-url>` is the private repository of `deterministic-coding`. The build needs Rust stable and a C compiler.
+The build needs Rust stable and a C compiler.
 
 ## Use
 

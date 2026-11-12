@@ -12,10 +12,10 @@ names the file of the original, or of crapper, that it matches.
 ## Install
 
 ```bash
-cargo install --git <URL of this repository> --path tools/mutator mutator
+cargo install --git https://github.com/madsmadsen/lagom-mode-skill mutator
 ```
 
-Use the repository URL that your team uses. A user needs read access to the repository.
+A user needs read access to the repository.
 
 ## Run
 

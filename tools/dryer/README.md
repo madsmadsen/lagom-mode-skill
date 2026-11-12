@@ -5,10 +5,8 @@ dryer finds code that repeats in a similar shape. It compares each function or m
 ## Install
 
 ```sh
-cargo install --git https://github.com/<owner>/deterministic-coding dryer
+cargo install --git https://github.com/madsmadsen/lagom-mode-skill dryer
 ```
-
-[ASSUMPTION] The repository URL is a placeholder. The owner must replace `<owner>` with the real owner of the repository.
 
 You must have:
 
