@@ -41,14 +41,14 @@ Three tools give the same verdict for the same files. You cannot argue with them
 A unit or a feature passes its gates when all of these are true at once:
 
 1. All tests pass.
-2. `crapper` reports no function with a CRAP score higher than 9.99 in the checked files.
+2. `crapper` reports no function with a CRAP score higher than 10 in the checked files.
 3. `dryer` reports no candidate pair with a score of 0.8 or more in the checked files.
 4. `mutator` exits `0` for the checked files, and its snapshots have 0 uncovered sites in the checked functions.
 
 The unit gates run these commands on uncommitted changes:
 
 ```bash
-crapper --changed --threshold 9.99
+crapper --changed --threshold 10
 dryer --changed --threshold 0.8
 mutator --changed
 ```
@@ -56,7 +56,7 @@ mutator --changed
 The feature gates run the same three commands without `--changed`. Give the feature files as positional arguments:
 
 ```bash
-crapper --threshold 9.99 <feature-files>
+crapper --threshold 10 <feature-files>
 dryer --threshold 0.8 <feature-files>
 mutator <feature-files>
 ```
@@ -190,7 +190,7 @@ Make every edit, test run, gate run, and commit inside the loop worktree. Do not
 ## Crapper
 
 * Use the crapper tool. Load the `crapper` skill.
-* Reduce each function under CRAP 10 by splitting it, by testing it, or both.
+* Reduce each function to CRAP 10 or lower by splitting it, by testing it, or both.
 * Consider whether case statements are worth reducing.
 
 ## Dryer

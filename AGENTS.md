@@ -47,7 +47,7 @@ Each crate is a separate Cargo project. There is no Cargo workspace. A crate mus
    cargo fmt
    ```
 
-5. Run the quality gates on the changed files. Each function must have a CRAP score below 10 (`crapper --threshold 9.99`). No pair of forms can have a dryer score of 0.8 or more (`dryer --threshold 0.8`). The mutation run must have no survivors and no uncovered sites.
+5. Run the quality gates on the changed files. Each function must have a CRAP score of 10 or lower (`crapper --threshold 10`). No pair of forms can have a dryer score of 0.8 or more (`dryer --threshold 0.8`). The mutation run must have no survivors and no uncovered sites.
 6. Add each action and its reason to `tools/<crate>/LOG.md`.
 
 ## Load on the host

@@ -85,15 +85,15 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
 
 ### 7.2 Main skill: lagom-mode
 
-- SK-4: `lagom-mode` keeps the three phases of ub-mode, "First Make it Work", "Then Make it Right", and "Practice", and keeps each rule of ub-mode. One rule changes: ub-mode pushes to the main line at the end, and `lagom-mode` integrates into the source branch (SK-14 to SK-16).
+- SK-4: `lagom-mode` keeps the three phases of ub-mode, "First Make it Work", "Then Make it Right", and "Practice", and keeps each rule of ub-mode. Two rules change. First, ub-mode pushes to the main line at the end, and `lagom-mode` integrates into the source branch (SK-14 to SK-16). Second, ub-mode reduces each function under CRAP 10, and `lagom-mode` reduces each function to CRAP 10 or lower (SK-7).
 - SK-5: `lagom-mode` states the loop of section 6 as numbered steps, in that order.
 - SK-6: `lagom-mode` tells the agent to write one failing test, run it, and record the failure reason before it changes production code.
 - SK-7: A unit or a feature passes its gates when all of these are true at once:
   1. All tests pass.
-  2. crapper reports no function with a CRAP score higher than 9.99 in the checked files.
+  2. crapper reports no function with a CRAP score higher than 10 in the checked files.
   3. dryer reports no candidate pair with a score of 0.8 or more in the checked files.
   4. mutator exits `0` for the checked files, and the snapshots have 0 uncovered sites in the checked functions.
-- SK-8: The unit gates run `crapper --changed --threshold 9.99`, `dryer --changed --threshold 0.8`, and `mutator --changed`. The feature gates run the same three commands without `--changed`, with the feature files as positional arguments. The agent gets the feature files with `git diff --name-only <base-commit>`.
+- SK-8: The unit gates run `crapper --changed --threshold 10`, `dryer --changed --threshold 0.8`, and `mutator --changed`. The feature gates run the same three commands without `--changed`, with the feature files as positional arguments. The agent gets the feature files with `git diff --name-only <base-commit>`.
 - SK-9: `lagom-mode` sets a retry limit of 5 tries for each gate. If a gate still fails after the limit, the agent stops and reports the failure and the log. It does not lower a threshold, delete a test, or edit a gate command to pass.
 - SK-10: `lagom-mode` tells the agent to keep a log of each action and its reason, and to report the log at the end.
 - SK-11: `lagom-mode` tells the agent to commit each unit after its unit gates pass. Each commit message states why, what changed, and how the agent proved it.

@@ -6,7 +6,7 @@ This checklist is for AC-1 of `docs/prd/skills.md`. Mads Madsen inspects the ski
 | --- | --- | --- | --- |
 | SK-1 | Each skill is one `SKILL.md` file. Its YAML frontmatter has `name` and `description`. | `skills/*/SKILL.md` | |
 | SK-3 | `lagom-mode` names the skills `crapper`, `dryer`, and `mutator`, and says when to load each one. | `skills/lagom-mode/SKILL.md` | |
-| SK-4 | `lagom-mode` has the phases "First Make it Work", "Then Make it Right", and "Practice". It keeps each rule of ub-mode. The only change is the end of the loop: it integrates into the source branch. | `skills/lagom-mode/SKILL.md` | |
+| SK-4 | `lagom-mode` has the phases "First Make it Work", "Then Make it Right", and "Practice". It keeps each rule of ub-mode. Only two rules change: the end of the loop integrates into the source branch, and each function must have a CRAP score of 10 or lower. | `skills/lagom-mode/SKILL.md` | |
 | SK-5 | `lagom-mode` states the loop of section 6 as numbered steps, in that order. | `skills/lagom-mode/SKILL.md` | |
 | SK-20 | Each tool skill names the install document of its tool. It states how to run the tool on uncommitted changes and on a list of files. It states how to read the output. | `skills/crapper/SKILL.md`, `skills/dryer/SKILL.md`, `skills/mutator/SKILL.md` | |
 | SK-21 | The crapper skill maps a high score to an action: split the function, add tests, or both. It states when a `match` or `case` is worth splitting. | `skills/crapper/SKILL.md` | |

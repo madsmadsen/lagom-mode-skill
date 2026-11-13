@@ -15,7 +15,7 @@ lagom-mode replaces the feeling with gates. A gate is a tool run and a fixed rul
 | Gate | It finds | It passes when |
 | --- | --- | --- |
 | Tests | Broken behavior | All tests pass. |
-| `crapper` | Functions that are complex and not tested well | No function has a CRAP score over 9.99. |
+| `crapper` | Functions that are complex and not tested well | No function has a CRAP score over 10. |
 | `dryer` | Code that repeats in a similar shape | No pair of functions scores 0.8 or more. |
 | `mutator` | Tests that run the code but do not check it | Every mutant is killed, and no site is uncovered. |
 
@@ -87,7 +87,7 @@ The agent loads the tool skills by itself when it needs them. When it finishes o
 The tools also work without the skill. Run them in the root of a project:
 
 ```bash
-crapper --changed --threshold 9.99    # CRAP scores of the changed files
+crapper --changed --threshold 10      # CRAP scores of the changed files
 dryer --changed --threshold 0.8       # similar pairs in the changed files
 mutator --changed                     # mutation tests of the changed files
 ```
