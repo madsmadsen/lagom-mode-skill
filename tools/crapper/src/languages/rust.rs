@@ -176,6 +176,28 @@ fn namespace(modules: &[String], mods: &[String], type_name: Option<&str>) -> St
         .join("::")
 }
 
+/// True when the function is test code (CR-25): it sits in a module named `tests`
+/// or in a `#[cfg(test)]` module.
+fn is_test_code(data: &[u8], node: Node, mods: &[String]) -> bool {
+    mods.iter().any(|name| name == "tests")
+        || std::iter::successors(node.parent(), |n| n.parent())
+            .filter(|n| n.kind() == "mod_item")
+            .any(|module| has_attribute(data, module, "#[cfg(test)]"))
+}
+
+/// True when an attribute of `item` reads `wanted`. The attributes of an item are the
+/// `attribute_item` siblings right before it. Spaces inside the attribute do not matter.
+fn has_attribute(data: &[u8], item: Node, wanted: &str) -> bool {
+    std::iter::successors(item.prev_sibling(), |n| n.prev_sibling())
+        .take_while(|n| n.kind() == "attribute_item")
+        .any(|attr| {
+            node_text(data, attr)
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .eq(wanted.chars())
+        })
+}
+
 fn record_function(data: &[u8], node: Node, modules: &[String], path: &str) -> Option<Function> {
     if node.kind() != "function_item" || !has_block(node) {
         return None;
@@ -184,7 +206,7 @@ fn record_function(data: &[u8], node: Node, modules: &[String], path: &str) -> O
         return None;
     }
     let mods = ancestor_names(data, node, "mod_item");
-    if mods.iter().any(|name| name == "tests") {
+    if is_test_code(data, node, &mods) {
         return None;
     }
     let ident = child_of_type(node, &["identifier"])?;
@@ -273,6 +295,29 @@ fn outer() {
                 ("demo_game", "outer", 2),
             ]
         );
+    }
+
+    fn names_in(source: &str) -> Vec<String> {
+        let dir = crate_named("demo");
+        functions_in(&dir, "src/lib.rs", source)
+            .into_iter()
+            .map(|f| f.name)
+            .collect()
+    }
+
+    // CR-25 unit a: functions in a `#[cfg(test)]` module are test code, whatever the module is named.
+    #[test]
+    fn cr_25_functions_in_a_cfg_test_module_are_skipped() {
+        let source = "fn keep() {}
+#[cfg(test)]
+mod unit_tests {
+    #[test]
+    fn b() { if true {} }
+    fn helper() {}
+    mod inner { fn deep() {} }
+}
+";
+        assert_eq!(names_in(source), ["keep"]);
     }
 
     // CR-8: impl for a generic self type takes the first type name after `for`.
