@@ -249,6 +249,22 @@ fn dr14_jsx_only_project_reports_the_pair() {
     assert!(text_of(&edn).contains(":language \"typescript\""));
 }
 
+// DR-14, AC-11, AC-9: the test of fixes help-long-names-javascript and
+// help-short-names-javascript in parity/fixes.toml. The help text of the
+// original does not name JavaScript.
+#[test]
+fn dr14_help_names_javascript() {
+    let project = Project::new();
+    for flag in ["--help", "-h"] {
+        let out = project.run(&[flag]);
+        let text = text_of(&out);
+        assert!(
+            text.contains("JavaScript (.js .jsx .mjs .cjs)"),
+            "{flag}: {text}"
+        );
+    }
+}
+
 // DR-14
 #[test]
 fn dr14_each_javascript_extension_is_scanned() {

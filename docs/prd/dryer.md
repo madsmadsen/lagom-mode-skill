@@ -52,7 +52,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 
 Each requirement in this section comes from an open issue or pull request of the original, and differs from the original at the pinned commit. Each one has an entry in `tools/dryer/parity/fixes.toml` (DR-PB-3) and a test (DR-PB-4).
 
-- DR-14: The port reads `.js`, `.jsx`, `.mjs`, and `.cjs` files as language `typescript` ([issue 17](https://github.com/unclebob/dryer/issues/17), [PR 16](https://github.com/unclebob/dryer/pull/16)). It parses these files with the JavaScript grammar, which also parses JSX. It treats a file whose name ends in `.test.js`, `.spec.js`, `.test.jsx`, `.spec.jsx`, `.test.mjs`, `.spec.mjs`, `.test.cjs`, or `.spec.cjs` as a test file and does not scan it. A `.d.ts` file stays out of the scan.
+- DR-14: The port reads `.js`, `.jsx`, `.mjs`, and `.cjs` files as language `typescript` ([issue 17](https://github.com/unclebob/dryer/issues/17), [PR 16](https://github.com/unclebob/dryer/pull/16)). It parses these files with the JavaScript grammar, which also parses JSX. It treats a file whose name ends in `.test.js`, `.spec.js`, `.test.jsx`, `.spec.jsx`, `.test.mjs`, `.spec.mjs`, `.test.cjs`, or `.spec.cjs` as a test file and does not scan it. A `.d.ts` file stays out of the scan. The help text of the port names JavaScript and lists these four extensions, so a user can see that dryer reads them.
 
 ## 6. Non-functional requirements
 
@@ -85,7 +85,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 8. AC-8 (Goal 3): All fixtures pass with the port on a host that has no Python installed. The expected results come from an earlier parity run.
 9. AC-9 (DR-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
 10. AC-10 (DR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as DR-NFR-2 defines.
-11. AC-11 (DR-14): On a fixture with only `.jsx` source files and two forms that score 0.85, `dryer --threshold 0.8` reports the pair and does not print "No source files to analyze". A file `src/a.test.jsx` in the same fixture is not scanned. On the TypeScript fixture, the port writes the same snapshot as before the change.
+11. AC-11 (DR-14): On a fixture with only `.jsx` source files and two forms that score 0.85, `dryer --threshold 0.8` reports the pair and does not print "No source files to analyze". A file `src/a.test.jsx` in the same fixture is not scanned. On the TypeScript fixture, the port writes the same snapshot as before the change. The output of `dryer --help` names JavaScript and lists the extensions `.js`, `.jsx`, `.mjs`, and `.cjs`.
 
 ## 9. Risks
 

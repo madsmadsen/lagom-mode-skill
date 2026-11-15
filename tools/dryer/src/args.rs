@@ -68,16 +68,17 @@ pub fn help_text() -> String {
     format!(
         r#"Usage: dryer [options] [path-or-filter ...]
 
-Find candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, and
-Python. Each form is normalized — call and method names, operators, and
-tree shape stay; local names, field names, and literals do not — and compared
-with the other forms of the same language. The score is Jaccard similarity of
-those structural fingerprints, the same score as dry4clj.
+Find candidate duplicate code in Clojure, Java, Go, TypeScript, JavaScript,
+Rust, and Python. Each form is normalized — call and method names, operators,
+and tree shape stay; local names, field names, and literals do not — and
+compared with the other forms of the same language. The score is Jaccard
+similarity of those structural fingerprints, the same score as dry4clj.
 
 Prints a report and writes .metrics/dry.edn.
 
 Languages: Clojure (.clj .cljc .cljs .cljd .bb), Java (.java), Go (.go),
-TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py).
+TypeScript (.ts .tsx .mts .cts), JavaScript (.js .jsx .mjs .cjs), Rust (.rs),
+Python (.py).
 
 Options:
   -h, --help                    Print this help and exit.
@@ -331,16 +332,17 @@ mod tests {
 
     const GOLDEN_HELP: &str = r#"Usage: dryer [options] [path-or-filter ...]
 
-Find candidate duplicate code in Clojure, Java, Go, TypeScript, Rust, and
-Python. Each form is normalized — call and method names, operators, and
-tree shape stay; local names, field names, and literals do not — and compared
-with the other forms of the same language. The score is Jaccard similarity of
-those structural fingerprints, the same score as dry4clj.
+Find candidate duplicate code in Clojure, Java, Go, TypeScript, JavaScript,
+Rust, and Python. Each form is normalized — call and method names, operators,
+and tree shape stay; local names, field names, and literals do not — and
+compared with the other forms of the same language. The score is Jaccard
+similarity of those structural fingerprints, the same score as dry4clj.
 
 Prints a report and writes .metrics/dry.edn.
 
 Languages: Clojure (.clj .cljc .cljs .cljd .bb), Java (.java), Go (.go),
-TypeScript (.ts .tsx .mts .cts), Rust (.rs), Python (.py).
+TypeScript (.ts .tsx .mts .cts), JavaScript (.js .jsx .mjs .cjs), Rust (.rs),
+Python (.py).
 
 Options:
   -h, --help                    Print this help and exit.
@@ -564,9 +566,10 @@ Exit codes:
         }
     }
 
-    // DR-2: the help text is the exact Python HELP output.
+    // DR-2, DR-14: the help text is the Python HELP output, plus the JavaScript
+    // languages and extensions of DR-14.
     #[test]
-    fn dr2_help_text_matches_python_help() {
+    fn dr14_help_text_names_javascript() {
         assert_eq!(help_text(), GOLDEN_HELP);
     }
 

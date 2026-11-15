@@ -48,7 +48,7 @@ Arguments:
 - `path`: A file or directory to compare. Test paths are included when you name them.
 - `filter`: When the argument is not a path, dryer compares only the source files whose path contains this text.
 
-Languages: Clojure (`.clj .cljc .cljs .cljd .bb`), Java (`.java`), Go (`.go`), TypeScript (`.ts .tsx .mts .cts`), Rust (`.rs`), and Python (`.py`). Clojure compares every top-level form except `ns`. The other languages compare functions and methods. A form compares only with forms in the same language.
+Languages: Clojure (`.clj .cljc .cljs .cljd .bb`), Java (`.java`), Go (`.go`), TypeScript (`.ts .tsx .mts .cts`), JavaScript (`.js .jsx .mjs .cjs`), Rust (`.rs`), and Python (`.py`). Dryer reads JavaScript files as language `typescript`. Clojure compares every top-level form except `ns`. The other languages compare functions and methods. A form compares only with forms in the same language.
 
 Exit codes:
 
@@ -62,7 +62,6 @@ The snapshot is `.metrics/dry.edn`. It uses EDN, the Clojure data format. The sa
 
 ## Differences from the original and the PRD
 
-- The port follows the original. It does not support `.js` files. The PRD (`docs/prd/dryer.md`, DR-5 and DR-8) names JavaScript. This is a wording mismatch in the PRD. [ASSUMPTION] The owner must decide whether to keep the original's behavior or change the PRD.
 - The port follows the original's skipped directory list. The PRD (DR-6) names a shorter list: `test`, `spec`, `vendor`, `node_modules`, and `target`. The port skips these directories: `.clj-kondo`, `.git`, `.hg`, `.idea`, `.metrics`, `.svn`, `.venv`, `__pycache__`, `__tests__`, `build`, `coverage`, `dist`, `node_modules`, `out`, `spec`, `specs`, `target`, `test`, `testdata`, `tests`, `vendor`, and `venv`. The port also skips `*_test.go`, `*.test.cts`, `*.spec.cts`, `*.spec.ts`, `test_*.py`, and `*_test.py` files. The PRD wording must match this list. [ASSUMPTION] The owner must confirm this.
 - The port needs no Python at run time. Python runs only in the parity runner (see below).
 - The file `parity/fixes.toml` has no entries. The port has no approved behavior change from the original.

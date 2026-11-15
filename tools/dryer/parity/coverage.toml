@@ -83,12 +83,14 @@ covers = [
 [[case]]
 name = "help-long"
 fixture = "python"
+fix = "help-long-names-javascript"
 args = ["--help"]
 covers = ["--help"]
 
 [[case]]
 name = "help-short"
 fixture = "python"
+fix = "help-short-names-javascript"
 args = ["-h"]
 covers = ["-h"]
 

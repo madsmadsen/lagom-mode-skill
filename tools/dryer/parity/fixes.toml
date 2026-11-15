@@ -21,3 +21,21 @@ upstream = "https://github.com/unclebob/dryer/issues/17 and https://github.com/u
 original_behavior = "On a project with only .jsx files, the original prints No source files to analyze. and writes no snapshot."
 changed_behavior = "The port reads .js, .jsx, .mjs, and .cjs as language typescript with the JavaScript grammar, and skips .test.* and .spec.* files of these extensions."
 test = "tests/cli.rs::dr14_jsx_only_project_reports_the_pair"
+
+[[fix]]
+id = "help-long-names-javascript"
+requirement = "DR-14"
+fixture = "help-long"
+upstream = "https://github.com/unclebob/dryer/issues/17 and https://github.com/unclebob/dryer/pull/16"
+original_behavior = "The help text of the original lists the languages Clojure, Java, Go, TypeScript, Rust, and Python and does not name JavaScript or the extensions .js .jsx .mjs .cjs."
+changed_behavior = "The help text of the port also names JavaScript and lists .js .jsx .mjs .cjs, because the port reads these files (DR-14)."
+test = "tests/cli.rs::dr14_help_names_javascript"
+
+[[fix]]
+id = "help-short-names-javascript"
+requirement = "DR-14"
+fixture = "help-short"
+upstream = "https://github.com/unclebob/dryer/issues/17 and https://github.com/unclebob/dryer/pull/16"
+original_behavior = "The help text of the original lists the languages Clojure, Java, Go, TypeScript, Rust, and Python and does not name JavaScript or the extensions .js .jsx .mjs .cjs."
+changed_behavior = "The help text of the port also names JavaScript and lists .js .jsx .mjs .cjs, because the port reads these files (DR-14)."
+test = "tests/cli.rs::dr14_help_names_javascript"
