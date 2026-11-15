@@ -6,6 +6,7 @@
 
 //! Turn source files and coverage into CRAP entries.
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -35,10 +36,22 @@ fn read_source(file: &Path) -> Result<String, String> {
         .replace('\r', "\n"))
 }
 
+/// Whether the function holds one of `lines`, first and last line included.
+/// `None` means every function counts (no `--lines`).
+fn holds_a_line(function: &Function, lines: Option<&BTreeSet<u32>>) -> bool {
+    lines.is_none_or(|lines| {
+        lines
+            .range(function.start_line..=function.end_line)
+            .next()
+            .is_some()
+    })
+}
+
 pub fn analyze_files(
     files: &[PathBuf],
     project_root: &Path,
     bundle: Option<&mut CoverageBundle>,
+    lines: Option<&BTreeSet<u32>>,
 ) -> Result<Vec<Entry>, String> {
     let root = resolve(project_root);
     let resolved: Vec<PathBuf> = files.iter().map(|file| resolve(file)).collect();
@@ -60,6 +73,9 @@ pub fn analyze_files(
         let source = read_source(file)?;
         let relative = source_path(file, &root);
         for function in functions_in_file(language, &source, &relative, &root_text) {
+            if !holds_a_line(&function, lines) {
+                continue;
+            }
             entries.push(make_entry(&function, coverage_of(coverage, &function)));
         }
     }
@@ -80,7 +96,7 @@ mod tests {
         fs::create_dir_all(root.join("src")).unwrap();
         fs::write(root.join("src/app.py"), "def run():\n    return 1\n").unwrap();
         let entries =
-            analyze_files(&[root.join("src/app.py")], root, None).expect("analysis succeeds");
+            analyze_files(&[root.join("src/app.py")], root, None, None).expect("analysis succeeds");
         assert_eq!(
             entries,
             vec![Entry {
@@ -95,12 +111,33 @@ mod tests {
         );
     }
 
+    // CR-26
+    #[test]
+    fn cr_26_a_function_holds_a_line_from_its_first_to_its_last_line() {
+        let function = Function {
+            name: "f".into(),
+            namespace: "m".into(),
+            complexity: 1,
+            start_line: 5,
+            end_line: 8,
+            path: "m.py".into(),
+            language: "python".into(),
+            jacoco_class: None,
+        };
+        let lines = |items: &[u32]| items.iter().copied().collect::<BTreeSet<u32>>();
+        assert!(holds_a_line(&function, None));
+        assert!(!holds_a_line(&function, Some(&lines(&[4, 9]))));
+        assert!(holds_a_line(&function, Some(&lines(&[5]))));
+        assert!(holds_a_line(&function, Some(&lines(&[8]))));
+        assert!(holds_a_line(&function, Some(&lines(&[1, 6, 20]))));
+    }
+
     // CR-5
     #[test]
     fn cr_5_a_file_with_an_unknown_extension_is_skipped() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("notes.md"), "# notes\n").unwrap();
-        let entries = analyze_files(&[dir.path().join("notes.md")], dir.path(), None)
+        let entries = analyze_files(&[dir.path().join("notes.md")], dir.path(), None, None)
             .expect("analysis succeeds");
         assert!(entries.is_empty());
     }
@@ -111,7 +148,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let root = dir.path();
         std::os::unix::fs::symlink("/nonexistent/notes.md", root.join("notes.md")).unwrap();
-        let entries = analyze_files(&[root.join("notes.md")], root, None);
+        let entries = analyze_files(&[root.join("notes.md")], root, None, None);
         assert_eq!(entries, Ok(vec![]));
     }
 
@@ -122,7 +159,7 @@ mod tests {
         let root = dir.path();
         fs::create_dir_all(root.join("src")).unwrap();
         std::os::unix::fs::symlink("loop.py", root.join("src/loop.py")).unwrap();
-        let message = analyze_files(&[root.join("src/loop.py")], root, None)
+        let message = analyze_files(&[root.join("src/loop.py")], root, None, None)
             .expect_err("symlink loop is an error");
         assert!(message.contains("loop.py"), "{message}");
     }
@@ -136,7 +173,8 @@ mod tests {
         fs::write(root.join("src/app.py"), "def run():\n    return 1\n").unwrap();
         std::os::unix::fs::symlink("/nonexistent/missing.py", root.join("src/broken.py")).unwrap();
         let files = [root.join("src/app.py"), root.join("src/broken.py")];
-        let message = analyze_files(&files, root, None).expect_err("broken symlink is an error");
+        let message =
+            analyze_files(&files, root, None, None).expect_err("broken symlink is an error");
         assert!(message.starts_with("cannot read "), "{message}");
         assert!(message.contains("broken.py"), "{message}");
         assert!(!message.contains('\n'), "{message}");

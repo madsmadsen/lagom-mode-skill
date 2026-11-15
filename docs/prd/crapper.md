@@ -28,7 +28,7 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 
 ## 4. Non-goals
 
-1. The port does not add languages, metrics, or flags that the original does not have.
+1. The port does not add languages or metrics. It adds one flag that the original does not have: `--lines` (CR-26).
 2. The port does not change the formula or the threshold logic of the original. A bug fix is not a change of formula. A fixes.toml entry is not a change of formula.
 3. The port is private. It is not published to crates.io.
 4. The port does not support Windows.
@@ -97,6 +97,8 @@ This section holds a difference that does not come from an upstream issue or pul
 
   The attributes of an item are the attributes that stand directly before it. Spaces inside an attribute do not matter. No other attribute makes a function test code. For example, `#[cfg(all(test, unix))]`, `#[cfg(not(test))]`, and `#[tokio::test]` do not. Code with `#[cfg(not(test))]` stays production code. The port does not score a function that is test code, and it does not write an entry for it in the snapshot.
 
+- CR-26: The port has the option `--lines <n,n,...>`. The original does not have it and rejects it as an unknown option. The value is a list of line numbers separated by commas. Each line number is a positive whole number. Spaces around a number do not matter, and an empty item is skipped. The port scores only the functions that contain at least one of the listed lines. A function contains a line when the line is the first line of the function, the last line of the function, or between them. The lines of a function inside another function also belong to the outer function. The option applies to every selected file. A function that contains no listed line is not scored. It is not in the report, it is not in the snapshot, and it does not count for `--threshold`. With `--threshold N`, the port exits `2` only when a scored function has a CRAP score higher than `N`. A value with no line number, or with an item that is not a positive whole number, is a bad option value: the port exits `1` and writes a message and the help text on stderr. The option does not change which files are selected or how coverage runs. Its value has the same form as the value of `--lines` of `mutator`.
+
 ## 6. Non-functional requirements
 
 - CR-NFR-1: Determinism. Two runs on the same files with the same coverage report write byte-identical snapshots.
@@ -107,7 +109,7 @@ This section holds a difference that does not come from an upstream issue or pul
 
 ## 7. Parity and bug fixes
 
-The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them. It also has one deliberate difference that is not a bug fix: CR-25 leaves out Rust test code.
+The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them. It also has two deliberate differences that are not bug fixes: CR-25 leaves out Rust test code, and CR-26 adds the option `--lines`.
 
 - CR-PB-1: `tools/crapper/parity/upstream.toml` records the pinned commit of the original and the exact versions of `tree-sitter`, `tree-sitter-language-pack`, and each other Python dependency of the original. The parity runner installs these versions.
 - CR-PB-2: A change of the pinned commit needs a passing parity run, as AC-1 defines a pass. The parity runner writes `tools/crapper/parity/last-run.toml` with the commit and the result.
@@ -151,6 +153,15 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 32. AC-32 (CR-23): With `"version": "4.1.11-beta.1+build.2"` in `node_modules/vitest/package.json`, the port installs `@vitest/coverage-v8@4.1.11-beta.1+build.2`. With `"version": "file:../untrusted"`, the port installs `@vitest/coverage-v8` with no version. On the fixtures of AC-27 and AC-28, each install command has `--ignore-scripts`.
 33. AC-33 (CR-24): A JaCoCo report with `<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd" [ <!ELEMENT report (class*)> ]>` over more than one line, and a method `place` of class `demo/pkg/Board` with 1 missed and 3 covered instructions, gives coverage `75.0` for `demo.pkg.Board#place`.
 34. AC-34 (CR-25): On a Rust file with `pub fn keep`, a `#[cfg(test)] mod unit_tests` that holds `#[test] fn unit_check`, a `#[test] fn plain_check`, and a `#[cfg(test)] fn test_helper`, `crapper --no-coverage` reports `keep` and does not report the other three. A `#[cfg(not(test))]` function in the same file is reported. A module named `tests` with no attribute is still left out.
+35. AC-35 (CR-26): A Python file has `choose` on lines 1 to 6 (CRAP 12 with 0% coverage) and `ok` on lines 8 and 9. Each of these holds with the same coverage report:
+    1. `crapper --lines 9` reports `ok` only, and the snapshot has only `ok`.
+    2. `crapper --lines 1` and `crapper --lines 6` report `choose` only.
+    3. `crapper --lines 3,8` reports both functions.
+    4. `crapper --lines 7` reports no function and writes the snapshot `{:entries []}`.
+    5. `crapper --threshold 10 --lines 9` exits `0`. `crapper --threshold 10 --lines 3` exits `2`. `crapper --threshold 10` with no `--lines` exits `2`.
+    6. With a second file, the same line list applies to both files.
+    7. `--lines 0`, `--lines x`, `--lines 1.5`, `--lines ,`, and `--lines` with no value each exit `1` with a message and the help text on stderr.
+    8. `crapper --help` lists `--lines <n,n,...>`.
 
 ## 9. Risks
 

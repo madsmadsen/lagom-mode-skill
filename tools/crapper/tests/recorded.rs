@@ -166,15 +166,20 @@ fn replace_bytes(haystack: &[u8], needle: &[u8], with: &[u8]) -> Vec<u8> {
     out
 }
 
+/// The help text of the port lists `--lines` (CR-26). The original has no such option,
+/// so the replay leaves this block out before it compares with the recorded help.
+const LINES_HELP: &[u8] = b"  --lines <n,n,...>             Score only the functions that contain one of\n                                these source lines. The report, the snapshot,\n                                and --threshold see only those functions.\n";
+
 fn normalize(stdout: &[u8], project: &Path) -> Vec<u8> {
     let mut variants = vec![project.to_string_lossy().into_owned()];
     if let Ok(resolved) = fs::canonicalize(project) {
         variants.push(resolved.to_string_lossy().into_owned());
     }
     variants.sort_by_key(|variant| std::cmp::Reverse(variant.len()));
-    variants.iter().fold(stdout.to_vec(), |acc, variant| {
+    let rooted = variants.iter().fold(stdout.to_vec(), |acc, variant| {
         replace_bytes(&acc, variant.as_bytes(), b"<ROOT>")
-    })
+    });
+    replace_bytes(&rooted, LINES_HELP, b"")
 }
 
 fn metrics_path(copy: &Path, args: &[String]) -> PathBuf {

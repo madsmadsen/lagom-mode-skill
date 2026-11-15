@@ -568,3 +568,14 @@ setup = ["mkdir src && mv lib.rs.txt src/lib.rs"]
 requires = []
 covers = []
 fix = "rust-test-code"
+
+# CR-26: the --lines option. The original rejects it as an unknown option.
+[[run]]
+id = "fix-lines-option"
+fixture = "lines-option"
+args = ["--no-coverage", "--lines", "9"]
+# The fixture keeps its Python source as app.py.txt, so the quality gates do not score it as source of the port.
+setup = ["mv app.py.txt app.py"]
+requires = []
+covers = []
+fix = "lines-option"

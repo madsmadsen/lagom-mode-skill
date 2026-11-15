@@ -46,5 +46,14 @@ class NormalizeGoTestTime(unittest.TestCase):
         self.assertEqual(run.normalize(stdout, MISSING), expected)
 
 
+class NormalizeLinesHelp(unittest.TestCase):
+    def test_lines_help_block_is_left_out(self):
+        # CR-26: the port lists --lines in its help text. The original has no such option.
+        before = b"  --threshold <number>          Exit 2.\n"
+        after = b"\nArguments:\n"
+        block = run.LINES_HELP
+        self.assertEqual(run.normalize(before + block + after, MISSING), before + after)
+
+
 if __name__ == "__main__":
     unittest.main()

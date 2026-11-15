@@ -56,3 +56,9 @@ id = "rust-test-code"
 description = "Difference from the original, not from an upstream issue (CR-25). In Rust, a function is test code when an enclosing mod is named tests, an enclosing mod has #[cfg(test)], or the function itself has #[test] or #[cfg(test)]. The original skips only a mod named tests."
 behavior = "The port leaves out each function in a #[cfg(test)] module and each function with #[test] or #[cfg(test)], whatever the module is named. The original reports them as production code. #[cfg(not(test))] code stays production code."
 fixture = "rust-test-code"
+
+[[fix]]
+id = "lines-option"
+description = "Difference from the original, not from an upstream issue (CR-26). The port has the option --lines <n,n,...>. It scores only the functions that contain one of the listed source lines. The original does not have this option."
+behavior = "With --lines, the report, the snapshot, and the --threshold exit status see only the functions that contain a listed line. The original rejects --lines as an unknown option and exits with code 1."
+fixture = "lines-option"

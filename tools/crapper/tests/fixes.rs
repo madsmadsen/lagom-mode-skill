@@ -234,3 +234,11 @@ fn fix_rust_test_code_leaves_out_cfg_test_modules_and_test_functions() {
                 .any(reported)
     });
 }
+
+// fix: lines-option (CR-26, AC-35). With --lines 9, only `ok` is scored. The original rejects the option.
+#[test]
+fn fix_lines_option_scores_only_the_functions_that_hold_a_listed_line() {
+    check("lines-option", |out| {
+        out.code == 0 && row_of(out, "ok").is_some() && row_of(out, "choose").is_none()
+    });
+}

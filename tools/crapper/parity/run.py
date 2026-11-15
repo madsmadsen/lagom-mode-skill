@@ -314,12 +314,19 @@ def run_setup(commands: list[str], project: Path) -> None:
 
 
 GO_TEST_TIME = re.compile(rb"(\t)\d+\.\d+s(\t)")
+# The help text of the port lists --lines (CR-26). The original has no such option,
+# so the comparison leaves this block out.
+LINES_HELP = (
+    b"  --lines <n,n,...>             Score only the functions that contain one of\n"
+    b"                                these source lines. The report, the snapshot,\n"
+    b"                                and --threshold see only those functions.\n"
+)
 
 
 def normalize(stdout: bytes, project: Path) -> bytes:
     for variant in sorted({str(project), str(project.resolve())}, key=len, reverse=True):
         stdout = stdout.replace(variant.encode(), b"<ROOT>")
-    return GO_TEST_TIME.sub(rb"\1<TIME>s\2", stdout)
+    return GO_TEST_TIME.sub(rb"\1<TIME>s\2", stdout.replace(LINES_HELP, b""))
 
 
 def metrics_root(project: Path, args: list[str]) -> Path:

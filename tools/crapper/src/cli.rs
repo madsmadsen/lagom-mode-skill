@@ -20,7 +20,7 @@ use crate::discover::{
 };
 use crate::metrics::write_metrics;
 use crate::model::Entry;
-use crate::pynum::python_float;
+use crate::pynum::{python_float, python_int};
 use crate::report::format_report;
 use crate::runners::run_coverage;
 
@@ -52,6 +52,9 @@ Options:
   --coverage-command <cmd>      Run this command instead of the per-language
                                 coverage tools, then read the reports it wrote.
   --threshold <number>          Exit 2 when the worst CRAP score is above this.
+  --lines <n,n,...>             Score only the functions that contain one of
+                                these source lines. The report, the snapshot,
+                                and --threshold see only those functions.
 
 Arguments:
   path              File or directory to analyze. Test paths are included when
@@ -112,6 +115,7 @@ pub struct Options {
     pub coverage_command: Option<String>,
     pub threshold: Option<f64>,
     pub changed: bool,
+    pub lines: Option<BTreeSet<u32>>,
 }
 
 impl Default for Options {
@@ -125,6 +129,7 @@ impl Default for Options {
             coverage_command: None,
             threshold: None,
             changed: false,
+            lines: None,
         }
     }
 }
@@ -169,7 +174,7 @@ fn apply_option(options: &mut Options, args: &[String], index: usize) -> Result<
         "--no-coverage" => options.no_coverage = true,
         "--use-existing-coverage" => options.use_existing_coverage = true,
         "--changed" => options.changed = true,
-        "-s" | "--source-root" | "--root" | "--coverage-command" | "--threshold" => {
+        "-s" | "--source-root" | "--root" | "--coverage-command" | "--threshold" | "--lines" => {
             let value = take(args, index, arg)?;
             apply_value(options, arg, value)?;
             return Ok(2);
@@ -180,12 +185,13 @@ fn apply_option(options: &mut Options, args: &[String], index: usize) -> Result<
     Ok(1)
 }
 
-/// Stores the value of an option that takes one. `--threshold` is the only other case.
+/// Stores the value of an option that takes one. `--threshold` is the default case.
 fn apply_value(options: &mut Options, option: &str, value: String) -> Result<(), String> {
     match option {
         "-s" | "--source-root" => options.source_roots.push(value),
         "--root" => options.project_root = PathBuf::from(value),
         "--coverage-command" => options.coverage_command = Some(value),
+        "--lines" => options.lines = Some(parse_lines(&value)?),
         _ => options.threshold = Some(parse_threshold(&value)?),
     }
     Ok(())
@@ -201,6 +207,25 @@ fn take(args: &[String], index: usize, option: &str) -> Result<String, String> {
 
 fn parse_threshold(raw: &str) -> Result<f64, String> {
     python_float(raw).ok_or_else(|| "--threshold requires a number".to_string())
+}
+
+/// The line numbers of `--lines`: positive integers separated by commas. Empty items are skipped.
+/// A number above `u32::MAX` becomes `u32::MAX`, which no function holds.
+fn parse_lines(raw: &str) -> Result<BTreeSet<u32>, String> {
+    let mut lines = BTreeSet::new();
+    for item in raw
+        .split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+    {
+        let number = python_int(item).filter(|number| *number >= 1);
+        let number = number.ok_or("--lines requires positive line numbers")?;
+        lines.insert(u32::try_from(number).unwrap_or(u32::MAX));
+    }
+    if lines.is_empty() {
+        return Err("--lines requires a line number".to_string());
+    }
+    Ok(lines)
 }
 
 fn check_conflicts(options: Options) -> Result<Options, String> {
@@ -444,7 +469,7 @@ fn scored_entries(options: &Options, root: &Path) -> Result<Option<Vec<Entry>>, 
         Ok(bundle) => bundle,
         Err(message) => return Err(fail(&message)),
     };
-    match analyze_files(&files, root, bundle.as_mut()) {
+    match analyze_files(&files, root, bundle.as_mut(), options.lines.as_ref()) {
         Ok(entries) => Ok(Some(entries)),
         Err(error) => Err(fail(&error)),
     }
@@ -680,5 +705,47 @@ mod tests {
     #[test]
     fn cr_3_exit_code_without_status_or_signal_is_1() {
         assert_eq!(exit_code(ExitStatus::from_raw(0x7f)), 1);
+    }
+
+    // CR-26
+    #[test]
+    fn cr_26_lines_parse_to_a_sorted_set_and_skip_empty_items() {
+        let Parsed::Analyze(options) = parse_args(&args(&["--lines", " 9, 3,,3,+4_0 "])) else {
+            panic!("expected an analysis");
+        };
+        assert_eq!(options.lines, Some(BTreeSet::from([3, 9, 40])));
+        let Parsed::Analyze(options) = parse_args(&[]) else {
+            panic!("expected an analysis");
+        };
+        assert_eq!(options.lines, None);
+    }
+
+    // CR-26
+    #[test]
+    fn cr_26_lines_above_u32_max_become_u32_max() {
+        assert_eq!(
+            parse_lines("99999999999999999999"),
+            Ok(BTreeSet::from([u32::MAX]))
+        );
+        assert_eq!(parse_lines("1"), Ok(BTreeSet::from([1])));
+    }
+
+    // CR-26
+    #[test]
+    fn cr_26_lines_reject_zero_negative_and_non_numbers() {
+        for value in ["0", "-1", "x", "1,0", "2.5", "1_", "_1"] {
+            assert_eq!(
+                parse_lines(value),
+                Err("--lines requires positive line numbers".to_string()),
+                "value {value:?}"
+            );
+        }
+        for value in ["", " ", ",", " , ,"] {
+            assert_eq!(
+                parse_lines(value),
+                Err("--lines requires a line number".to_string()),
+                "value {value:?}"
+            );
+        }
     }
 }

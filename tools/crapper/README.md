@@ -24,6 +24,7 @@ crapper src/demo/core.clj src/ui     # these files and trees
 crapper --changed                    # git additions and edits
 crapper combat                       # path fragment filter
 crapper --threshold 30               # exit 2 when the worst score is higher
+crapper --lines 12,40,41            # score only the functions that hold these lines (CR-26)
 crapper --coverage-command '<cmd>'   # run your own coverage command
 crapper --root <path> -s <tree>      # project root and source trees
 ```

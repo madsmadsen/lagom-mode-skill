@@ -866,3 +866,157 @@ fn cr_3_ac_26_a_jacoco_xml_declaration_with_a_bad_standalone_value_exits_1() {
     let output = crapper_in(root, &["--use-existing-coverage"]);
     assert_crash_exit_1(&output, root, "jacoco.xml");
 }
+
+// Lines 1 to 6 hold `choose` (CRAP 12 with no coverage). Lines 8 and 9 hold `ok` (CRAP 2).
+const LINES_SOURCE: &str = "def choose(x):\n    if x > 0:\n        return 1\n    elif x < 0:\n        return -1\n    return 0\n\ndef ok():\n    return 1\n";
+
+fn lines_project() -> tempfile::TempDir {
+    let temp = tempfile::tempdir().expect("tempdir");
+    write_file(temp.path(), "src/app.py", LINES_SOURCE);
+    write_lcov(temp.path(), &lcov_record("src/app.py", 9, 0));
+    temp
+}
+
+fn reported_names(report: &str) -> Vec<&str> {
+    report
+        .lines()
+        .skip_while(|line| !line.starts_with("---"))
+        .skip(1)
+        .filter_map(|line| line.split_whitespace().next())
+        .collect()
+}
+
+// CR-26, AC-35
+#[test]
+fn cr_26_ac_35_lines_scores_only_the_functions_that_hold_a_listed_line() {
+    let temp = lines_project();
+    let root = temp.path();
+
+    let inside = crapper_in(root, &["--use-existing-coverage", "--lines", "9"]);
+    assert_eq!(exit_code(&inside), 0, "stderr: {}", stderr(&inside));
+    assert_eq!(reported_names(&stdout(&inside)), ["ok"]);
+
+    let first_line = crapper_in(root, &["--use-existing-coverage", "--lines", "1"]);
+    assert_eq!(reported_names(&stdout(&first_line)), ["choose"]);
+    let last_line = crapper_in(root, &["--use-existing-coverage", "--lines", "6"]);
+    assert_eq!(reported_names(&stdout(&last_line)), ["choose"]);
+
+    let both = crapper_in(root, &["--use-existing-coverage", "--lines", "3, 8"]);
+    assert_eq!(reported_names(&stdout(&both)), ["choose", "ok"]);
+}
+
+// CR-26, AC-35
+#[test]
+fn cr_26_ac_35_lines_on_no_function_gives_an_empty_report_and_snapshot() {
+    let temp = lines_project();
+    let root = temp.path();
+
+    let output = crapper_in(root, &["--use-existing-coverage", "--lines", "7,10"]);
+    assert_eq!(exit_code(&output), 0, "stderr: {}", stderr(&output));
+    assert!(reported_names(&stdout(&output)).is_empty());
+    let snapshot = fs::read_to_string(root.join(".metrics/crap.edn")).expect("snapshot written");
+    assert_eq!(snapshot, "{:entries []}\n");
+}
+
+// CR-26, AC-35
+#[test]
+fn cr_26_ac_35_snapshot_has_only_the_scored_functions() {
+    let temp = lines_project();
+    let root = temp.path();
+
+    let output = crapper_in(root, &["--use-existing-coverage", "--lines", "8"]);
+    assert_eq!(exit_code(&output), 0, "stderr: {}", stderr(&output));
+    let snapshot = fs::read_to_string(root.join(".metrics/crap.edn")).expect("snapshot written");
+    assert!(snapshot.contains(":name \"ok\""), "{snapshot}");
+    assert!(!snapshot.contains("choose"), "{snapshot}");
+}
+
+// CR-26, AC-35
+#[test]
+fn cr_26_ac_35_threshold_exit_status_depends_only_on_the_scored_functions() {
+    let temp = lines_project();
+    let root = temp.path();
+
+    let all = crapper_in(root, &["--use-existing-coverage", "--threshold", "10"]);
+    assert_eq!(exit_code(&all), 2);
+    let other = crapper_in(
+        root,
+        &[
+            "--use-existing-coverage",
+            "--threshold",
+            "10",
+            "--lines",
+            "9",
+        ],
+    );
+    assert_eq!(exit_code(&other), 0, "stderr: {}", stderr(&other));
+    let same = crapper_in(
+        root,
+        &[
+            "--use-existing-coverage",
+            "--threshold",
+            "10",
+            "--lines",
+            "3",
+        ],
+    );
+    assert_eq!(exit_code(&same), 2);
+    assert!(stderr(&same).contains("CRAP threshold exceeded: 12.0 > 10.0"));
+}
+
+// CR-26, AC-35
+#[test]
+fn cr_26_ac_35_lines_applies_to_every_selected_file() {
+    let temp = lines_project();
+    let root = temp.path();
+    write_file(
+        root,
+        "src/other.py",
+        "def lone():\n    return 2\n\ndef pair():\n    return 3\n",
+    );
+    write_lcov(
+        root,
+        &format!(
+            "{}{}",
+            lcov_record("src/app.py", 9, 0),
+            lcov_record("src/other.py", 5, 0)
+        ),
+    );
+
+    let output = crapper_in(root, &["--use-existing-coverage", "--lines", "2"]);
+    assert_eq!(exit_code(&output), 0, "stderr: {}", stderr(&output));
+    assert_eq!(reported_names(&stdout(&output)), ["choose", "lone"]);
+}
+
+// CR-26, AC-35
+#[test]
+fn cr_26_ac_35_bad_lines_values_exit_1() {
+    let temp = lines_project();
+    let root = temp.path();
+    for (value, message) in [
+        ("0", "--lines requires positive line numbers"),
+        ("1,x", "--lines requires positive line numbers"),
+        ("1.5", "--lines requires positive line numbers"),
+        (",", "--lines requires a line number"),
+        (" ", "--lines requires a line number"),
+    ] {
+        let output = crapper_in(root, &["--no-coverage", "--lines", value]);
+        assert_eq!(exit_code(&output), 1, "value {value:?}");
+        assert!(
+            stderr(&output).starts_with(message),
+            "value {value:?}: {}",
+            stderr(&output)
+        );
+        assert_eq!(stdout(&output), "");
+    }
+    let missing = crapper_in(root, &["--no-coverage", "--lines"]);
+    assert_eq!(exit_code(&missing), 1);
+    assert!(stderr(&missing).starts_with("--lines requires a value"));
+}
+
+// CR-26, AC-35
+#[test]
+fn cr_26_ac_35_help_lists_the_lines_option() {
+    let output = crapper(&["--help"]);
+    assert!(stdout(&output).contains("--lines <n,n,...>"));
+}
