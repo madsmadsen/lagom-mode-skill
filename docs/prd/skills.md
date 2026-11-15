@@ -46,9 +46,9 @@ The skills use three commands from the `PATH`: `crapper`, `dryer`, and `mutator`
 
 | Command | Used interface |
 | --- | --- |
-| `crapper` | `--lines <n,n,...>`, a file, `--threshold N`. With `--lines`, `crapper` scores only the functions that contain one of the lines, and the exit status, the table, and the snapshot have only those functions. Exit `0` when the worst CRAP score is `N` or lower, and `2` when it is higher than `N` (CR-17). A table on stdout with the worst score first (CR-16). |
+| `crapper` | `--lines <n,n,...>`, a file, `--threshold N`. With `--lines`, `crapper` scores only the functions that contain one of the lines, and the exit status, the table, and the snapshot have only those functions (CR-26). Exit `0` when the worst CRAP score is `N` or lower, and `2` when it is higher than `N` (CR-17). A table on stdout with the worst score first (CR-16). |
 | `dryer` | `--changed`, a list of files, `--threshold N`, a report of candidate pairs under `:candidates` in the snapshot `.metrics/dry.edn`. Each pair has its two forms in `:left` and `:right`, each with `:file`, `:start-line`, and `:end-line`, and its similarity score in `:score` (DR-10). Exit `0` after a report, `1` on a usage error, and `2` on an unknown `--format` (DR-13). |
-| `mutator` | `--lines <n,n,...>`, a file. With `--lines`, `mutator` runs only the mutations on those lines, and one set of lines applies to every file in a run. Exit `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives (MU-20). Uncovered sites and survivors in `.metrics/mutate/<namespace>.edn`: each form in `:forms` has the counts `:uncovered` and `:survived`, and `:outcomes` maps each mutation to `:killed` or `:survived`. |
+| `mutator` | `--lines <n,n,...>`, a file. With `--lines`, `mutator` runs only the mutations on those lines, and one set of lines applies to every file in a run (MU-2). Exit `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives (MU-20). Uncovered sites and survivors in `.metrics/mutate/<namespace>.edn`: each form in `:forms` has the counts `:uncovered` and `:survived`, and `:outcomes` maps each mutation to `:killed` or `:survived`. |
 
 ## 6. The loop
 
