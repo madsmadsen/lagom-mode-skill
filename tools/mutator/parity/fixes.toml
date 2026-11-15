@@ -91,6 +91,20 @@ test = "tests/memory_limit.rs::mu_25_ac17_a_mutant_over_the_memory_limit_is_kill
 changes_snapshot_keys_or_shape = false
 approved = false
 
+[[fix]]
+id = "rust-test-code-by-attribute"
+requirement = "MU-26"
+description = """The original leaves out a Rust function only when an enclosing `mod` is named
+`tests`. A `#[cfg(test)] mod unit_tests`, a function with `#[test]`, and a function with
+`#[cfg(test)]` are then mutated as production code. The port also leaves out a function when an
+enclosing `mod` has `#[cfg(test)]`, or when the function itself has `#[test]` or `#[cfg(test)]`.
+It does not match `cfg(all(test, ...))`, `cfg(not(test))`, or `tokio::test`."""
+changed_behavior = "A Rust function in a #[cfg(test)] module, or with #[test] or #[cfg(test)], has no sites and no snapshot entry."
+fixture = "tests/rust_test_code.rs (project built inline: src/lib.rs with a production fn, a #[cfg(test)] mod unit_tests, a #[test] fn, and a #[cfg(test)] fn)"
+test = "tests/rust_test_code.rs::mu_26_ac18_scan_lists_sites_for_production_rust_only"
+changes_snapshot_keys_or_shape = false
+approved = false
+
 # Not listed on purpose (MU-PB-5): `bugs/python-tests-run-with-mutators-virtualenv.md` comes from
 # Python only. The port has no interpreter of its own and uses the project's `.venv` or `venv`
 # Python, else `python3` on the PATH.

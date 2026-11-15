@@ -32,7 +32,7 @@ mutator makes small changes to the code and runs the tests after each change. A 
 ## 4. Non-goals
 
 1. The port does not add languages, mutation rules, or flags that the original does not have. The upstream fixes in section 5.4 and the `--max-memory-mb` flag of MU-25 are the only exceptions.
-2. The port does not change the mutation rules or the outcome rules of the original. A bug fix is not a change of rules. The upstream fixes in section 5.4 are the only exception.
+2. The port does not change the mutation rules or the outcome rules of the original. A bug fix is not a change of rules. The upstream fixes in section 5.4 and the test code rule of MU-26 are the only exceptions.
 3. The port is private. It is not published to crates.io.
 
 ## 5. Functional requirements
@@ -52,9 +52,16 @@ mutator makes small changes to the code and runs the tests after each change. A 
 
 The original imports code from a crapper checkout for the work in this section. The port has its own code for it.
 
-- MU-9: The port finds and names functions and namespaces the same as the original.
+- MU-9: The port finds and names functions and namespaces the same as the original. The one exception is MU-26, which leaves out more Rust test code.
 - MU-10: The port makes coverage with the same coverage command for each language as the original. It reads the same coverage formats.
 - MU-11: If a coverage tool is missing, the port installs it the same way as the original, and prints the install on stderr before it starts the install.
+- MU-26: In Rust files, the port leaves out each function that is test code. The port makes no site in such a function, and the function has no snapshot entry. A function is test code when at least one of these is true:
+  1. An enclosing `mod` is named `tests`.
+  2. An enclosing `mod` has the attribute `#[cfg(test)]`. The attribute has exactly the argument `test`.
+  3. The function has the attribute `#[test]`.
+  4. The function has the attribute `#[cfg(test)]`.
+
+  The port reads the attributes that stand directly before the item, in the same run of attributes. White space inside an attribute does not matter. The port does not treat `#[cfg(all(test, ...))]`, `#[cfg(not(test))]`, or `#[tokio::test]` as test code. Code under `#[cfg(not(test))]` stays production code. The original leaves out only functions in a `mod` named `tests`. This behavior differs from the original, and `tools/mutator/parity/fixes.toml` lists it.
 
 ### 5.3 Mutation
 
@@ -124,6 +131,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 15. AC-15 (MU-23): A scan run on the file `src/demo/ops2.py` from issue 10 lists a site for each of the operators `is`, `in`, `@`, `//`, `%`, `**`, `+=`, and `+`. A scan run on a file with `is not`, `not in`, `-=`, `*=`, and `/=` lists a site for each of them.
 16. AC-16 (MU-24): On the fixture of issue 9, where the tests cover line 2 and do not cover lines 4 and 5, the two sites on line 4 are uncovered sites and the site on line 2 runs. The same rule holds for a site in an `except` clause and in a `case` guard whose line no test runs.
 17. AC-17 (MU-25): A fixture has a mutant that makes the tests allocate memory without end, and a timeout of more than 60 seconds. The port, run with `--max-memory-mb 256`, counts the mutant as killed within 10 seconds of the start of its test run, and runs it only once. A run with `--max-memory-mb 0` has no memory limit. `--max-memory-mb -1` and `--max-memory-mb abc` exit `1`.
+18. AC-18 (MU-26): A Rust file has a production function, a `#[cfg(test)]` module named `unit_tests` with a `#[test]` function, a `#[test]` function in a plain module, and a function with `#[cfg(test)]`. A scan run lists sites for the production function only. A scan run still lists the sites of a function in a `#[cfg(not(test))]` module, and of a normal function next to a `mod tests`.
 
 ## 9. Risks
 
