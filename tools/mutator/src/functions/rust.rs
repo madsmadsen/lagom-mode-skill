@@ -349,6 +349,29 @@ fn outer() {
     }
 
     #[test]
+    // MU-26: `cfg(not(test))`, `cfg(all(test, ..))`, and `tokio::test` are not test code
+    fn mu_26_other_test_like_attributes_stay_production_code() {
+        let source = "#[cfg(not(test))]\nmod prod {\n    pub fn kept() {}\n}\n\n#[cfg(all(test, unix))]\nmod both {\n    pub fn all() {}\n}\n\n#[tokio::test]\nasync fn runtime() {}\n\n#[cfg(not(test))]\nfn only_prod() {}\n";
+        assert_eq!(
+            in_lib(source),
+            [
+                "demo::prod kept",
+                "demo::both all",
+                "demo runtime",
+                "demo only_prod"
+            ]
+        );
+    }
+
+    #[test]
+    // MU-26: `mod tests` without attributes is still skipped, and a normal fn next to it is listed
+    fn mu_26_plain_tests_module_is_skipped_and_neighbors_are_listed() {
+        let source =
+            "pub fn before() {}\n\nmod tests {\n    fn hidden() {}\n}\n\npub fn after() {}\n";
+        assert_eq!(in_lib(source), ["demo before", "demo after"]);
+    }
+
+    #[test]
     // MU-9: a trait impl for a generic type takes the first type name after `for`
     fn mu_9_rust_impl_for_nested_generic_type_uses_first_type_name() {
         let dir = crate_at("demo");
