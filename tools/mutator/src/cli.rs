@@ -21,10 +21,10 @@ use crate::runner::{Command as RunCommand, CommandRunner};
 
 const HELP_TEMPLATE: &str = r#"Usage: mutator [options] [path-or-filter ...]
 
-Discover mutation sites in Clojure, Java, Go, TypeScript, Rust, and Python,
-run the project's tests against each one, and write `.metrics/mutate` for
-uml-viewer. Namespaces and function names are the ones crapper writes into
-`.metrics/crap.edn`.
+Discover mutation sites in Clojure, Java, Go, TypeScript, JavaScript, Rust,
+and Python, run the project's tests against each one, and write
+`.metrics/mutate` for uml-viewer. Namespaces and function names are the ones
+crapper writes into `.metrics/crap.edn`.
 
 A form id is `defn/<name>` or, for a private operation, `defn-/<name>`.
 uml-viewer joins that name to the operation and joins `:namespace` to the
