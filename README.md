@@ -87,9 +87,9 @@ The agent loads the tool skills by itself when it needs them. When it finishes o
 The tools also work without the skill. Run them in the root of a project:
 
 ```bash
-crapper --changed --threshold 10      # CRAP scores of the changed files
-dryer --changed --threshold 0.8       # similar pairs in the changed files
-mutator --changed                     # mutation tests of the changed files
+crapper --threshold 10 --lines 12,40,41 src/demo.rs   # CRAP scores of the functions that hold these lines
+dryer --changed --threshold 0.8                       # similar pairs in the changed files
+mutator --lines 12,40,41 src/demo.rs                  # mutation tests on these lines
 ```
 
 Each tool works on Clojure, Java, Go, TypeScript, JavaScript, Rust, and Python. The README of each tool lists its flags and exit codes.

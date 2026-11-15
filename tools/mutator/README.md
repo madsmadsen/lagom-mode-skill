@@ -22,6 +22,7 @@ mutator                              # every source file under the current direc
 mutator src/demo/core.clj            # one file or one directory
 mutator --scan src/demo              # list sites, run no tests
 mutator --changed                    # added and modified files from git status
+mutator --lines 12,40,41 src/demo.rs # only the mutations on these lines
 mutator --mutate-all                 # rerun killed mutants too
 mutator --no-coverage                # treat every site as covered
 mutator --test-command "pytest -q tests/test_demo.py"

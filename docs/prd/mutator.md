@@ -143,7 +143,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 | Two mutator runs at the same time on one host slow each other down. | A survivor can time out and count as killed. | MU-21 runs each mutant near its timeout a second time with 2 times the timeout. AC-13 checks the outcome. |
 | A mutant makes the tests allocate memory without end. | The host runs out of memory before the timeout kills the mutant. | MU-25 kills the test run when its memory goes over the limit. AC-17 checks it. |
 | A backup from an old run is restored. | Before each run that is not a scan run, the original restores every file under `target/mutator-backup/`. The restore overwrites later edits to the source files. | The port copies the behavior of the original. A fix needs an entry in `fixes.toml`. |
-| A run on a large project takes a long time. | The run can hit the command timeout of an agent. | Use `--changed` or a list of files. |
+| A run on a large project takes a long time. | The run can hit the command timeout of an agent. | Use `--changed`, `--lines`, or a list of files. |
 
 ## 10. Dependencies
 
