@@ -46,9 +46,9 @@ The skills use three commands from the `PATH`: `crapper`, `dryer`, and `mutator`
 
 | Command | Used interface |
 | --- | --- |
-| `crapper` | `--changed`, a list of files, `--threshold N`. Exit `0` when the worst CRAP score is `N` or lower, and `2` when it is higher than `N` (CR-17). A table on stdout with the worst score first (CR-16). |
+| `crapper` | `--lines <n,n,...>`, a file, `--threshold N`. With `--lines`, `crapper` scores only the functions that contain one of the lines, and the exit status, the table, and the snapshot have only those functions. Exit `0` when the worst CRAP score is `N` or lower, and `2` when it is higher than `N` (CR-17). A table on stdout with the worst score first (CR-16). |
 | `dryer` | `--changed`, a list of files, `--threshold N`, a report of candidate pairs under `:candidates` in the snapshot `.metrics/dry.edn`. Each pair has its two forms in `:left` and `:right`, each with `:file`, `:start-line`, and `:end-line`, and its similarity score in `:score` (DR-10). Exit `0` after a report, `1` on a usage error, and `2` on an unknown `--format` (DR-13). |
-| `mutator` | `--changed`, a list of files. Exit `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives (MU-20). Uncovered sites and survivors in `.metrics/mutate/<namespace>.edn`: each form in `:forms` has the counts `:uncovered` and `:survived`, and `:outcomes` maps each mutation to `:killed` or `:survived`. |
+| `mutator` | `--lines <n,n,...>`, a file. With `--lines`, `mutator` runs only the mutations on those lines, and one set of lines applies to every file in a run. Exit `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives (MU-20). Uncovered sites and survivors in `.metrics/mutate/<namespace>.edn`: each form in `:forms` has the counts `:uncovered` and `:survived`, and `:outcomes` maps each mutation to `:killed` or `:survived`. |
 
 ## 6. The loop
 
@@ -73,7 +73,7 @@ flowchart TD
   F -->|pass| P[Fast-forward source branch, push, remove worktree]
 ```
 
-The loop runs the gates two times. The unit gates use `--changed`, which sees only uncommitted changes, so they run before each commit. The feature gates run at the end on the list of feature files. This catches a problem that spans two units, for example duplication between code from unit 1 and code from unit 3.
+The loop runs the gates two times. The unit gates see only uncommitted changes, so they run before each commit. The feature gates run at the end on the feature files. In both, `crapper` and `mutator` check only the changed lines of each file (SK-8). This catches a problem that spans two units, for example duplication between code from unit 1 and code from unit 3.
 
 ## 7. Functional requirements
 
@@ -93,7 +93,7 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
   2. crapper reports no function with a CRAP score higher than 10 in the checked files.
   3. dryer reports no candidate pair with a score of 0.8 or more in the checked files.
   4. mutator exits `0` for the checked files, and the snapshots have 0 uncovered sites in the checked functions.
-- SK-8: The unit gates run `crapper --changed --threshold 10`, `dryer --changed --threshold 0.8`, and `mutator --changed`. The feature gates run the same three commands without `--changed`, with the feature files as positional arguments. The agent gets the feature files with `git diff --name-only <base-commit>`. The agent does not give test files to `crapper`, because `crapper` gives the test functions in a named test file 0% coverage and the gate then fails for a reason that no repair clears. `dryer` and `mutator` get all the feature files.
+- SK-8: `dryer` checks whole files. The unit gates run `dryer --changed --threshold 0.8`. The feature gates run `dryer --threshold 0.8` with the feature files as positional arguments, test files included. The agent gets the feature files with `git diff --name-only <base-commit>`. `crapper` and `mutator` check only the changed lines. In both gates, the agent runs `crapper --threshold 10 --lines <changed-lines> <file>` and `mutator --lines <changed-lines> <file>` once for each changed file that is not a test file. The agent skips a file that has no changed line, and a file that no longer exists. The agent does not use `--changed` for `crapper` or `mutator`. The agent runs one command for each file, because `mutator --lines` applies one set of lines to every file in a run. The agent does not run `crapper` on a test file, because `crapper` gives the test functions in a named test file 0% coverage and the gate then fails for a reason that no repair clears. In the unit gates, the agent takes the changed lines of a file from `git diff -U0 HEAD -- <file>`, and uses all lines of a new file that git does not track yet. In the feature gates, the agent takes them from `git diff -U0 <base-commit> HEAD -- <file>`.
 - SK-9: `lagom-mode` sets a retry limit of 5 tries for each gate. If a gate still fails after the limit, the agent stops and reports the failure and the log. It does not lower a threshold, delete a test, or edit a gate command to pass.
 - SK-10: `lagom-mode` tells the agent to keep a log of each action and its reason, and to report the log at the end.
 - SK-11: `lagom-mode` tells the agent to commit each unit after its unit gates pass. Each commit message states why, what changed, and how the agent proved it.
@@ -146,6 +146,7 @@ The sample features run on the sample Rust project `samples/rust-todo`, a comman
 11. AC-11 (SK-15, SK-19): The rebase has a conflict. The agent stops and reports, and the loop worktree and the loop branch still exist.
 12. AC-12 (SK-16): The remote rejects the push. The agent stops, the log names the rejection, and the remote branch is unchanged.
 13. AC-13 (SK-18): The loop worktree has uncommitted changes after SK-14 and SK-16 succeed. The agent does not remove the worktree, and it reports the changes.
+14. AC-14 (SK-8): In one sample feature, the agent changes one old file that has a complex function that it does not touch, and adds one new file. In the log of the unit gates, `crapper` and `mutator` run once for each of the two files, with `--lines` set to the changed lines of that file, or to all lines of the new file. The old complex function does not make the gate fail. No run uses `--changed` for `crapper` or `mutator`. A file with no changed line has no run. No run of `crapper` names a test file.
 
 ## 10. Risks
 

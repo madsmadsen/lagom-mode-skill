@@ -41,27 +41,33 @@ Three tools give the same verdict for the same files. You cannot argue with them
 A unit or a feature passes its gates when all of these are true at once:
 
 1. All tests pass.
-2. `crapper` reports no function with a CRAP score higher than 10 in the checked files.
+2. `crapper` reports no function with a CRAP score higher than 10 in the functions that contain a changed line.
 3. `dryer` reports no candidate pair with a score of 0.8 or more in the checked files.
-4. `mutator` exits `0` for the checked files, and its snapshots have 0 uncovered sites in the checked functions.
+4. `mutator` exits `0` for the changed lines, and its snapshots have 0 uncovered sites in the checked functions.
 
-The unit gates run these commands on uncommitted changes:
+`dryer` checks whole files. `crapper` and `mutator` check only the changed lines of each file. Run them once for each changed file that is not a test file. Leave out a file that no longer exists. Give each run the changed lines of that file in `--lines`. Skip a file that has no changed line. Do not use `--changed` for `crapper` or `mutator`.
+
+`--lines <n,n,...>` has the same meaning for both tools. `crapper --lines` scores only the functions that contain one of the lines. With `--threshold`, its exit status depends only on those functions. `mutator --lines` runs only the mutations on those lines. You run one command for each file, because `mutator --lines` applies one set of lines to every file in a run.
+
+The unit gates run these commands on uncommitted changes. The lines come from `git diff -U0 HEAD -- <file>`. A new file that git does not track yet has no diff. For that file, use all its lines.
 
 ```bash
-crapper --changed --threshold 10
 dryer --changed --threshold 0.8
-mutator --changed
+crapper --threshold 10 --lines <changed-lines> <file>
+mutator --lines <changed-lines> <file>
 ```
 
-The feature gates run the same three commands without `--changed`. Give the feature files as positional arguments. Give `crapper` only the feature files that are not test files:
+The feature gates run the same commands on the feature files. The lines come from `git diff -U0 <base-commit> HEAD -- <file>`. Give `dryer` all the feature files:
 
 ```bash
-crapper --threshold 10 <feature-files-without-test-files>
 dryer --threshold 0.8 <feature-files>
-mutator <feature-files>
+crapper --threshold 10 --lines <changed-lines> <file>
+mutator --lines <changed-lines> <file>
 ```
 
-A test file is a file in a directory named `__tests__`, `spec`, `specs`, `test`, `testdata`, or `tests`. It is also a file with a name like `*_test.go`, `*.test.ts`, or `test_*.py`. The tools skip test files by default, but not when you name them. If you name a test file, `crapper` gives its test functions 0% coverage, because no test runs a test function. Each test function with a complexity of 3 or more then scores above 10, and no repair clears the gate. `mutator` also skips test files, so you can give it all the feature files.
+Get the changed lines from the hunk headers of the diff. A hunk header looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. Join the lines of all hunks of the file with commas.
+
+A test file is a file in a directory named `__tests__`, `spec`, `specs`, `test`, `testdata`, or `tests`. It is also a file with a name like `*_test.go`, `*.test.ts`, or `test_*.py`. The tools skip test files by default, but not when you name them. If you name a test file, `crapper` gives its test functions 0% coverage, because no test runs a test function. Each test function with a complexity of 3 or more then scores above 10, and no repair clears the gate. So do not run `crapper` on a test file. `mutator` also skips test files. `dryer` gets all the feature files, test files included.
 
 The unit gates see only uncommitted changes. The feature gates see the whole feature. They catch a problem that spans two units, for example duplication between code from unit 1 and code from unit 3.
 

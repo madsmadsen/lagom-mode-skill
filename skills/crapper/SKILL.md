@@ -16,19 +16,21 @@ The install instructions are in the README of the Rust port of crapper. Run `cra
 
 ## Run
 
-On uncommitted changes (the unit gates):
+Run `crapper` once for each changed file that is not a test file. Give the changed lines of that file in `--lines`. `crapper` then scores only the functions that contain one of those lines. Old functions that you did not touch do not count. With `--threshold`, the exit status depends only on the scored functions. The snapshot and the table have only those functions.
 
 ```bash
-crapper --changed --threshold 10
+crapper --threshold 10 --lines <n,n,...> <file>
 ```
 
-On a list of files (the feature gates), leave out the test files:
+Skip a file that has no changed line. Do not use `--changed` for the gates.
 
-```bash
-crapper --threshold 10 <feature-files-without-test-files>
-```
+On uncommitted changes (the unit gates), get the lines from `git diff -U0 HEAD -- <file>`. For a new file that git does not track yet, use all its lines.
 
-If you name a test file, `crapper` gives its test functions 0% coverage and the gate fails. The `lagom-mode` skill lists the test paths.
+On the feature files (the feature gates), get the lines from `git diff -U0 <base-commit> HEAD -- <file>`.
+
+A hunk header of the diff looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. Join the lines of all hunks of the file with commas.
+
+Do not run `crapper` on a test file. It gives the test functions 0% coverage and the gate fails. The `lagom-mode` skill lists the test paths.
 
 crapper runs the coverage command of the project. It prints a table on stdout with the worst score first. It also writes `.metrics/crap.edn`.
 
