@@ -93,7 +93,7 @@ The loop runs the gates two times. The unit gates use `--changed`, which sees on
   2. crapper reports no function with a CRAP score higher than 10 in the checked files.
   3. dryer reports no candidate pair with a score of 0.8 or more in the checked files.
   4. mutator exits `0` for the checked files, and the snapshots have 0 uncovered sites in the checked functions.
-- SK-8: The unit gates run `crapper --changed --threshold 10`, `dryer --changed --threshold 0.8`, and `mutator --changed`. The feature gates run the same three commands without `--changed`, with the feature files as positional arguments. The agent gets the feature files with `git diff --name-only <base-commit>`.
+- SK-8: The unit gates run `crapper --changed --threshold 10`, `dryer --changed --threshold 0.8`, and `mutator --changed`. The feature gates run the same three commands without `--changed`, with the feature files as positional arguments. The agent gets the feature files with `git diff --name-only <base-commit>`. The agent does not give test files to `crapper`, because `crapper` gives the test functions in a named test file 0% coverage and the gate then fails for a reason that no repair clears. `dryer` and `mutator` get all the feature files.
 - SK-9: `lagom-mode` sets a retry limit of 5 tries for each gate. If a gate still fails after the limit, the agent stops and reports the failure and the log. It does not lower a threshold, delete a test, or edit a gate command to pass.
 - SK-10: `lagom-mode` tells the agent to keep a log of each action and its reason, and to report the log at the end.
 - SK-11: `lagom-mode` tells the agent to commit each unit after its unit gates pass. Each commit message states why, what changed, and how the agent proved it.

@@ -53,13 +53,15 @@ dryer --changed --threshold 0.8
 mutator --changed
 ```
 
-The feature gates run the same three commands without `--changed`. Give the feature files as positional arguments:
+The feature gates run the same three commands without `--changed`. Give the feature files as positional arguments. Give `crapper` only the feature files that are not test files:
 
 ```bash
-crapper --threshold 10 <feature-files>
+crapper --threshold 10 <feature-files-without-test-files>
 dryer --threshold 0.8 <feature-files>
 mutator <feature-files>
 ```
+
+A test file is a file in a directory named `__tests__`, `spec`, `specs`, `test`, `testdata`, or `tests`. It is also a file with a name like `*_test.go`, `*.test.ts`, or `test_*.py`. The tools skip test files by default, but not when you name them. If you name a test file, `crapper` gives its test functions 0% coverage, because no test runs a test function. Each test function with a complexity of 3 or more then scores above 10, and no repair clears the gate. `mutator` also skips test files, so you can give it all the feature files.
 
 The unit gates see only uncommitted changes. The feature gates see the whole feature. They catch a problem that spans two units, for example duplication between code from unit 1 and code from unit 3.
 

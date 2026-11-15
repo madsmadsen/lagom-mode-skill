@@ -22,11 +22,13 @@ On uncommitted changes (the unit gates):
 crapper --changed --threshold 10
 ```
 
-On a list of files (the feature gates):
+On a list of files (the feature gates), leave out the test files:
 
 ```bash
-crapper --threshold 10 <feature-files>
+crapper --threshold 10 <feature-files-without-test-files>
 ```
+
+If you name a test file, `crapper` gives its test functions 0% coverage and the gate fails. The `lagom-mode` skill lists the test paths.
 
 crapper runs the coverage command of the project. It prints a table on stdout with the worst score first. It also writes `.metrics/crap.edn`.
 
