@@ -44,9 +44,9 @@ fn is_recordable(node: Node) -> bool {
         && !node.parent().is_some_and(|parent| parent.kind() == "block")
 }
 
-/// Test code (MU-26): a fn marked `#[test]`, or a fn in a module named `tests` or marked `#[cfg(test)]`.
+/// Test code (MU-26): a fn marked `#[test]` or `#[cfg(test)]`, or a fn in a module named `tests` or marked `#[cfg(test)]`.
 fn is_test_code(data: &[u8], function: Node) -> bool {
-    has_attribute(data, function, &["#[test]"])
+    has_attribute(data, function, &["#[test]", "#[cfg(test)]"])
         || std::iter::successors(function.parent(), |ancestor| ancestor.parent())
             .filter(|ancestor| ancestor.kind() == "mod_item")
             .any(|module| is_test_module(data, module))
@@ -338,6 +338,14 @@ fn outer() {
     fn mu_26_test_attribute_fn_in_a_plain_module_is_skipped() {
         let source = "mod checks {\n    pub fn keep() {}\n\n    #[test]\n    fn check() {}\n\n    #[test]\n    #[ignore]\n    fn slow() {}\n}\n";
         assert_eq!(in_lib(source), ["demo::checks keep"]);
+    }
+
+    #[test]
+    // MU-26: a `#[cfg(test)]` helper fn is test code and is skipped
+    fn mu_26_cfg_test_helper_fn_is_skipped() {
+        let source =
+            "pub fn real() {}\n\n#[cfg(test)]\nfn helper() {}\n\n#[cfg( test )]\nfn spaced() {}\n";
+        assert_eq!(in_lib(source), ["demo real"]);
     }
 
     #[test]
