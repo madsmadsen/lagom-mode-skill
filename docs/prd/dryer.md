@@ -44,7 +44,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 - DR-8: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, as the original does with `tree-sitter-language-pack`. For Clojure, the port copies the Clojure reader of the original (`clojure_read.py`).
 - DR-9: The port normalizes each form with the rules of the original. It keeps call names, method names, operators, and tree shape. It drops local names, field names, literals, and keywords.
 - DR-10: The port scores each pair with the Jaccard similarity of structural fingerprints. It compares forms only within one language.
-- DR-11: The port selects the forms for each language with the table in the README of the original, section "What each language compares".
+- DR-11: The port selects the forms for each language with the table in the README of the original, section "What each language compares". DR-15 changes this for Rust test code.
 - DR-12: The port supports `--threshold` (default 0.82), `--min-lines` (default 4), `--min-nodes` (default 20), `--format`, `--edn`, and `--text`.
 - DR-13: The port exits `0` after a report, `1` on a usage error, and `2` on an unknown `--format`.
 
@@ -53,6 +53,12 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 Each requirement in this section comes from an open issue or pull request of the original, and differs from the original at the pinned commit. Each one has an entry in `tools/dryer/parity/fixes.toml` (DR-PB-3) and a test (DR-PB-4).
 
 - DR-14: The port reads `.js`, `.jsx`, `.mjs`, and `.cjs` files as language `typescript` ([issue 17](https://github.com/unclebob/dryer/issues/17), [PR 16](https://github.com/unclebob/dryer/pull/16)). It parses these files with the JavaScript grammar, which also parses JSX. It treats a file whose name ends in `.test.js`, `.spec.js`, `.test.jsx`, `.spec.jsx`, `.test.mjs`, `.spec.mjs`, `.test.cjs`, or `.spec.cjs` as a test file and does not scan it. A `.d.ts` file stays out of the scan. The help text of the port names JavaScript and lists these four extensions, so a user can see that dryer reads them.
+
+### 5.2 Other differences from the original
+
+Each requirement in this section differs from the original at the pinned commit and has no upstream issue or pull request. Each one has an entry in `tools/dryer/parity/fixes.toml` (DR-PB-3, DR-PB-7) and a test (DR-PB-4).
+
+- DR-15: The port leaves a Rust function out of the scan when it is test code. A function is test code when at least one of these four rules holds. Rule 1: an enclosing `mod` is named `tests`. Rule 2: an enclosing `mod` has the attribute `#[cfg(test)]`. Rule 3: the function has the attribute `#[test]`. Rule 4: the function has the attribute `#[cfg(test)]`. An attribute counts only when it is exactly `cfg` with the single argument `test`, or exactly `test`. It must stand before the item with no item between them, so only other attributes may stand between the attribute and the item. The port does not match `cfg(all(test, ...))`, `cfg(not(test))`, or `tokio::test`. Code with `#[cfg(not(test))]` stays production code. The original skips a Rust function only by rule 1.
 
 ## 6. Non-functional requirements
 
@@ -68,10 +74,11 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 
 - DR-PB-1: `tools/dryer/parity/upstream.toml` records the pinned commit of the original.
 - DR-PB-2: A change of the pinned commit needs a new parity run.
-- DR-PB-3: Each bug fix has an entry in `tools/dryer/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
-- DR-PB-4: Each bug fix has a test that fails on the behavior of the original and passes on the port.
+- DR-PB-3: Each bug fix, and each other difference from the original, has an entry in `tools/dryer/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
+- DR-PB-4: Each bug fix, and each other difference from the original, has a test that fails on the behavior of the original and passes on the port.
 - DR-PB-5: A bug that comes from Python only needs no entry if the port cannot have it.
 - DR-PB-6: Mads Madsen approves each entry in `tools/dryer/parity/fixes.toml`.
+- DR-PB-7: A difference without an upstream issue or pull request, such as DR-15, goes in section 5.2 and not in section 5.1. Its `fixes.toml` entry names no upstream source. Its `upstream` field says that there is none.
 
 ## 8. Acceptance criteria
 
@@ -86,6 +93,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 9. AC-9 (DR-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
 10. AC-10 (DR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as DR-NFR-2 defines.
 11. AC-11 (DR-14): On a fixture with only `.jsx` source files and two forms that score 0.85, `dryer --threshold 0.8` reports the pair and does not print "No source files to analyze". A file `src/a.test.jsx` in the same fixture is not scanned. On the TypeScript fixture, the port writes the same snapshot as before the change. The output of `dryer --help` names JavaScript and lists the extensions `.js`, `.jsx`, `.mjs`, and `.cjs`.
+12. AC-12 (DR-15): On the fixture `rust-test-code`, the functions sit only in a module with `#[cfg(test)]` that is not named `tests`. The original reports a pair there with `--threshold 0.6`. The port prints "No duplicate candidates found." for the same run. With `--threshold 0.8`, two similar functions in such a module give no pair, and the same two functions outside a test module give a pair. Tests show that the port leaves out a function in each of the four rules of DR-15. They also show that a `#[cfg(not(test))]` module, a `#[cfg(all(test, unix))]` module, a `#[tokio::test]` function, and a plain function next to a module named `tests` stay in the scan.
 
 ## 9. Risks
 

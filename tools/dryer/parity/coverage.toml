@@ -249,3 +249,17 @@ fix = "js-read-as-typescript"
 covers = [
   "row:typescript:javascript-fix",
 ]
+
+# DR-15: the original compares the functions in the #[cfg(test)] modules. The port leaves them out.
+# The pair scores 0.64 with the original, so the run uses --threshold 0.6. This keeps the fixture
+# below the 0.8 limit of the dryer gate.
+# The case carries the fix id, so the runner expects a difference from the original, and
+# parity_expected.rs does not replay it.
+[[case]]
+name = "rust-test-code-fix"
+fixture = "rust-test-code"
+args = ["--threshold", "0.6"]
+fix = "rust-test-code-left-out"
+covers = [
+  "row:rust:cfg-test-code-left-out",
+]

@@ -39,3 +39,12 @@ upstream = "https://github.com/unclebob/dryer/issues/17 and https://github.com/u
 original_behavior = "The help text of the original lists the languages Clojure, Java, Go, TypeScript, Rust, and Python and does not name JavaScript or the extensions .js .jsx .mjs .cjs."
 changed_behavior = "The help text of the port also names JavaScript and lists .js .jsx .mjs .cjs, because the port reads these files (DR-14)."
 test = "tests/cli.rs::dr14_help_names_javascript"
+
+[[fix]]
+id = "rust-test-code-left-out"
+requirement = "DR-15"
+fixture = "rust-test-code-fix"
+upstream = "none: there is no upstream issue or pull request. The original skips a Rust function only when an enclosing mod is named tests."
+original_behavior = "In a Rust file, the original compares the functions of a #[cfg(test)] mod that is not named tests, a function with #[test], and a function with #[cfg(test)]. On this fixture, with --threshold 0.6, it prints DUPLICATE score=0.64 for src/invoice.rs:9-14 and src/receipt.rs:4-10."
+changed_behavior = "The port treats a Rust function as test code and leaves it out when an enclosing mod is named tests, an enclosing mod has #[cfg(test)], the function has #[test], or the function has #[cfg(test)] (DR-15). On this fixture it prints No duplicate candidates found."
+test = "tests/cli.rs::dr15_cfg_test_module_functions_are_not_compared"

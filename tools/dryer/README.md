@@ -64,7 +64,7 @@ The snapshot is `.metrics/dry.edn`. It uses EDN, the Clojure data format. The sa
 
 - The port follows the original's skipped directory list. The PRD (DR-6) names a shorter list: `test`, `spec`, `vendor`, `node_modules`, and `target`. The port skips these directories: `.clj-kondo`, `.git`, `.hg`, `.idea`, `.metrics`, `.svn`, `.venv`, `__pycache__`, `__tests__`, `build`, `coverage`, `dist`, `node_modules`, `out`, `spec`, `specs`, `target`, `test`, `testdata`, `tests`, `vendor`, and `venv`. The port also skips `*_test.go`, `*.test.cts`, `*.spec.cts`, `*.spec.ts`, `test_*.py`, and `*_test.py` files. The PRD wording must match this list. [ASSUMPTION] The owner must confirm this.
 - The port needs no Python at run time. Python runs only in the parity runner (see below).
-- The file `parity/fixes.toml` has no entries. The port has no approved behavior change from the original.
+- The file `parity/fixes.toml` lists each difference from the original. The port leaves a Rust function out when it is test code (DR-15). A function is test code when an enclosing `mod` is named `tests`, when an enclosing `mod` has `#[cfg(test)]`, or when the function has `#[test]` or `#[cfg(test)]`. The original skips a function only in a `mod` named `tests`.
 
 ## Parity
 

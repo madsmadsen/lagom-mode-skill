@@ -15,6 +15,9 @@ const JAVA: &str = "class Totals {\n    int totalPrice(int[] items, int tax) {\n
 const JSX_A: &str = "export function totalPrice(items, tax) {\n  let subtotal = 0;\n  for (const item of items) {\n    subtotal += item.price * item.quantity;\n  }\n  const result = subtotal + subtotal * tax;\n  return <span>{result}</span>;\n}\n";
 const JSX_B: &str = "export function sumCost(entries, rate) {\n  let running = 0;\n  for (const entry of entries) {\n    running += entry.cost * entry.count;\n  }\n  const final = running + running * rate;\n  tally = tally + 1;\n  return <span>{final}</span>;\n}\n";
 
+const RUST_A: &str = "pub fn invoice_total(orders: &[Order]) -> u64 {\n    let mut sum: u64 = 0;\n    let mut count: u64 = 0;\n    for order in orders {\n        if order.paid && order.domestic {\n            count = count + 1;\n            sum = sum + order.amount;\n        }\n    }\n    let tax = sum / 10;\n    sum + tax + count\n}\n";
+const RUST_B: &str = "pub fn receipt_total(orders: &[Order]) -> u64 {\n    let mut sum: u64 = 0;\n    let mut count: u64 = 0;\n    for order in orders {\n        if order.paid && order.domestic {\n            count = count + 1;\n            sum = sum + order.amount;\n        }\n    }\n    let tax = sum / 10;\n    let fee = count * 2;\n    sum + tax + count + fee\n}\n";
+
 const PAIR_BLOCK: &str = "DUPLICATE score=0.86\n  a.py:1-7\n  b.py:1-6\n";
 const NO_CANDIDATES: &str = "No duplicate candidates found.\n";
 const NO_SOURCES: &str = "No source files to analyze.\n";
@@ -359,4 +362,27 @@ fn dr10_python_function_and_java_method_are_not_paired() {
 
     let out = project.run(&["--threshold", "0.1"]);
     assert_eq!(text_of(&out), NO_CANDIDATES);
+}
+
+// DR-15, AC-9: the test of fix rust-test-code-left-out in parity/fixes.toml. The original
+// compares functions in a module with #[cfg(test)] that is not named tests, so it reports this pair.
+#[test]
+fn dr15_cfg_test_module_functions_are_not_compared() {
+    let in_test_module = |body: &str| format!("#[cfg(test)]\nmod unit_tests {{\n{body}}}\n");
+    let project = Project::new();
+    project
+        .write("src/a.rs", &in_test_module(RUST_A))
+        .write("src/b.rs", &in_test_module(RUST_B));
+    let out = project.run(&["--threshold", "0.8"]);
+    assert_eq!(text_of(&out), NO_CANDIDATES);
+
+    let production = Project::new();
+    production
+        .write("src/a.rs", RUST_A)
+        .write("src/b.rs", RUST_B);
+    let out = production.run(&["--threshold", "0.8"]);
+    assert_eq!(
+        text_of(&out),
+        "DUPLICATE score=0.86\n  src/a.rs:1-12\n  src/b.rs:1-13\n"
+    );
 }
