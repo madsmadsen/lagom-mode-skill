@@ -1,0 +1,12 @@
+CRAP Report
+===========
+Languages: rust
+
+Function                       Namespace                             CC    Cov%     CRAP
+----------------------------------------------------------------------------------------
+keep                           rusttestcode                           2   N/A       N/A
+prod_only                      rusttestcode                           2   N/A       N/A
+unit_helper                    rusttestcode::unit_tests               2   N/A       N/A
+plain_check                    rusttestcode                           1   N/A       N/A
+test_helper                    rusttestcode                           1   N/A       N/A
+unit_check                     rusttestcode::unit_tests               1   N/A       N/A

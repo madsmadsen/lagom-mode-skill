@@ -50,3 +50,9 @@ id = "jacoco-doctype-subset"
 issue = "https://github.com/unclebob/crapper/pull/27 (CR-24)"
 behavior = "The port deletes a DOCTYPE declaration with an internal subset before it parses JaCoCo XML. The original left junk behind and stopped with exit code 1."
 fixture = "jacoco-subset"
+
+[[fix]]
+id = "rust-test-code"
+description = "Difference from the original, not from an upstream issue (CR-25). In Rust, a function is test code when an enclosing mod is named tests, an enclosing mod has #[cfg(test)], or the function itself has #[test] or #[cfg(test)]. The original skips only a mod named tests."
+behavior = "The port leaves out each function in a #[cfg(test)] module and each function with #[test] or #[cfg(test)], whatever the module is named. The original reports them as production code. #[cfg(not(test))] code stays production code."
+fixture = "rust-test-code"

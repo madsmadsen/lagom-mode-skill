@@ -42,7 +42,7 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 - CR-5: The port detects the language of each file by its extension, the same as the original.
 - CR-6: The port skips the same directories as the original. The behavior of the original is normative. The list `test`, `spec`, `vendor`, `node_modules`, and `target` is informative.
 - CR-7: The port supports `--changed` with the same Git selection of files as the original.
-- CR-8: The port names functions and namespaces for each language with the table in the README of the original.
+- CR-8: The port names functions and namespaces for each language with the table in the README of the original. The one exception is test code in Rust files (CR-25).
 - CR-9: The port parses source with tree-sitter grammars for Java, Go, TypeScript, JavaScript, Rust, and Python, as the original does with `tree-sitter-language-pack`. For Clojure, the port copies the scanner of the original, which comes from crap4clj: it counts decision points with regular expressions and bracket depth, and it does not read EDN.
 - CR-10: The port computes `CRAP = CC² × (1 − coverage)³ + CC` for each function. Coverage is the value that the original computes for the function at the pinned commit: a percentage from 0 to 100, measured as LCOV branches when the function has BRDA records and LCOV lines otherwise, JaCoCo instructions, Go statements, and Cloverage forms. The formula uses coverage / 100. Under `--no-coverage`, `:coverage` and `:crap` are nil, as in the original. For a function that the coverage report does not mention, `:coverage` is `0.0` and `:crap` is the score for coverage 0, as in the original.
 - CR-11: The port counts decision points for each language with the rules in the README of the original, section "What each language counts".
@@ -85,6 +85,18 @@ Each requirement in this section comes from an open issue or pull request of the
 - CR-23: The port reads the Vitest version from `node_modules/vitest/package.json` only when it is a valid SemVer version: it matches `^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`. For any other value, for example `file:../untrusted`, the port installs `@vitest/coverage-v8` with no version. Each install command in CR-18 and CR-19 also has the flag `--ignore-scripts`, so no install script of a package runs ([PR 27](https://github.com/unclebob/crapper/pull/27), [issue 26](https://github.com/unclebob/crapper/issues/26)).
 - CR-24: Before the port parses JaCoCo XML, it deletes the text that matches `<!DOCTYPE\b(?:[^>\[]|\[[^\]]*\])*>`, in any case and across lines. This also deletes a DOCTYPE declaration with an internal subset (`[ ... ]`), so the XML parser never reads entity declarations ([PR 27](https://github.com/unclebob/crapper/pull/27)). This rule replaces the DOCTYPE rule of the original in CR-12.
 
+### 5.2 Other differences from the original
+
+This section holds a difference that does not come from an upstream issue or pull request. It has an entry in `tools/crapper/parity/fixes.toml` (CR-PB-3) and a test (CR-PB-4).
+
+- CR-25: In Rust files, the port leaves out each function that is test code. Rust best practice puts unit tests in the same file, in a module with any name. A function is test code when at least one of these is true:
+  1. An enclosing `mod` is named `tests`. This is the rule of the original.
+  2. An enclosing `mod` has the attribute `#[cfg(test)]`. The attribute is `cfg` with the single argument `test`.
+  3. The function has the attribute `#[test]`.
+  4. The function has the attribute `#[cfg(test)]`.
+
+  The attributes of an item are the attributes that stand directly before it. Spaces inside an attribute do not matter. No other attribute makes a function test code. For example, `#[cfg(all(test, unix))]`, `#[cfg(not(test))]`, and `#[tokio::test]` do not. Code with `#[cfg(not(test))]` stays production code. The port does not score a function that is test code, and it does not write an entry for it in the snapshot.
+
 ## 6. Non-functional requirements
 
 - CR-NFR-1: Determinism. Two runs on the same files with the same coverage report write byte-identical snapshots.
@@ -95,7 +107,7 @@ Each requirement in this section comes from an open issue or pull request of the
 
 ## 7. Parity and bug fixes
 
-The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them.
+The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them. It also has one deliberate difference that is not a bug fix: CR-25 leaves out Rust test code.
 
 - CR-PB-1: `tools/crapper/parity/upstream.toml` records the pinned commit of the original and the exact versions of `tree-sitter`, `tree-sitter-language-pack`, and each other Python dependency of the original. The parity runner installs these versions.
 - CR-PB-2: A change of the pinned commit needs a passing parity run, as AC-1 defines a pass. The parity runner writes `tools/crapper/parity/last-run.toml` with the commit and the result.
@@ -138,6 +150,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 31. AC-31 (CR-22): On the factory example of PR 30, the port gives the entries `GET /users/{user_id}` and `POST /users`, and the CC of `build_router` does not include their decision points. In the same fixture, a function nested under `@mock.patch("pkg.mod.attr")` has no entry of its own, a top-level handler keeps its function name, and two handlers with the label `GET /users` give `GET /users` and `GET /users#2`.
 32. AC-32 (CR-23): With `"version": "4.1.11-beta.1+build.2"` in `node_modules/vitest/package.json`, the port installs `@vitest/coverage-v8@4.1.11-beta.1+build.2`. With `"version": "file:../untrusted"`, the port installs `@vitest/coverage-v8` with no version. On the fixtures of AC-27 and AC-28, each install command has `--ignore-scripts`.
 33. AC-33 (CR-24): A JaCoCo report with `<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd" [ <!ELEMENT report (class*)> ]>` over more than one line, and a method `place` of class `demo/pkg/Board` with 1 missed and 3 covered instructions, gives coverage `75.0` for `demo.pkg.Board#place`.
+34. AC-34 (CR-25): On a Rust file with `pub fn keep`, a `#[cfg(test)] mod unit_tests` that holds `#[test] fn unit_check`, a `#[test] fn plain_check`, and a `#[cfg(test)] fn test_helper`, `crapper --no-coverage` reports `keep` and does not report the other three. A `#[cfg(not(test))]` function in the same file is reported. A module named `tests` with no attribute is still left out.
 
 ## 9. Risks
 

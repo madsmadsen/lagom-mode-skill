@@ -9,8 +9,9 @@
 //! Decision points are `if` / `if let`, `for`, `while` / `while let`, `loop`,
 //! each `match` arm, `?`, and `&&` / `||`. Free functions are namespaced by the
 //! module path (`crate::foo::bar`). Methods are namespaced by the self type
-//! (`crate::foo::Widget`) so uml-viewer can join them to that type. Bodies inside
-//! `mod tests` are test code and are not scored.
+//! (`crate::foo::Widget`) so uml-viewer can join them to that type. Test code is not
+//! scored (CR-25): a function in `mod tests` or in a `#[cfg(test)]` module, and a
+//! function with `#[test]` or `#[cfg(test)]`.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -335,6 +336,20 @@ mod unit_tests {
     fn cr_25_a_cfg_test_helper_function_is_skipped() {
         let source = "fn keep() {}\n#[cfg(test)]\nfn helper() {}\n#[cfg( test )]\nfn spaced() {}\n#[allow(dead_code)]\n#[cfg(test)]\nfn second() {}\n";
         assert_eq!(names_in(source), ["keep"]);
+    }
+
+    // CR-25 unit d: `#[cfg(not(test))]`, `#[cfg(all(test, unix))]` and `#[tokio::test]` are not `#[cfg(test)]` or `#[test]`.
+    #[test]
+    fn cr_25_other_test_looking_attributes_stay_production_code() {
+        let source = "#[cfg(not(test))]\nmod prod {\n    fn a() {}\n}\n#[cfg(all(test, unix))]\nmod both {\n    fn b() {}\n}\n#[tokio::test]\nfn c() {}\n#[cfg(not(test))]\nfn d() {}\n#[cfg(test)]\nstruct Marker;\nfn e() {}\n";
+        assert_eq!(names_in(source), ["a", "b", "c", "d", "e"]);
+    }
+
+    // CR-25 unit e: `mod tests` with no attribute is still skipped, and a function next to it is still reported.
+    #[test]
+    fn cr_25_a_module_named_tests_is_skipped_and_its_neighbor_is_reported() {
+        let source = "fn keep() {}\nmod tests {\n    fn hidden() {}\n}\nfn neighbor() {}\n";
+        assert_eq!(names_in(source), ["keep", "neighbor"]);
     }
 
     // CR-8: impl for a generic self type takes the first type name after `for`.

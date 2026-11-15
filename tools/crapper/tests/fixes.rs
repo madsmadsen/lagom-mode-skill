@@ -220,3 +220,17 @@ fn fix_jacoco_doctype_subset_reads_a_report_with_an_internal_subset() {
         has_coverage(out, "place", "75.0%")
     });
 }
+
+// fix: rust-test-code (CR-25, AC-34). Functions in a cfg(test) module and functions with #[test] or #[cfg(test)] are test code.
+#[test]
+fn fix_rust_test_code_leaves_out_cfg_test_modules_and_test_functions() {
+    check("rust-test-code", |out| {
+        let reported = |name| row_of(out, name).is_some();
+        out.code == 0
+            && reported("keep")
+            && reported("prod_only")
+            && !["unit_check", "unit_helper", "plain_check", "test_helper"]
+                .into_iter()
+                .any(reported)
+    });
+}

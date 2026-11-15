@@ -557,3 +557,14 @@ setup = []
 requires = []
 covers = []
 fix = "jacoco-doctype-subset"
+
+# CR-25: test code in a Rust file (a cfg(test) module, a #[test] function, a cfg(test) function)
+[[run]]
+id = "fix-rust-test-code"
+fixture = "rust-test-code"
+args = ["--no-coverage"]
+# The fixture keeps its Rust source as lib.rs.txt, so the quality gates do not treat it as source of the port.
+setup = ["mkdir src && mv lib.rs.txt src/lib.rs"]
+requires = []
+covers = []
+fix = "rust-test-code"

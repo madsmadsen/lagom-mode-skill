@@ -1,0 +1,8 @@
+{:entries [
+  {:name "keep", :namespace "rusttestcode", :complexity 2, :coverage nil, :crap nil}
+  {:name "prod_only", :namespace "rusttestcode", :complexity 2, :coverage nil, :crap nil}
+  {:name "unit_helper", :namespace "rusttestcode::unit_tests", :complexity 2, :coverage nil, :crap nil}
+  {:name "plain_check", :namespace "rusttestcode", :complexity 1, :coverage nil, :crap nil}
+  {:name "test_helper", :namespace "rusttestcode", :complexity 1, :coverage nil, :crap nil}
+  {:name "unit_check", :namespace "rusttestcode::unit_tests", :complexity 1, :coverage nil, :crap nil}
+]}

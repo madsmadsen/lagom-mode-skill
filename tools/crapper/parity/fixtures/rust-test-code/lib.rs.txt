@@ -1,0 +1,50 @@
+pub fn keep(x: i32) -> i32 {
+    if x > 0 {
+        1
+    } else {
+        0
+    }
+}
+
+#[cfg(not(test))]
+pub fn prod_only(items: &[i32]) -> i32 {
+    let mut total = 0;
+    for item in items {
+        total += item;
+    }
+    total
+}
+
+#[test]
+fn plain_check() {
+    assert_eq!(keep(1), 1);
+}
+
+#[cfg(test)]
+fn test_helper(text: &str) -> usize {
+    text.len()
+}
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    #[test]
+    fn unit_check() {
+        let values = vec![keep(0)];
+        assert!(values.len() == 1);
+    }
+
+    fn unit_helper(mut n: u32) -> u32 {
+        while n > 10 {
+            n /= 2;
+        }
+        n
+    }
+}
+
+mod tests {
+    fn named_tests() {
+        if true {}
+    }
+}

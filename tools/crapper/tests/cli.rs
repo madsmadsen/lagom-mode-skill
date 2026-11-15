@@ -234,6 +234,31 @@ fn cr_3_no_source_files_prints_message_and_exits_0() {
     assert_eq!(stdout(&output), "No source files to analyze.\n");
 }
 
+// CR-25, AC-34
+#[test]
+fn cr_25_ac_34_rust_test_code_is_left_out_of_the_report() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path();
+    write_file(
+        root,
+        "Cargo.toml",
+        "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n",
+    );
+    let source = "pub fn keep(x: i32) -> i32 { if x > 0 { 1 } else { 0 } }\n#[cfg(test)]\nmod unit_tests {\n    #[test]\n    fn unit_check() { if true {} }\n}\n#[test]\nfn plain_check() {}\n#[cfg(test)]\nfn test_helper() {}\n";
+    write_file(root, "src/lib.rs", source);
+
+    let output = crapper_in(root, &["--no-coverage"]);
+    assert_eq!(exit_code(&output), 0);
+    let report = stdout(&output);
+    assert!(report.contains("keep"), "{report}");
+    for hidden in ["unit_check", "plain_check", "test_helper"] {
+        assert!(
+            !report.contains(hidden),
+            "{hidden} is in the report:\n{report}"
+        );
+    }
+}
+
 // CR-4
 #[test]
 fn cr_4_snapshot_written_at_root_metrics_crap_edn() {
