@@ -44,14 +44,37 @@ fn is_recordable(node: Node) -> bool {
         && !node.parent().is_some_and(|parent| parent.kind() == "block")
 }
 
+/// Test code (MU-26): a fn in a module named `tests` or marked `#[cfg(test)]`.
+fn is_test_code(data: &[u8], node: Node) -> bool {
+    std::iter::successors(node.parent(), |ancestor| ancestor.parent())
+        .filter(|ancestor| ancestor.kind() == "mod_item")
+        .any(|module| is_test_module(data, module))
+}
+
+fn is_test_module(data: &[u8], module: Node) -> bool {
+    let named_tests = child_of_type(module, &["identifier"])
+        .is_some_and(|ident| node_text(data, ident) == "tests");
+    named_tests || has_attribute(data, module, "#[cfg(test)]")
+}
+
+/// True when an attribute directly before `item` reads `wanted`, ignoring white space.
+fn has_attribute(data: &[u8], item: Node, wanted: &str) -> bool {
+    std::iter::successors(item.prev_sibling(), |sibling| sibling.prev_sibling())
+        .take_while(|sibling| sibling.kind() == "attribute_item")
+        .any(|attribute| {
+            let text: String = node_text(data, attribute).split_whitespace().collect();
+            text == wanted
+        })
+}
+
 fn record_function(data: &[u8], node: Node, modules: &[String]) -> Option<Function> {
     if !is_recordable(node) {
         return None;
     }
-    let mods = named_ancestors(data, node, &["mod_item"], &["identifier"]);
-    if mods.iter().any(|name| name.as_str() == "tests") {
+    if is_test_code(data, node) {
         return None;
     }
+    let mods = named_ancestors(data, node, &["mod_item"], &["identifier"]);
     let ident = child_of_type(node, &["identifier"])?;
     let owner = impl_owner(data, node);
     Some(Function {
@@ -278,6 +301,13 @@ fn outer() {
             .collect()
     }
 
+    /// `namespace name` of every function of `source` as `src/lib.rs` of crate `demo`.
+    fn in_lib(source: &str) -> Vec<String> {
+        let dir = crate_at("demo");
+        let path = make_parents(&dir, "src/lib.rs");
+        listed(source, &path, Some(root_of(&dir)))
+    }
+
     #[test]
     // MU-9: free fns use the crate namespace, methods the self type, trait impls the `for` type;
     // fns nested in a block and fns in `mod tests` are skipped
@@ -293,6 +323,13 @@ fn outer() {
                 "demo_game outer",
             ]
         );
+    }
+
+    #[test]
+    // MU-26: a fn in a `#[cfg(test)]` module with any name is test code and is skipped
+    fn mu_26_cfg_test_module_with_any_name_is_skipped() {
+        let source = "pub fn real() {}\n\n#[cfg(test)]\nmod unit_tests {\n    #[test]\n    fn b() {}\n    fn helper() {}\n}\n";
+        assert_eq!(in_lib(source), ["demo real"]);
     }
 
     #[test]
