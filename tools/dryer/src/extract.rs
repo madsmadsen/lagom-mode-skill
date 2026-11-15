@@ -188,6 +188,7 @@ fn rust_node_kept(data: &[u8], node: Node) -> bool {
     node.kind() == "function_item"
         && has(node, &["block"])
         && !node.parent().is_some_and(|parent| parent.kind() == "block")
+        && !has_attribute(data, node, "#[test]")
         && !rust_in_tests(data, node)
 }
 
@@ -478,6 +479,13 @@ mod tests {
     fn dr15_function_in_a_cfg_test_module_is_not_compared() {
         let source = "#[cfg(test)]\nmod unit_tests {\n    fn gamma(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\nfn beta(xs: Vec<i32>) -> usize {\n    xs.len()\n}\n";
         assert_eq!(spans(Language::Rust, "a.rs", source), vec![(7, 9)]);
+    }
+
+    // DR-15: a function with the attribute #[test] is test code, even in a module that is not a test module.
+    #[test]
+    fn dr15_function_with_a_test_attribute_is_not_compared() {
+        let source = "mod inner {\n    #[test]\n    fn gamma() {\n        assert_eq!(1, 1);\n    }\n    fn delta(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n";
+        assert_eq!(spans(Language::Rust, "a.rs", source), vec![(6, 8)]);
     }
 
     // DR-11: Python candidates are functions and methods; nested functions are excluded.
