@@ -504,6 +504,25 @@ mod tests {
         assert_eq!(spans(Language::Rust, "a.rs", source), vec![(6, 8)]);
     }
 
+    // DR-15: code that only looks like test code stays production code: cfg(not(test)),
+    // cfg(all(test, ..)), and tokio::test are not matched.
+    #[test]
+    fn dr15_cfg_not_test_and_other_test_attributes_stay_compared() {
+        let source = "#[cfg(not(test))]\nmod real {\n    fn alpha(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n#[cfg(all(test, unix))]\nmod mixed {\n    fn beta(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n#[tokio::test]\nasync fn gamma(xs: Vec<i32>) -> usize {\n    xs.len()\n}\n#[cfg(not(test))]\nfn delta(xs: Vec<i32>) -> usize {\n    xs.len()\n}\n";
+        assert_eq!(
+            spans(Language::Rust, "a.rs", source),
+            vec![(3, 5), (9, 11), (14, 16), (18, 20)]
+        );
+    }
+
+    // DR-15: a module named tests is still test code without an attribute, a test attribute
+    // does not reach the next item, and a plain function beside them is compared.
+    #[test]
+    fn dr15_mod_tests_stays_skipped_and_a_test_attribute_does_not_reach_the_next_item() {
+        let source = "mod tests {\n    fn alpha(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n#[cfg(test)]\nfn helper(xs: Vec<i32>) -> usize {\n    xs.len()\n}\nfn beta(xs: Vec<i32>) -> usize {\n    xs.len()\n}\n";
+        assert_eq!(spans(Language::Rust, "a.rs", source), vec![(10, 12)]);
+    }
+
     // DR-11: Python candidates are functions and methods; nested functions are excluded.
     #[test]
     fn dr11_python_compares_functions_and_methods_not_nested_ones() {
