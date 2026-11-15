@@ -176,25 +176,28 @@ fn namespace(modules: &[String], mods: &[String], type_name: Option<&str>) -> St
         .join("::")
 }
 
-/// True when the function is test code (CR-25): it sits in a module named `tests`
-/// or in a `#[cfg(test)]` module.
+/// True when the function is test code (CR-25): it sits in a module named `tests` or in a
+/// `#[cfg(test)]` module, or it has the attribute `#[test]` or `#[cfg(test)]` itself.
 fn is_test_code(data: &[u8], node: Node, mods: &[String]) -> bool {
     mods.iter().any(|name| name == "tests")
+        || has_attribute(data, node, &["#[test]", "#[cfg(test)]"])
         || std::iter::successors(node.parent(), |n| n.parent())
             .filter(|n| n.kind() == "mod_item")
-            .any(|module| has_attribute(data, module, "#[cfg(test)]"))
+            .any(|module| has_attribute(data, module, &["#[cfg(test)]"]))
 }
 
-/// True when an attribute of `item` reads `wanted`. The attributes of an item are the
-/// `attribute_item` siblings right before it. Spaces inside the attribute do not matter.
-fn has_attribute(data: &[u8], item: Node, wanted: &str) -> bool {
+/// True when an attribute of `item` reads as one of `wanted`. The attributes of an item are
+/// the `attribute_item` siblings right before it. Spaces inside the attribute do not matter.
+fn has_attribute(data: &[u8], item: Node, wanted: &[&str]) -> bool {
     std::iter::successors(item.prev_sibling(), |n| n.prev_sibling())
         .take_while(|n| n.kind() == "attribute_item")
         .any(|attr| {
-            node_text(data, attr)
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .eq(wanted.chars())
+            wanted.iter().any(|text| {
+                node_text(data, attr)
+                    .chars()
+                    .filter(|c| !c.is_whitespace())
+                    .eq(text.chars())
+            })
         })
 }
 
@@ -317,6 +320,20 @@ mod unit_tests {
     mod inner { fn deep() {} }
 }
 ";
+        assert_eq!(names_in(source), ["keep"]);
+    }
+
+    // CR-25 unit b: a function with `#[test]` is test code, even in a plain module.
+    #[test]
+    fn cr_25_a_test_function_in_a_plain_module_is_skipped() {
+        let source = "mod plain {\n    fn keep() {}\n    #[test]\n    fn check() { if true {} }\n    #[test]\n    #[ignore]\n    fn slow() {}\n}\n";
+        assert_eq!(names_in(source), ["keep"]);
+    }
+
+    // CR-25 unit c: a function with `#[cfg(test)]` is test code, spaces in the attribute do not matter.
+    #[test]
+    fn cr_25_a_cfg_test_helper_function_is_skipped() {
+        let source = "fn keep() {}\n#[cfg(test)]\nfn helper() {}\n#[cfg( test )]\nfn spaced() {}\n#[allow(dead_code)]\n#[cfg(test)]\nfn second() {}\n";
         assert_eq!(names_in(source), ["keep"]);
     }
 
