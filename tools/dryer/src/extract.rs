@@ -82,10 +82,27 @@ fn python_nested(node: Node) -> bool {
     false
 }
 
+/// DR-15: true when an `attribute_item` right before `node` reads `wanted`, ignoring white space.
+fn has_attribute(data: &[u8], node: Node, wanted: &str) -> bool {
+    let mut sibling = node.prev_sibling();
+    while let Some(attribute) = sibling.filter(|sibling| sibling.kind() == "attribute_item") {
+        if data[attribute.byte_range()]
+            .iter()
+            .filter(|byte| !byte.is_ascii_whitespace())
+            .eq(wanted.as_bytes())
+        {
+            return true;
+        }
+        sibling = attribute.prev_sibling();
+    }
+    false
+}
+
 fn is_tests_module(data: &[u8], node: Node) -> bool {
     node.kind() == "mod_item"
-        && child_of_type(node, &["identifier"])
+        && (child_of_type(node, &["identifier"])
             .is_some_and(|ident| node_text(data, ident) == "tests")
+            || has_attribute(data, node, "#[cfg(test)]"))
 }
 
 fn rust_in_tests(data: &[u8], node: Node) -> bool {
@@ -454,6 +471,13 @@ mod tests {
 }
 "#;
         assert_eq!(spans(Language::Rust, "a.rs", source), vec![(3, 7), (9, 11)]);
+    }
+
+    // DR-15: a function in a module with the attribute #[cfg(test)] is test code, whatever the module is named.
+    #[test]
+    fn dr15_function_in_a_cfg_test_module_is_not_compared() {
+        let source = "#[cfg(test)]\nmod unit_tests {\n    fn gamma(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\nfn beta(xs: Vec<i32>) -> usize {\n    xs.len()\n}\n";
+        assert_eq!(spans(Language::Rust, "a.rs", source), vec![(7, 9)]);
     }
 
     // DR-11: Python candidates are functions and methods; nested functions are excluded.
