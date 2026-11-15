@@ -21,6 +21,9 @@ const DEFINITION_PARENTS: &[&str] = &[
     "public_field_definition",
     "property_definition",
 ];
+// DR-15: the attributes that mark Rust test code, written without white space.
+const CFG_TEST: &str = "#[cfg(test)]";
+const TEST_ATTRIBUTE: &str = "#[test]";
 const JAVA_NESTED: &[&str] = &[
     "method_declaration",
     "constructor_declaration",
@@ -102,7 +105,7 @@ fn is_tests_module(data: &[u8], node: Node) -> bool {
     node.kind() == "mod_item"
         && (child_of_type(node, &["identifier"])
             .is_some_and(|ident| node_text(data, ident) == "tests")
-            || has_attribute(data, node, "#[cfg(test)]"))
+            || has_attribute(data, node, CFG_TEST))
 }
 
 fn rust_in_tests(data: &[u8], node: Node) -> bool {
@@ -184,12 +187,18 @@ fn typescript_nodes(root: Node) -> Vec<Node> {
     found
 }
 
+/// DR-15: a function is test code when it has a test attribute or sits in a test module.
+fn rust_is_test_code(data: &[u8], node: Node) -> bool {
+    has_attribute(data, node, TEST_ATTRIBUTE)
+        || has_attribute(data, node, CFG_TEST)
+        || rust_in_tests(data, node)
+}
+
 fn rust_node_kept(data: &[u8], node: Node) -> bool {
     node.kind() == "function_item"
         && has(node, &["block"])
         && !node.parent().is_some_and(|parent| parent.kind() == "block")
-        && !has_attribute(data, node, "#[test]")
-        && !rust_in_tests(data, node)
+        && !rust_is_test_code(data, node)
 }
 
 fn rust_nodes<'a>(data: &[u8], root: Node<'a>) -> Vec<Node<'a>> {
@@ -485,6 +494,13 @@ mod tests {
     #[test]
     fn dr15_function_with_a_test_attribute_is_not_compared() {
         let source = "mod inner {\n    #[test]\n    fn gamma() {\n        assert_eq!(1, 1);\n    }\n    fn delta(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n";
+        assert_eq!(spans(Language::Rust, "a.rs", source), vec![(6, 8)]);
+    }
+
+    // DR-15: a function with the attribute #[cfg(test)] is test code, even in a module that is not a test module.
+    #[test]
+    fn dr15_function_with_a_cfg_test_attribute_is_not_compared() {
+        let source = "mod inner {\n    #[cfg(test)]\n    fn helper(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n    fn delta(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n";
         assert_eq!(spans(Language::Rust, "a.rs", source), vec![(6, 8)]);
     }
 
