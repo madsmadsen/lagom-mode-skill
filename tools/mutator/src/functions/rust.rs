@@ -44,26 +44,27 @@ fn is_recordable(node: Node) -> bool {
         && !node.parent().is_some_and(|parent| parent.kind() == "block")
 }
 
-/// Test code (MU-26): a fn in a module named `tests` or marked `#[cfg(test)]`.
-fn is_test_code(data: &[u8], node: Node) -> bool {
-    std::iter::successors(node.parent(), |ancestor| ancestor.parent())
-        .filter(|ancestor| ancestor.kind() == "mod_item")
-        .any(|module| is_test_module(data, module))
+/// Test code (MU-26): a fn marked `#[test]`, or a fn in a module named `tests` or marked `#[cfg(test)]`.
+fn is_test_code(data: &[u8], function: Node) -> bool {
+    has_attribute(data, function, &["#[test]"])
+        || std::iter::successors(function.parent(), |ancestor| ancestor.parent())
+            .filter(|ancestor| ancestor.kind() == "mod_item")
+            .any(|module| is_test_module(data, module))
 }
 
 fn is_test_module(data: &[u8], module: Node) -> bool {
     let named_tests = child_of_type(module, &["identifier"])
         .is_some_and(|ident| node_text(data, ident) == "tests");
-    named_tests || has_attribute(data, module, "#[cfg(test)]")
+    named_tests || has_attribute(data, module, &["#[cfg(test)]"])
 }
 
-/// True when an attribute directly before `item` reads `wanted`, ignoring white space.
-fn has_attribute(data: &[u8], item: Node, wanted: &str) -> bool {
+/// True when an attribute directly before `item` reads one of `wanted`, ignoring white space.
+fn has_attribute(data: &[u8], item: Node, wanted: &[&str]) -> bool {
     std::iter::successors(item.prev_sibling(), |sibling| sibling.prev_sibling())
         .take_while(|sibling| sibling.kind() == "attribute_item")
         .any(|attribute| {
             let text: String = node_text(data, attribute).split_whitespace().collect();
-            text == wanted
+            wanted.contains(&text.as_str())
         })
 }
 
@@ -330,6 +331,13 @@ fn outer() {
     fn mu_26_cfg_test_module_with_any_name_is_skipped() {
         let source = "pub fn real() {}\n\n#[cfg(test)]\nmod unit_tests {\n    #[test]\n    fn b() {}\n    fn helper() {}\n}\n";
         assert_eq!(in_lib(source), ["demo real"]);
+    }
+
+    #[test]
+    // MU-26: a `#[test]` fn in a plain module is test code and is skipped
+    fn mu_26_test_attribute_fn_in_a_plain_module_is_skipped() {
+        let source = "mod checks {\n    pub fn keep() {}\n\n    #[test]\n    fn check() {}\n\n    #[test]\n    #[ignore]\n    fn slow() {}\n}\n";
+        assert_eq!(in_lib(source), ["demo::checks keep"]);
     }
 
     #[test]
