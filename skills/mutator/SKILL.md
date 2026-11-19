@@ -52,7 +52,7 @@ A snapshot holds the forms of one namespace, and those forms can come from more 
 
 mutator writes the snapshot again on the next run. The delete is safe: mutator reads the snapshots when it starts and creates the directory when it writes, so a missing file only means that it starts with no earlier outcome for that file. A run that exits `2` writes no snapshot, so a deleted one stays absent until a later run. That later run treats each site in `--lines` as changed and runs it again instead of trusting an old outcome. The run takes longer and is still correct.
 
-Two checked files can share one snapshot. Delete it once, then give each file that shares it its run after the delete, and read the gate result of each file right after its own run. A retry of one of those files repeats the delete, so it repeats the run of every file that shares the snapshot. The first run writes its own forms, and the second run keeps them and adds its own.
+Two checked files can share one snapshot. Delete it once, then give each file that shares it its run after the delete, and read the gate result of each file right after its own run. A retry of one of those files repeats the delete, so it repeats the run of every checked file that shares the snapshot. The first run writes its own forms, and the second run keeps them and adds its own.
 
 With a fresh snapshot, a survivor comes only from a changed line.
 

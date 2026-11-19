@@ -58,7 +58,7 @@ The parts are independent:
 3. Each port has its own parity runner. The runner compares the port with its original on small fixture projects.
 4. A port does not share code with another port. A duplicated piece of code is accepted as the cost of independence.
 5. The ports build with the Rust stable toolchain. They run on macOS 14 or later and on Linux, on arm64 and x86_64.
-6. A user installs each port with one `cargo install --git` command. The README of each port states this command. The skills do not.
+6. A user installs each port with one `cargo install --locked --git <repo> <crate>` command. The crate name is `crapper`, `dryer`, or `mutator`. The command builds from the committed `Cargo.lock`. The README of each port states this command. The skills do not.
 7. Each `LICENSE` file in this repository is the MIT License, with Mads Madsen as the copyright holder and an acknowledgment of Robert C. Martin. The `LICENSE` of `lagom-mode` and the `LICENSE` at the root also keep the MIT License notice of ub-mode, because the MIT License requires it in each copy.
 
 ### 5.3 Documents and traceability
