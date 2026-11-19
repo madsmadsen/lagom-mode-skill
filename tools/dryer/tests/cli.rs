@@ -364,12 +364,12 @@ fn dr10_python_function_and_java_method_are_not_paired() {
     assert_eq!(text_of(&out), NO_CANDIDATES);
 }
 
-// DR-27, AC-13: the test of fix unreadable-file-warns-and-continues in
+// DR-16, AC-13: the test of fix unreadable-file-warns-and-continues in
 // parity/fixes.toml. A source file that dryer cannot read gives one warning on
 // stderr, and the other files still fill the report. The original stops with a
 // Python traceback and reports nothing.
 #[test]
-fn dr27_unreadable_file_warns_and_the_scan_goes_on() {
+fn dr16_unreadable_file_warns_and_the_scan_goes_on() {
     let project = Project::new();
     project.write("a.py", A_PY).write("b.py", B_PY);
     std::os::unix::fs::symlink("/nonexistent/target.py", project.root.join("locked.py"))

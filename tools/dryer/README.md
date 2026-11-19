@@ -64,7 +64,7 @@ Exit codes:
 | 70 | The worker thread did not start, or it panicked. |
 | Git code | With `--changed`, a Git command failed. |
 
-A Git command that cannot start gives `1`. A file that dryer cannot read gives a warning on standard error, and the run goes on (DR-27).
+A Git command that cannot start gives `1`, and so does a Git process that a signal kills. A file that dryer cannot read gives a warning on standard error, and the run goes on (DR-16).
 
 The snapshot is `.metrics/dry.edn`. It uses EDN, the Clojure data format. The same files give the same snapshot on each run.
 
@@ -72,7 +72,7 @@ The snapshot is `.metrics/dry.edn`. It uses EDN, the Clojure data format. The sa
 
 - The port needs no Python at run time. Python runs only in the parity runner (see below).
 - The file `parity/fixes.toml` lists each difference from the original. The port leaves a Rust function out when it is test code (DR-15). A function is test code when an enclosing `mod` is named `tests`, when an enclosing `mod` has `#[cfg(test)]`, or when the function has `#[test]` or `#[cfg(test)]`. The original skips a function only in a `mod` named `tests`.
-- When the port cannot read a source file, it prints a warning and goes on (DR-27). The original stops with a Python traceback.
+- When the port cannot read a source file, it prints a warning and goes on (DR-16). The original stops with a Python traceback and exit code `1`.
 
 ## Parity
 
