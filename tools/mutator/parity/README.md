@@ -57,11 +57,16 @@ error stay a `FAIL`, approved or not.
 
 The runner compares fix ids, not fixture paths. One approval therefore
 excuses only the runs that name it. `parity/test_status.py` tests this rule
-with fake ids, and it checks that `fixes.toml` has no approved entry. It needs
-Python 3.11 or later, and no original. Run one of:
+with fake ids, and it checks that `fixes.toml` has no approved entry. When Mads
+Madsen approves an entry on purpose, change that test to name the approved id.
+Do not delete it. It needs Python 3.11 or later, and no original. Run one of:
 
     python3.12 -m unittest parity/test_status.py
     python3.12 -m unittest discover -s .   # from tools/mutator, as crapper does
+
+`tests/parity_map.rs` runs the second command for you: `cargo test` runs it in
+`tools/mutator`. The test skips with a note when the host has no `python3.12`
+and no `python3` with `tomllib`.
 
 `parity/__init__.py` marks `parity/` as a package, so discovery finds the tests
 and crapper can measure their coverage.

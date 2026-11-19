@@ -92,14 +92,6 @@ def named_fixes(entry: dict) -> list[str]:
     return [listed] if isinstance(listed, str) else list(listed)
 
 
-def suppressing_runs(text: str) -> list[str]:
-    """Names of the runs in a coverage.toml text that skip the stdout check with
-    `allow_stdout_diff = true`. A difference needs an approval instead (MU-PB-6)."""
-    entries = tomllib.loads(text).get("run", [])
-    return [entry.get("name", "?") for entry in entries
-            if entry.get("allow_stdout_diff", False)]
-
-
 def status_for(problems: list[str], entry: dict, approved: set[str]) -> str:
     """AC-1, MU-PB-6: an approved fix excuses the stdout difference of its run, and
     only that. An exit code mismatch, a metrics difference, a git status difference,

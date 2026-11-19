@@ -17,6 +17,8 @@ Stdlib only. Run from tools/mutator/ with Python 3.11 or later:
 or let discovery find it, which is how crapper measures the coverage:
 
     python3.12 -m unittest discover -s .
+
+`cargo test` also runs that command, through `tests/parity_map.rs`.
 """
 
 from __future__ import annotations
@@ -138,24 +140,10 @@ class ApprovedFixIds(unittest.TestCase):
 
     def test_mu_pb_6_the_real_fixes_toml_has_nothing_approved(self):
         # AGENTS.md "Parity with the original" rule 3: only Mads Madsen approves an
-        # entry, so this test fails as soon as a worker approves one.
+        # entry, so this test fails as soon as a worker approves one. When Mads Madsen
+        # approves an entry on purpose, change this test to name the approved id. Do
+        # not delete it: the rule stays, and so does the test that guards it.
         self.assertEqual(run.approved_fix_ids(), set())
-
-
-class StdoutDiffNotSuppressed(unittest.TestCase):
-    def test_mu_pb_6_no_run_in_coverage_toml_suppresses_the_stdout_check(self):
-        # An approval would excuse the stdout difference of its run, so no run may
-        # skip the check on its own (finding 1 of the review).
-        text = run.COVERAGE_TOML.read_text(encoding="utf-8")
-        self.assertEqual(run.suppressing_runs(text), [])
-
-    def test_mu_pb_6_the_helper_flags_a_sample_that_suppresses_the_check(self):
-        text = '[[run]]\nname = "sample"\nallow_stdout_diff = true\n'
-        self.assertEqual(run.suppressing_runs(text), ["sample"])
-
-    def test_mu_pb_6_the_helper_accepts_a_sample_that_does_not(self):
-        text = '[[run]]\nname = "sample"\nargs = ["-h"]\nallow_stdout_diff = false\n'
-        self.assertEqual(run.suppressing_runs(text), [])
 
 
 class CoverageFixIds(unittest.TestCase):

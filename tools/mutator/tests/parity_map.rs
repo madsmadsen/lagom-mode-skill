@@ -58,6 +58,43 @@ fn mu_pb_6_no_run_skips_the_stdout_check() {
     assert_eq!(suppressing_runs(clean), Vec::<String>::new());
 }
 
+/// The Python that can run `parity/test_status.py`: it imports `tomllib`, so it needs
+/// Python 3.11 or later. `python3.12` comes first, because `python3` is 3.9 on some hosts.
+fn parity_python() -> Option<&'static str> {
+    ["python3.12", "python3"].into_iter().find(|name| {
+        Command::new(name)
+            .args(["-c", "import tomllib"])
+            .output()
+            .is_ok_and(|out| out.status.success())
+    })
+}
+
+/// MU-PB-6, AC-1: the Python tests of the parity runner pass. No other automatic check
+/// runs them, so a broken `status_for` would pass every other check. The test skips when
+/// no interpreter has `tomllib`.
+#[test]
+fn mu_pb_6_ac_1_the_parity_status_tests_pass() {
+    let Some(python) = parity_python() else {
+        println!(
+            "note: skipped, because neither python3.12 nor python3 imports tomllib. \
+             Run `python3.12 -m unittest discover -s . -p 'test_*.py'` in tools/mutator."
+        );
+        return;
+    };
+    let out = Command::new(python)
+        .args(["-m", "unittest", "discover", "-s", ".", "-p", "test_*.py"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("running the parity tests");
+    assert!(
+        out.status.success(),
+        "{python} -m unittest discover exited {:?}\nstdout:\n{}\nstderr:\n{}",
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
 /// The flags in the Options block of `--help`: `-h`, `-s`, and every `--name`.
 fn help_flags() -> Vec<String> {
     let out = Command::new(env!("CARGO_BIN_EXE_mutator"))

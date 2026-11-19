@@ -107,3 +107,10 @@ the exit codes and the snapshots. See `parity/README.md`.
 cargo build
 cargo test
 cargo clippy --all-targets -- -D warnings
+cargo fmt
+```
+
+`cargo test` also runs `python3.12 -m unittest discover -s . -p 'test_*.py'` for
+the parity runner through `tests/parity_map.rs`. That test skips with a note when
+the host has no `python3.12` and no `python3` with `tomllib`.
+
