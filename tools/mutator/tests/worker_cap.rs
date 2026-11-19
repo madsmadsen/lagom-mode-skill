@@ -4,7 +4,7 @@
 
 use std::process::Command;
 
-/// MU-17: the default worker count is half the cores, at least one, and an explicit cap is honored.
+/// MU-17, AC-19: the default worker count is half the cores, at least one, and an explicit cap is honored.
 #[test]
 fn mu_17_default_worker_count_is_half_the_cores_at_least_one() {
     let cores = std::thread::available_parallelism()

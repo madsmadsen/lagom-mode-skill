@@ -44,7 +44,7 @@ is a flag that both have, but the port caps it at half the cores and uses that c
 | `1` | Usage error. |
 | `2` | The baseline tests failed. The snapshots keep their bytes. |
 | `3` | At least one mutant survived. |
-| other | The `--coverage-command` failed and returned its own code. stderr names the code. Also, `--changed` ran and Git failed: the port returns the code of Git, for example `128` outside a Git repository, and prints the message of Git on stderr. |
+| other | The `--coverage-command` failed and returned its own code. stderr names the code. Also, `--changed` ran and Git failed: the port returns the code of Git, for example `128` outside a Git repository, and prints the message of Git on stderr. When Git cannot start at all, the port exits `1`, and that code is not a code of Git. |
 
 The tool skips 22 directory names, the list of crapper's `discover.py`. The list holds `test`,
 `tests`, `spec`, `specs`, `__tests__`, `vendor`, `node_modules`, `target`, and build output
@@ -55,7 +55,8 @@ The port also drops any source file whose full path has a part named `test`, `te
 project root. So a directory that you name is walked, but the port drops every file in it. A
 project whose own path holds one of these names selects no file: the run prints
 `No source files to mutate.` and exits `0`. Work around it by moving or copying the project to a
-path with no such part.
+path with no such part. A file that you name as the source root, with `--source-root <file>`, is
+always taken, even when it is a test file.
 
 ## Differences from the original
 

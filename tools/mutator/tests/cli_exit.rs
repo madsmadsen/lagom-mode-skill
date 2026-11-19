@@ -275,6 +275,73 @@ fn mu_6_scan_skips_test_spec_vendor_node_modules_and_target() {
     );
 }
 
+/// MU-6: the test-code check reads the whole absolute path, so a project below a directory
+/// named `tests` selects no source file, prints the message, and exits 0.
+#[test]
+fn mu_6_project_below_a_tests_directory_selects_no_source_file() {
+    let outer = tempfile::tempdir().expect("temp dir");
+    let proj = outer.path().join("tests").join("proj");
+    write(&proj, "src/app.py", "def f(a, b):\n    return a >= b\n");
+    let out = run(&proj, &["--scan", "--no-coverage"]);
+    assert_eq!(out.code, 0, "stderr: {}", out.stderr);
+    assert!(
+        out.stdout.contains("No source files to mutate."),
+        "stdout: {}",
+        out.stdout
+    );
+}
+
+/// MU-6: a directory named `tests` that the user names as the root is walked, and each file
+/// in it is dropped as a test file, with the same message and exit 0.
+#[test]
+fn mu_6_named_tests_directory_is_walked_and_each_file_is_dropped() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    write(
+        &dir.path().join("tests"),
+        "app.py",
+        "def f(a, b):\n    return a >= b\n",
+    );
+    let out = run(dir.path(), &["tests", "--scan", "--no-coverage"]);
+    assert_eq!(out.code, 0, "stderr: {}", out.stderr);
+    assert!(
+        out.stdout.contains("No source files to mutate."),
+        "stdout: {}",
+        out.stdout
+    );
+    assert!(
+        !out.stdout.contains("app.py"),
+        "test file scanned: {}",
+        out.stdout
+    );
+}
+
+/// MU-6: a file given as the source root is taken even when it is a test file, so the
+/// test-file check of `--source-root` does not apply to a file root.
+#[test]
+fn mu_6_source_root_file_that_is_a_test_file_is_taken() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    write(
+        &dir.path().join("tests"),
+        "helper.py",
+        "def f(a, b):\n    return a >= b\n",
+    );
+    let out = run(
+        dir.path(),
+        &[
+            "--source-root",
+            "tests/helper.py",
+            "--scan",
+            "--no-coverage",
+        ],
+    );
+    assert_eq!(out.code, 0, "stderr: {}", out.stderr);
+    assert!(
+        out.stdout.contains("tests/helper.py"),
+        "source root file not scanned: {}",
+        out.stdout
+    );
+}
+
 /// MU-4: a run that kills a mutant prints the summary table on stdout, with a Killed column and a Total row.
 #[test]
 fn mu_4_run_prints_summary_table_on_stdout() {

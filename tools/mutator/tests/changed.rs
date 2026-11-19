@@ -74,9 +74,10 @@ fn mu_7_ac8_changed_selects_file_with_space_and_non_ascii_name() {
     assert_eq!(scanned(&out.stdout), ["src/mé x.py"]);
 }
 
-// MU-7: --changed outside a git repository exits non-zero and prints git's message.
+// MU-7 / MU-20: --changed outside a Git repository exits with the code of Git, which is 128,
+// and prints Git's message.
 #[test]
-fn mu_7_changed_outside_git_repo_exits_with_git_error() {
+fn mu_7_mu_20_changed_outside_git_repo_exits_with_git_code_128() {
     let dir = tempfile::tempdir().expect("tempdir");
     write(dir.path(), "src/a.py", SRC);
     let out = run_env(
@@ -84,7 +85,7 @@ fn mu_7_changed_outside_git_repo_exits_with_git_error() {
         &["--changed", "--scan", "--no-coverage"],
         &[("LC_ALL", "C")],
     );
-    assert_ne!(out.code, 0, "{}", out.stdout);
+    assert_eq!(out.code, 128, "{}", out.stdout);
     assert!(
         out.stderr.contains("not a git repository"),
         "{}",
