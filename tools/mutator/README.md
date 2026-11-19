@@ -12,8 +12,11 @@ names the file of the original, or of crapper, that it matches.
 ## Install
 
 ```bash
-cargo install --git https://github.com/madsmadsen/lagom-mode-skill mutator
+cargo install --locked --git https://github.com/madsmadsen/lagom-mode-skill mutator
 ```
+
+`--locked` uses the versions in `Cargo.lock`. Without it, Cargo may take a newer grammar, and the
+sites can change. The repository is public on GitHub, and the crate is not published to crates.io.
 
 ## Run
 
@@ -39,9 +42,11 @@ apart from `--max-memory-mb`, which only the port has (MU-25):
 | `1` | Usage error. |
 | `2` | The baseline tests failed. The snapshots keep their bytes. |
 | `3` | At least one mutant survived. |
+| other | The `--coverage-command` failed and returned its own code. stderr names the code. |
 
-The tool skips the directories `test`, `spec`, `vendor`, `node_modules`, `target`, and the other
-directories that crapper skips.
+The tool skips 22 directory names, the list of crapper's `discover.py`. The list holds `test`,
+`tests`, `spec`, `specs`, `__tests__`, `vendor`, `node_modules`, `target`, and build output
+directories such as `dist`, `build`, and `out`. MU-6 gives the whole list.
 
 ## Differences from the original
 

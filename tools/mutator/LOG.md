@@ -288,3 +288,17 @@ Tool worker. Worktree `/tmp/lagom-fix4`, branch `lagom-mode/open-items`. Files: 
 - The VM was not run. Each edited script passed `bash -n`.
 - Proof, one command at a time in `tools/mutator`: `python3.12 -m unittest discover -s .` ran 8 tests, OK. `cargo build --release` ok. `cargo test` 523 passed. `cargo clippy --all-targets` no issues. `cargo fmt` clean. `dryer --threshold 0.8 tests/parity_map.rs` reports no candidates, 0 survivors.
 - Not changed: no `fixes.toml` entry is approved.
+
+## 2026-11-19: PRD text for the worker cap, the skip list, the exit codes, and the install (MU-2, MU-6, MU-17, MU-20, MU-NFR-1, MU-NFR-3)
+
+Tool worker. Worktree `/tmp/lagom-fix5`, branch `lagom-mode/prd-fixes`. Only `docs/prd/mutator.md`, `tools/mutator/README.md`, `tools/mutator/parity/fixes.toml`, and this log changed. No code changed.
+
+- Read `src/workers.rs:119-139` and `tests/worker_cap.rs`. `worker_count` is `site_count.min(cap).min(limit).max(1)` and `cap_for` is `(cores / 2).max(1)`, so half the cores is a hard cap. Added that rule to MU-17, with the sentence that the behavior differs from the original. Reason: MU-2 and MU-17 named only the default, and the test proves `--max-workers 10000` still gives half the cores.
+- `parity/fixes.toml`, entry `worker-cap-half-the-cores`: the description and `changed_behavior` now say the cap holds for an explicit `--max-workers` too. `approved` stays `false`. Reason: the entry named only the default.
+- `src/metrics.rs:414-425`: `same_content` drops `tested-at` from both sides, and `persist_snapshot` keeps the old file when the rest is equal. Stated that rule in MU-NFR-1, with the differs-sentence, and named `:tested-at` in AC-13. Reason: the rule had no requirement, only the entry `idempotent-tested-at`.
+- MU-2 and AC-10: added the `--max-memory-mb` exception with a citation of MU-25. Reason: non-goal 1 named it and no requirement did.
+- Non-goal 3 and MU-NFR-3: the repository is public on GitHub, the crate is not on crates.io, and the command is `cargo install --locked --git ...`. `README.md` now shows the same command and says why `--locked`, like `tools/dryer/README.md`. Reason: `LOG.md:192` records that the repository goes public, and the README had no `--locked`.
+- MU-6: `src/discover.rs:12-33` lists 17 names in `SKIP_DIRS` and 5 in `TEST_DIRS`, 22 in all, and also leaves out test files by suffix and Python test names. MU-6 now states that rule, and `README.md` names the count. Reason: MU-6 listed five directories only.
+- MU-20: `src/cli.rs:721` returns 0 when no file is selected, `cli.rs:363` gives a usage error exit 1 with the help on stderr, and `cli.rs:566-580` passes through the code of a failed `--coverage-command` and names it on stderr. Added all three. Reason: the PRD named only 0, 2, and 3.
+- MU-NFR-1: added the memory-limit timing limit. `src/runner.rs:29` sets `MEMORY_POLL` to 200 ms and `workers.rs:443-445` never runs a memory-killed mutant again. Reason: determinism did not cover a memory kill.
+- Proof: a grep for an em dash, a semicolon, and a contraction finds nothing on the added lines. `cargo test --test fixes_toml` and `cargo test --test parity_map` pass. No `fixes.toml` entry is approved.

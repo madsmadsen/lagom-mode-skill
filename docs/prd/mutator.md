@@ -33,18 +33,18 @@ mutator makes small changes to the code and runs the tests after each change. A 
 
 1. The port does not add languages, mutation rules, or flags that the original does not have. The upstream fixes in section 5.4 and the `--max-memory-mb` flag of MU-25 are the only exceptions.
 2. The port does not change the mutation rules or the outcome rules of the original. A bug fix is not a change of rules. The upstream fixes in section 5.4 and the test code rule of MU-26 are the only exceptions.
-3. The port is private. It is not published to crates.io.
+3. The port is not published to crates.io. It is published in a public repository on GitHub.
 
 ## 5. Functional requirements
 
 ### 5.1 Command line and files
 
 - MU-1: The port is a Rust binary named `mutator`.
-- MU-2: The port accepts every flag and positional argument of the original, with the same meaning and the same default. It rejects each flag that the original rejects, with the same exit code.
+- MU-2: The port accepts every flag and positional argument of the original, with the same meaning and the same default. It rejects each flag that the original rejects, with the same exit code. The one exception is `--max-memory-mb`, which the original rejects and the port accepts (MU-25).
 - MU-3: The port returns the same exit code as the original for the same input.
 - MU-4: The port writes one snapshot for each namespace to `.metrics/mutate/<namespace>.edn`, in the same EDN shape and with the same keys as the original.
 - MU-5: The port detects the language of each file by its extension, the same as the original.
-- MU-6: The port skips the directories `test`, `spec`, `vendor`, `node_modules`, and `target`, the same as the original.
+- MU-6: The port skips each directory with one of these names, at every level below the project root: `.git`, `.hg`, `.svn`, `.idea`, `.venv`, `venv`, `node_modules`, `vendor`, `target`, `dist`, `build`, `out`, `coverage`, `.metrics`, `testdata`, `__pycache__`, `.clj-kondo`, `test`, `tests`, `spec`, `specs`, and `__tests__`. The list is the list of `discover.py` of the crapper commit in `tools/mutator/parity/upstream.toml`. The port also leaves out a source file whose name has a test suffix, for example `_test.go`, `.test.ts`, or `.spec.ts`, and a Python file named `test_<name>.py`, `<name>_test.py`, or `conftest.py`. A file in one of these directories is not selected by `--changed` either. A directory that the user names is walked, even when its name is in the list. A file that the user names directly is taken unless it is a test file.
 - MU-7: The port supports `--changed` with the same Git selection of files as the original.
 - MU-8: The port parses source with tree-sitter grammars for Clojure, Java, Go, TypeScript, JavaScript, Rust, and Python, as the original does through the `tree-sitter-language-pack` code of crapper.
 
@@ -70,10 +70,10 @@ The original imports code from a crapper checkout for the work in this section. 
 - MU-14: The port runs the baseline test command once before any mutant. If the baseline fails, the port exits `2` and does not change the snapshots.
 - MU-15: The port counts a mutant as killed when the tests fail, time out, or do not compile. The timeout is the baseline time multiplied by `--timeout-factor` (default 10), with a minimum of 2 seconds.
 - MU-16: The port skips sites on lines that the coverage report does not hit, and counts them as uncovered sites.
-- MU-17: The port runs the mutants of one file in parallel worker directories under `target/mutation-workers`, with the overlay rules of the original. The source files of the project do not change.
+- MU-17: The port runs the mutants of one file in parallel worker directories under `target/mutation-workers`, with the overlay rules of the original. The source files of the project do not change. The number of workers is the smallest of three numbers: the number of selected sites, half the number of cores (at least one), and an explicit `--max-workers` value. The default is half the number of cores, at least one. Half the cores is a hard cap. A run with `--max-workers 10000` still uses half the cores, at least one. This behavior differs from the original, and `tools/mutator/parity/fixes.toml` lists it.
 - MU-18: Before each run that is not a scan run, the port restores the source files from `target/mutator-backup/`, the same as the original.
 - MU-19: If a snapshot exists, the port runs differentially. It reruns the survivors and every site in a function whose text changed. `--mutate-all` reruns all sites.
-- MU-20: The port exits `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives.
+- MU-20: The port exits `0` when every executed mutant is killed, `2` when the baseline fails, and `3` when a mutant survives. The port also exits `0` when it runs no mutant, for example when no source file is selected. It exits `1` for a usage error, and it prints the help text on stderr. When `--coverage-command` fails, the port exits with the code of that command and names the code on stderr.
 - MU-21: When a mutant times out, or its test time is within 10% of its timeout, the port runs that mutant once more with 2 times the timeout. The outcome of this second run is the outcome of the mutant. This behavior differs from the original, and `tools/mutator/parity/fixes.toml` lists it.
 - MU-25: The port limits the memory of each mutant test run. The limit is the total resident memory of all processes in the process group of the test command. The default limit is 4096 MiB. The flag `--max-memory-mb N` sets the limit to `N` MiB, and `--max-memory-mb 0` turns the limit off. The port rejects a value that is not a whole number of 0 or more, with exit code `1`. While a mutant test run waits, the port reads the memory of the process group at least once each second. If the memory is over the limit, the port kills the process group with `SIGKILL`, and the mutant counts as killed. The baseline run has no memory limit. MU-21 does not run a mutant again because of the memory limit. This behavior differs from the original, and `tools/mutator/parity/fixes.toml` lists it.
 
@@ -95,9 +95,9 @@ Each requirement in this section comes from an open issue of the original, and d
 
 ## 6. Non-functional requirements
 
-- MU-NFR-1: Determinism. Two runs on the same files give the same outcome for each mutant. A mutant near its timeout gets a stable outcome through MU-21.
+- MU-NFR-1: Determinism. Two runs on the same files give the same outcome for each mutant. A mutant near its timeout gets a stable outcome through MU-21. A mutant that the memory limit kills (MU-25) can depend on timing, because the port reads the memory of the process group at most once each 200 milliseconds while the test run waits, and a test run that ends before the next read is not killed. A mutant that the memory limit kills does not run a second time (MU-25). The `:tested-at` value of a snapshot changes only when another value in that snapshot changes. When the new content of a snapshot equals the file apart from `:tested-at`, the port keeps the file as it is. This behavior differs from the original, and `tools/mutator/parity/fixes.toml` lists it.
 - MU-NFR-2: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
-- MU-NFR-3: Install. A user with read access to the private repository installs the port with one `cargo install --git` command.
+- MU-NFR-3: Install. The port is published in a public repository on GitHub. It is not published to crates.io. A user installs the port with one command: `cargo install --locked --git https://github.com/madsmadsen/lagom-mode-skill mutator`.
 - MU-NFR-4: License. The port uses the MIT License. `tools/mutator/LICENSE` names Mads Madsen (`mads@onmadsen.com`) as the copyright holder. It also says that the port is based on mutator by Robert C. Martin, which uses the BSD Zero Clause License. Each `.rs` file starts with the lines `// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `// SPDX-License-Identifier: MIT`. Each file that matches a file of the original, or of the crapper code that the original imports, names that file.
 - MU-NFR-5: Crash safety. If a run stops because of a signal, the next run restores the source files from the backup (MU-18).
 
@@ -123,10 +123,10 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 7. AC-7 (MU-19): After a first run, the text of one function changes and the port runs again. The second run reruns only the survivors and the sites in the changed function. A run with `--mutate-all` reruns all sites.
 8. AC-8 (MU-7): On a fixture with a modified, a staged, and an untracked source file, the original and the port, both run with `--changed`, select the same files and write the same snapshots.
 9. AC-9 (MU-10, MU-11): On a Rust fixture on a host without `cargo-llvm-cov`, the port installs it, prints the install on stderr, and writes snapshots with coverage values.
-10. AC-10 (MU-2): A flag that the original rejects is also rejected by the port, with the same exit code.
+10. AC-10 (MU-2): A flag that the original rejects is also rejected by the port, with the same exit code. The one exception is `--max-memory-mb`, which the original rejects and the port accepts (MU-25).
 11. AC-11 (Goal 3): The fixtures for Clojure, Java, Go, TypeScript, and Rust pass with the port on a host that has no Python installed and no crapper checkout. The expected results come from an earlier parity run.
 12. AC-12 (MU-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
-13. AC-13 (MU-21, MU-NFR-1): On a fixture with a mutant whose test time is within 10% of its timeout, the port runs the mutant a second time with 2 times the timeout. Five runs on this fixture give the same outcome for each mutant and byte-identical snapshots.
+13. AC-13 (MU-21, MU-NFR-1): On a fixture with a mutant whose test time is within 10% of its timeout, the port runs the mutant a second time with 2 times the timeout. Five runs on this fixture give the same outcome for each mutant and byte-identical snapshots, so the `:tested-at` value stays the same.
 14. AC-14 (MU-22): On the TypeScript fixture of issue 29, where `src/calc/index.test.ts` imports `big` from `'.'`, the mutant `>` to `>=` on line 2 of `src/calc/index.ts` is killed.
 15. AC-15 (MU-23): A scan run on the file `src/demo/ops2.py` from issue 10 lists a site for each of the operators `is`, `in`, `@`, `//`, `%`, `**`, `+=`, and `+`. A scan run on a file with `is not`, `not in`, `-=`, `*=`, and `/=` lists a site for each of them.
 16. AC-16 (MU-24): On the fixture of issue 9, where the tests cover line 2 and do not cover lines 4 and 5, the two sites on line 4 are uncovered sites and the site on line 2 runs. The same rule holds for a site in an `except` clause and in a `case` guard whose line no test runs.
