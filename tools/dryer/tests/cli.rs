@@ -364,6 +364,30 @@ fn dr10_python_function_and_java_method_are_not_paired() {
     assert_eq!(text_of(&out), NO_CANDIDATES);
 }
 
+// DR-27, AC-13: the test of fix unreadable-file-warns-and-continues in
+// parity/fixes.toml. A source file that dryer cannot read gives one warning on
+// stderr, and the other files still fill the report. The original stops with a
+// Python traceback and reports nothing.
+#[test]
+fn dr27_unreadable_file_warns_and_the_scan_goes_on() {
+    let project = Project::new();
+    project.write("a.py", A_PY).write("b.py", B_PY);
+    std::os::unix::fs::symlink("/nonexistent/target.py", project.root.join("locked.py"))
+        .expect("create broken symlink");
+
+    let out = project.run(&[]);
+    assert_eq!(out.status.code(), Some(0));
+    assert_eq!(text_of(&out), PAIR_BLOCK);
+    let err = stderr_of(&out);
+    assert!(err.starts_with("dryer: locked.py: "), "stderr was {err:?}");
+    assert_eq!(
+        err.lines()
+            .filter(|line| line.starts_with("dryer: "))
+            .count(),
+        1
+    );
+}
+
 // DR-15, AC-9: the test of fix rust-test-code-left-out in parity/fixes.toml. The original
 // compares functions in a module with #[cfg(test)] that is not named tests, so it reports this pair.
 #[test]

@@ -10,6 +10,9 @@
 #   test                  the test that fails on the original and passes on the port
 #   approved_by           "Mads Madsen". Set only by Mads Madsen (DR-PB-6). An entry
 #                         without this key is not approved.
+#   approved              false on the DR-27 entry, which came without Mads Madsen.
+#                         The runner reads approved_by only, so this key approves
+#                         nothing.
 # The runner reports a difference in a case with an approved entry as ACCEPTED.
 # With an entry that is not approved, it reports the difference as PENDING.
 
@@ -48,3 +51,13 @@ upstream = "none: there is no upstream issue or pull request. The original skips
 original_behavior = "In a Rust file, the original compares the functions of a #[cfg(test)] mod that is not named tests, a function with #[test], and a function with #[cfg(test)]. On this fixture, with --threshold 0.6, it prints DUPLICATE score=0.64 for src/invoice.rs:9-14 and src/receipt.rs:4-10."
 changed_behavior = "The port treats a Rust function as test code and leaves it out when an enclosing mod is named tests, an enclosing mod has #[cfg(test)], the function has #[test], or the function has #[cfg(test)] (DR-15). On this fixture it prints No duplicate candidates found."
 test = "tests/cli.rs::dr15_cfg_test_module_functions_are_not_compared"
+
+[[fix]]
+id = "unreadable-file-warns-and-continues"
+requirement = "DR-27"
+fixture = "tests/cli.rs::dr27_unreadable_file_warns_and_the_scan_goes_on (project built inline: src/a.py, src/b.py, and one broken symlink src/locked.py). No parity case shows this difference, because the runner stops on a case whose original prints a traceback."
+upstream = "none: there is no upstream issue or pull request. The original calls path.read_text with no handler, so it stops with a Python traceback."
+original_behavior = "When a selected source file cannot be read, the original stops with a Python traceback and writes no report."
+changed_behavior = "The port prints a warning on standard error with the file name and the reason, skips that file, and goes on with the other files (DR-27). It exits 0 and the snapshot covers the files that it could read."
+test = "tests/cli.rs::dr27_unreadable_file_warns_and_the_scan_goes_on"
+approved = false

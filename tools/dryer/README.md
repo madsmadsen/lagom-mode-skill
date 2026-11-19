@@ -49,7 +49,7 @@ Options:
 
 Arguments:
 
-- `path`: A file or directory to compare. Test paths are included when you name them.
+- `path`: A file or directory to compare. A test file that you name stays in the scan. A test directory that you name yields no file.
 - `filter`: When the argument is not a path, dryer compares only the source files whose path contains this text.
 
 Languages: Clojure (`.clj .cljc .cljs .cljd .bb`), Java (`.java`), Go (`.go`), TypeScript (`.ts .tsx .mts .cts`), JavaScript (`.js .jsx .mjs .cjs`), Rust (`.rs`), and Python (`.py`). Dryer reads JavaScript files as language `typescript`. Clojure compares every top-level form except `ns`. The other languages compare functions and methods. A form compares only with forms in the same language.
@@ -59,16 +59,20 @@ Exit codes:
 | Code | Meaning |
 | --- | --- |
 | 0 | dryer wrote the report. |
-| 1 | Usage error. |
+| 1 | Usage error, or the snapshot could not be written. |
 | 2 | Unknown output format. |
+| 70 | The worker thread did not start, or it panicked. |
+| Git code | With `--changed`, a Git command failed. |
+
+A Git command that cannot start gives `1`. A file that dryer cannot read gives a warning on standard error, and the run goes on (DR-27).
 
 The snapshot is `.metrics/dry.edn`. It uses EDN, the Clojure data format. The same files give the same snapshot on each run.
 
 ## Differences from the original and the PRD
 
-- The port follows the original's skipped directory list. The PRD (DR-6) names a shorter list: `test`, `spec`, `vendor`, `node_modules`, and `target`. The port skips these directories: `.clj-kondo`, `.git`, `.hg`, `.idea`, `.metrics`, `.svn`, `.venv`, `__pycache__`, `__tests__`, `build`, `coverage`, `dist`, `node_modules`, `out`, `spec`, `specs`, `target`, `test`, `testdata`, `tests`, `vendor`, and `venv`. The port also skips `*_test.go`, `*.test.cts`, `*.spec.cts`, `*.spec.ts`, `test_*.py`, and `*_test.py` files. The PRD wording must match this list. [ASSUMPTION] The owner must confirm this.
 - The port needs no Python at run time. Python runs only in the parity runner (see below).
 - The file `parity/fixes.toml` lists each difference from the original. The port leaves a Rust function out when it is test code (DR-15). A function is test code when an enclosing `mod` is named `tests`, when an enclosing `mod` has `#[cfg(test)]`, or when the function has `#[test]` or `#[cfg(test)]`. The original skips a function only in a `mod` named `tests`.
+- When the port cannot read a source file, it prints a warning and goes on (DR-27). The original stops with a Python traceback.
 
 ## Parity
 

@@ -386,9 +386,10 @@ mod tests {
         assert!(warnings.is_empty());
     }
 
-    // DR-8: an unreadable file is a warning, not a crash.
+    // DR-27: an unreadable file is a warning, not a crash. The original stops with a
+    // Python traceback on the same input.
     #[test]
-    fn dr8_an_unreadable_file_becomes_a_warning() {
+    fn dr27_an_unreadable_file_becomes_a_warning() {
         let dir = tempfile::tempdir().expect("tempdir");
         let proj = dir.path().join("proj");
         fs::create_dir_all(&proj).expect("mkdir");
