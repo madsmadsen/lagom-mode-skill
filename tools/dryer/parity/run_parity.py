@@ -20,8 +20,9 @@ Each case copies fixtures/<fixture>/ into a fresh temp directory for each
 program, applies git_setup if set, and runs `<program> --root <copy> ARGS`
 with cwd set to the copy. Run 1 gives the compared result. Runs 2 to 5 reuse
 that copy only to measure time, and the runner removes .metrics before each of
-them, so a stale snapshot can never pass a check. Copy paths in stdout are
-replaced with <ROOT>.
+them, so a stale snapshot can never pass a check. A timing run that exits
+unlike run 1 stops the runner (DR-NFR-2). Copy paths in stdout are replaced
+with <ROOT>.
 
 Stdlib only; Python >= 3.9. Set DRYER_ORIGINAL_PYTHON to choose the interpreter
 that has the original's dependencies (for example the venv python).
@@ -312,7 +313,7 @@ TIMED_RUNS = 5
 def run_side(prefix, root, args, env):
     """Run one side 5 times. Run 1 gives the compared result. Runs 2 to 5 only measure time,
     each after the old .metrics is gone, so no snapshot of an earlier run can pass a check.
-    seconds is the median of the 5 runs (DR-NFR-2, AC-10).
+    A timing run must exit like run 1. seconds is the median of the 5 runs (DR-NFR-2, AC-10).
     """
     samples = []
     res = None
@@ -328,6 +329,10 @@ def run_side(prefix, root, args, env):
             edn = snap.read_bytes() if snap.exists() else None
             res = Result(proc.returncode, normalize_stdout(proc.stdout, root), edn, 0.0,
                          proc.stderr.decode("utf-8", "replace"))
+        elif proc.returncode != res.code:
+            raise SystemExit(
+                f"timing run {index + 1} exited {proc.returncode}, but run 1 exited {res.code}"
+            )
     return res._replace(seconds=median_seconds(samples))
 
 

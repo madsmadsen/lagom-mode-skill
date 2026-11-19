@@ -93,7 +93,15 @@ Options for the runner:
 
 `--record` rewrites `parity/expected/<case>/port/` from the current binary. A regression in a fix case becomes the expected output. The owner must review each `port/` diff before the commit.
 
-The runner runs each side five times and prints the median wall-clock time of each side (DR-NFR-2, AC-10). Run 1 gives the compared result. Runs 2 to 5 reuse the copy only for timing, and the runner removes `.metrics` before each of them.
+The runner runs each side five times and prints the median wall-clock time of each side (DR-NFR-2, AC-10). Run 1 gives the compared result. Runs 2 to 5 reuse the copy only for timing, and the runner removes `.metrics` before each of them. A timing run that exits unlike run 1 stops the runner, so a crashed run cannot lower the median.
+
+`parity/test_run_parity.py` tests `run_side` with fake programs (DR-NFR-2). It covers the result of run 1, the median of 5 samples, the cleanup of `.metrics`, a side without a snapshot, and a timing run that crashes. Run it from `tools/dryer/`:
+
+```sh
+python3 -m unittest discover -s .
+```
+
+That discovery command finds the test from `parity/` alone, which is what `crapper` and `mutator` use. `parity/__init__.py` makes `parity/` a package for it.
 
 A case with a `fix` in `coverage.toml` differs from the original on purpose. For such a case the runner compares the port with `parity/expected/<case>/port/`, not with the original. It also fails the case when the port no longer differs from the original. No entry in `parity/fixes.toml` is approved until Mads Madsen adds `approved_by`.
 
