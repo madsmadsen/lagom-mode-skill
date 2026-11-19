@@ -12,7 +12,7 @@ crapper gives each function a CRAP score. A high score means the function is com
 
 ## Install
 
-The install instructions are in `tools/crapper/README.md` of the repository at https://github.com/madsmadsen/lagom-mode-skill. Run `crapper --help` to make sure that the command is on the `PATH`.
+The install instructions are in `tools/crapper/README.md`. Run `crapper --help` to make sure that the command is on the `PATH`.
 
 ## Run
 
@@ -38,7 +38,7 @@ crapper runs the coverage command of the project. It prints a table on stdout wi
 
 Each row of the table has one function with its complexity, its coverage, and its CRAP score. Read the rows above 10. If every row is at or below 10, all functions pass.
 
-Exit 0 only proves that the scored functions pass. Confirm that each changed function has a row. `No source files to analyze.` or an empty table means that the line list is wrong. So does a missing function.
+Exit 0 only proves that the scored functions pass. Confirm that each changed function has a row. `No source files to analyze.` comes from file selection, so check the paths. An empty table alone does not prove that the line list is wrong, because a change outside any function also gives an empty table. Check that the line list holds the changed lines. A missing function means the same.
 
 ## Exit codes
 

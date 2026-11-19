@@ -12,7 +12,7 @@ dryer compares each function, method, or top-level form with the others in the s
 
 ## Install
 
-The install instructions are in `tools/dryer/README.md`. The repository is at https://github.com/madsmadsen/lagom-mode-skill. Run `dryer --help` to make sure that the command is on the `PATH`.
+The install instructions are in `tools/dryer/README.md`. Run `dryer --help` to make sure that the command is on the `PATH`.
 
 ## Run
 
@@ -54,6 +54,7 @@ dryer prints `No source files to analyze.` when it finds no source file. That me
 | 0 | dryer wrote the report. | Read `:candidates`. The gate passes only if it is empty. |
 | 1 | Usage error, or dryer did not write the snapshot. | Fix the command. Do not change the threshold. If the write failed, fix its cause, for example a file in the way of `.metrics`. |
 | 2 | Unknown output format. | Remove the `--format` flag or use `text` or `edn`. |
+| 70 | The worker thread did not start. | Read stderr. It names the reason. |
 | other code | Git failed during `--changed`. | Read stderr. |
 
 Exit code 0 does not mean that the gate passes. dryer exits with 0 even when it finds pairs.

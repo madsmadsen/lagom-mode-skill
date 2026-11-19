@@ -22,7 +22,7 @@ The loop is for one small feature. If the request is large, ask the user to spli
 
 ## Tool skills
 
-Three tools give the same verdict for the same files. You cannot argue with them. All three run at the unit gates (step 7), so load the skill of each tool there: `crapper` scores each function for complexity and missing tests, `dryer` finds code that repeats in a similar shape, and `mutator` changes the code and checks that a test fails.
+Three tools give the same verdict for the same files. You cannot argue with them. All three run at the unit gates (step 7), so load the skill of each tool there. `crapper` scores each function for complexity and missing tests. `dryer` finds code that repeats in a similar shape. `mutator` changes the code and checks that a test fails.
 
 ## Definitions
 
@@ -84,7 +84,7 @@ When one of these happens, stop the loop. If a worktree exists, keep the worktre
 Make every edit, test run, gate run, and commit inside the loop worktree. Do not change files in another worktree. The only exception is the fast-forward in step 12.
 
 1. Record the source branch and the base commit. Run `git branch --show-current` and `git rev-parse HEAD`. If the output of the first command is empty, HEAD is detached. Stop (stop condition 2).
-2. Create the worktree on a new branch from the base commit: `git worktree add -b lagom-mode/<short-feature-name> <path> <base-commit>`. Put `<path>` outside the repository, at a sibling path `<repo>-lagom-<short-feature-name>` or at a scratch path such as `/tmp/<repo>-lagom-<short-feature-name>`. If the branch or the path exists, add a number. Write the worktree path, the loop branch, the source branch, and the base commit at the top of the log. Go into the worktree. Do the next steps there. Before the first test, run `git check-ignore -q .metrics`. If Git does not ignore it, add `.metrics/` to the file given by `git rev-parse --git-path info/exclude`. Never commit `.metrics/`.
+2. Create the worktree on a new branch from the base commit: `git worktree add -b lagom-mode/<short-feature-name> <path> <base-commit>`. Put `<path>` outside the repository, at a sibling path `<repo>-lagom-<short-feature-name>` or at a scratch path such as `/tmp/<repo>-lagom-<short-feature-name>`. If the branch or the path exists, add a number. Write the worktree path, the loop branch, the source branch, and the base commit at the top of the log. Go into the worktree. Do the next steps there. Before the first test, run `git check-ignore -q .metrics/`. If Git does not ignore it, add `.metrics/` to the file given by `git rev-parse --git-path info/exclude`. Never commit `.metrics/`.
 3. Write one failing test for the next behavior of the feature.
 4. Run the test. Make sure that it fails for the reason that you expect. Write the failure reason in the log. Do not change production code before this step is done.
 5. Make the smallest change that makes the test pass.
