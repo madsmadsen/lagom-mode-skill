@@ -8,8 +8,13 @@ Usage:
   run_parity.py --record [--case NAME]... [--original DIR]
 
 Default mode runs the original and the port on each case and compares exit
-code, normalized stdout, and .metrics/dry.edn. --record runs only the original
-and writes parity/expected/<case>/ (exit_code, stdout, dry.edn if written).
+code, normalized stdout, and .metrics/dry.edn. Each side runs 5 times and the
+runner reports the median wall-clock time (DR-NFR-2, AC-10). --record writes
+parity/expected/<case>/ (exit_code, stdout, dry.edn if written).
+
+A case with a `fix` in coverage.toml differs from the original on purpose. For
+that case the runner compares the port with parity/expected/<case>/port/, which
+--record writes from the port, and still checks that the two programs differ.
 
 Each case copies fixtures/<fixture>/ into a fresh temp directory for each
 program, applies git_setup if set, and runs `<program> --root <copy> ARGS`
@@ -25,6 +30,7 @@ import json
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -269,13 +275,19 @@ def load_fixes():
     return by_case
 
 
-def judge(diffs, case_fixes):
-    """Status of one case: PASS, ACCEPTED (approved fix), PENDING (unapproved fix), or FAIL."""
-    if not diffs:
-        return "PASS"
-    if any(fix.get("approved_by") for fix in case_fixes):
-        return "ACCEPTED"
-    return "PENDING" if case_fixes else "FAIL"
+def judge(diffs, case_fixes, differs):
+    """Status of one case: PASS, ACCEPTED (approved fix), PENDING (unapproved fix), or FAIL.
+
+    A fix case passes only when the port matches its recorded expected output and
+    still differs from the original.
+    """
+    if case_fixes:
+        if diffs or not differs:
+            return "FAIL"
+        if any(fix.get("approved_by") for fix in case_fixes):
+            return "ACCEPTED"
+        return "PENDING"
+    return "PASS" if not diffs else "FAIL"
 
 
 # ---------------------------------------------------------------- running
@@ -286,15 +298,29 @@ def normalize_stdout(raw, root):
     return text
 
 
+def median_seconds(samples):
+    return statistics.median(samples)
+
+
+# DR-NFR-2, AC-10: wall-clock time of one program on one copy, median of 5 runs.
+TIMED_RUNS = 5
+
+
 def run_side(prefix, root, args, env):
-    start = time.perf_counter()
-    proc = subprocess.run(prefix + ["--root", str(root)] + args, cwd=root, env=env,
-                          capture_output=True)
-    seconds = time.perf_counter() - start
-    snap = root / ".metrics" / "dry.edn"
-    edn = snap.read_bytes() if snap.exists() else None
-    return Result(proc.returncode, normalize_stdout(proc.stdout, root), edn, seconds,
-                  proc.stderr.decode("utf-8", "replace"))
+    """Run one side 5 times and keep the last result; seconds is the median (DR-NFR-2)."""
+    samples = []
+    res = None
+    for _ in range(TIMED_RUNS):
+        start = time.perf_counter()
+        proc = subprocess.run(prefix + ["--root", str(root)] + args, cwd=root, env=env,
+                              capture_output=True)
+        samples.append(time.perf_counter() - start)
+        snap = root / ".metrics" / "dry.edn"
+        edn = snap.read_bytes() if snap.exists() else None
+        res = Result(proc.returncode, normalize_stdout(proc.stdout, root), edn, 0.0,
+                     proc.stderr.decode("utf-8", "replace"))
+    res = res._replace(seconds=median_seconds(samples))
+    return res
 
 
 def edn_diffs(orig_edn, port_edn):
@@ -325,16 +351,36 @@ def compare(orig, port):
     return diffs
 
 
-def write_expected(name, res):
-    d = EXPECTED / name
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "exit_code").write_text(f"{res.code}\n", encoding="utf-8")
-    (d / "stdout").write_text(res.stdout, encoding="utf-8")
-    if res.edn is not None:
-        (d / "dry.edn").write_bytes(res.edn)
+def write_expected(directory, res):
+    """Writes exit_code, stdout, and dry.edn (when written) of one side."""
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "exit_code").write_text(f"{res.code}\n", encoding="utf-8")
+    (directory / "stdout").write_text(res.stdout, encoding="utf-8")
+    edn = directory / "dry.edn"
+    if res.edn is None:
+        edn.unlink(missing_ok=True)
+    else:
+        edn.write_bytes(res.edn)
 
 
-def run_case(case, original_prefix, original_env, port_prefix, record):
+def load_expected(directory):
+    """Recorded side in `directory`, or None when it holds no recording."""
+    code_file = directory / "exit_code"
+    if not code_file.is_file():
+        return None
+    stdout_file = directory / "stdout"
+    edn_file = directory / "dry.edn"
+    return Result(int(code_file.read_text(encoding="utf-8").strip()),
+                  stdout_file.read_text(encoding="utf-8") if stdout_file.is_file() else "",
+                  edn_file.read_bytes() if edn_file.is_file() else None, 0.0, "")
+
+
+def port_expected(name):
+    """The directory that holds the port's own recorded output for a fix case."""
+    return EXPECTED / name / "port"
+
+
+def run_case(case, original_prefix, original_env, port_prefix):
     with tempfile.TemporaryDirectory(prefix="dryer-parity-") as tmp:
         tmp = Path(tmp)
         check_path(tmp)
@@ -343,7 +389,7 @@ def run_case(case, original_prefix, original_env, port_prefix, record):
         orig = run_side(original_prefix, orig_proj, case["args"], original_env)
         if "Traceback" in orig.stderr:
             raise SystemExit(f"original crashed on {case['name']}:\n{orig.stderr}")
-        if record:
+        if port_prefix is None:
             return orig, None
         port_proj = make_copy(case["fixture"], git_setup, tmp / "port")
         port = run_side(port_prefix, port_proj, case["args"], None)
@@ -353,7 +399,7 @@ def run_case(case, original_prefix, original_env, port_prefix, record):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Run dryer parity cases.")
     parser.add_argument("--record", action="store_true",
-                        help="run the original only and write parity/expected/")
+                        help="record results into parity/expected/ (original, and port for fix cases)")
     parser.add_argument("--case", action="append", dest="cases", default=[],
                         help="run only this case (repeatable)")
     parser.add_argument("--original", metavar="DIR",
@@ -363,12 +409,12 @@ def main(argv=None):
 
     pinned = load_toml(PARITY / "upstream.toml")
     original_root = ensure_original(args.original, pinned)
-    cases = [c for c in load_cases(args.cases) if not (args.record and "fix" in c)]
+    cases = load_cases(args.cases)
     fixes = load_fixes()
 
     original_prefix = [os.environ.get("DRYER_ORIGINAL_PYTHON", sys.executable), "-m", "dryer"]
     original_env = dict(os.environ, PYTHONPATH=str(original_root / "src"))
-    port_prefix = None if args.record else [str(port_binary(args.port))]
+    port_prefix = None
 
     if args.record and not args.cases:
         shutil.rmtree(EXPECTED, ignore_errors=True)
@@ -378,17 +424,29 @@ def main(argv=None):
     pending = 0
     for case in cases:
         name = case["name"]
-        orig, port = run_case(case, original_prefix, original_env, port_prefix, args.record)
+        case_fixes = fixes.get(name, [])
+        wants_port = not args.record or bool(case_fixes)
+        if wants_port and port_prefix is None:
+            port_prefix = [str(port_binary(args.port))]
+        orig, port = run_case(case, original_prefix, original_env,
+                              port_prefix if wants_port else None)
         if args.record:
-            write_expected(name, orig)
+            write_expected(EXPECTED / name, orig)
+            if port is not None:
+                write_expected(port_expected(name), port)
             print(f"RECORDED {name} exit={orig.code} original={orig.seconds:.2f}s")
             continue
-        diffs = compare(orig, port)
-        case_fixes = fixes.get(name, [])
-        status = judge(diffs, case_fixes)
-        if "fix" in case and not diffs:
-            status = "FAIL"
-            diffs = ["fix case shows no difference from the original"]
+        if case_fixes:
+            expected = load_expected(port_expected(name))
+            if expected is None:
+                diffs = [f"no recorded parity/expected/{name}/port/"]
+            else:
+                diffs = compare(expected, port)
+            differs = bool(compare(orig, port))
+        else:
+            diffs = compare(orig, port)
+            differs = bool(diffs)
+        status = judge(diffs, case_fixes, differs)
         accepted += status == "ACCEPTED"
         pending += status == "PENDING"
         failures += status == "FAIL"

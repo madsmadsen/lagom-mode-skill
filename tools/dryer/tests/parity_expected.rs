@@ -337,15 +337,14 @@ fn run_port(proj: &Path, args: &[String]) -> Result<Snapshot, String> {
     })
 }
 
-fn load_recorded(name: &str) -> Result<Snapshot, String> {
-    let dir = parity_dir().join("expected").join(name);
+fn load_recorded(dir: &Path) -> Result<Snapshot, String> {
     if !dir.is_dir() {
-        return Err(format!("no recorded parity/expected/{name}/"));
+        return Err(format!("no recorded {}", dir.display()));
     }
     let code = read_file(&dir.join("exit_code"))?
         .trim()
         .parse::<i32>()
-        .map_err(|e| format!("bad exit_code for {name}: {e}"))?;
+        .map_err(|e| format!("bad exit_code for {}: {e}", dir.display()))?;
     Ok(Snapshot {
         code,
         stdout: read_file(&dir.join("stdout"))?,
@@ -402,10 +401,28 @@ fn diffs(recorded: &Snapshot, got: &Snapshot) -> Vec<String> {
 }
 
 fn check_case(case: &Case) -> Result<Vec<String>, String> {
-    let recorded = load_recorded(&case.name)?;
+    // A case with a fix differs from the original on purpose (DR-14, DR-15). The port
+    // matches its own recording. When the original's recording is present, the port
+    // must also still differ from it; run_parity.py makes that check with a live run.
+    let expected_dir = match &case.fix {
+        Some(_) => parity_dir().join("expected").join(&case.name).join("port"),
+        None => parity_dir().join("expected").join(&case.name),
+    };
+    let recorded = load_recorded(&expected_dir)?;
+    let original_expected = parity_dir().join("expected").join(&case.name);
+    let original = match &case.fix {
+        Some(_) if original_expected.join("exit_code").is_file() => {
+            Some(load_recorded(&original_expected)?)
+        }
+        _ => None,
+    };
     let (_base, proj) = make_copy(&case.fixture, case.git_setup.as_deref())?;
     let got = run_port(&proj, &case.args)?;
-    Ok(diffs(&recorded, &got))
+    let mut found = diffs(&recorded, &got);
+    if original.is_some_and(|recording| diffs(&recording, &got).is_empty()) {
+        found.push("fix case shows no difference from the original".to_owned());
+    }
+    Ok(found)
 }
 
 // ---------------------------------------------------------------- mini EDN
@@ -650,14 +667,14 @@ fn parse_edn_bytes(bytes: &[u8]) -> Result<Edn, String> {
 
 // ---------------------------------------------------------------- tests
 
-/// AC-1, AC-8, DR-2, DR-3, DR-4: every coverage.toml case, run on the port,
-/// matches the output the original recorded (exit code, stdout, dry.edn).
+/// AC-1, AC-8, DR-2, DR-3, DR-4, DR-14, DR-15: every coverage.toml case, run on
+/// the port, matches its recording (exit code, stdout, dry.edn). A fix case
+/// matches the port's own recording and still differs from the original's.
 #[test]
 fn ac1_dr2_dr3_dr4_every_case_matches_recorded_original() {
     let cases = load_cases();
     let mut failures = Vec::new();
-    // A case with a `fix` differs from the original on purpose (DR-14) and has no recording.
-    for case in cases.iter().filter(|case| case.fix.is_none()) {
+    for case in cases.iter() {
         match check_case(case) {
             Ok(found) if found.is_empty() => {}
             Ok(found) => failures.push(format!("FAIL {}\n    {}", case.name, found.join("\n    "))),

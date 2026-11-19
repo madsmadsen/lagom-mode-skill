@@ -1,0 +1,8 @@
+{:candidates [
+ {:score 0.854545454545
+  :language "typescript"
+  :left {:file "src/a.jsx", :start-line 1, :end-line 8}
+  :right {:file "src/b.jsx", :start-line 1, :end-line 9}
+  :left-nodes 88
+  :right-nodes 103}
+]}

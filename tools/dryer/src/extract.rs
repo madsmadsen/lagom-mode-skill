@@ -85,10 +85,23 @@ fn python_nested(node: Node) -> bool {
     false
 }
 
+/// DR-15: a comment is not an item, so it does not end the run of attributes of an item.
+fn is_comment(node: Node) -> bool {
+    matches!(node.kind(), "line_comment" | "block_comment")
+}
+
 /// DR-15: true when an `attribute_item` right before `node` reads `wanted`, ignoring white space.
+/// Comments between the attribute and the item are skipped.
 fn has_attribute(data: &[u8], node: Node, wanted: &str) -> bool {
     let mut sibling = node.prev_sibling();
-    while let Some(attribute) = sibling.filter(|sibling| sibling.kind() == "attribute_item") {
+    while let Some(attribute) = sibling {
+        if is_comment(attribute) {
+            sibling = attribute.prev_sibling();
+            continue;
+        }
+        if attribute.kind() != "attribute_item" {
+            return false;
+        }
         if data[attribute.byte_range()]
             .iter()
             .filter(|byte| !byte.is_ascii_whitespace())
@@ -502,6 +515,13 @@ mod tests {
     fn dr15_function_with_a_cfg_test_attribute_is_not_compared() {
         let source = "mod inner {\n    #[cfg(test)]\n    fn helper(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n    fn delta(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n";
         assert_eq!(spans(Language::Rust, "a.rs", source), vec![(6, 8)]);
+    }
+
+    // DR-15: a comment between a test attribute and its item does not hide the attribute.
+    #[test]
+    fn dr15_comment_between_a_test_attribute_and_its_item_keeps_the_item_out() {
+        let source = "#[cfg(test)]\n// unit tests\nmod unit_tests {\n    fn gamma(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\nmod inner {\n    #[cfg(test)]\n    // why this is test code\n    fn helper(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n    fn delta(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n";
+        assert_eq!(spans(Language::Rust, "a.rs", source), vec![(14, 16)]);
     }
 
     // DR-15: code that only looks like test code stays production code: cfg(not(test)),

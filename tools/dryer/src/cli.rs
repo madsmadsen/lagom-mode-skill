@@ -97,19 +97,34 @@ pub fn run(argv: &[String]) -> i32 {
     run_with(argv, &mut out, &mut err)
 }
 
+/// DR-13: exit code of a finished worker thread, or 70 when the thread did not
+/// start. A thread that could not start reports why on stderr first.
+fn thread_exit(started: std::io::Result<std::thread::JoinHandle<i32>>, err: &mut dyn Write) -> i32 {
+    match started {
+        Ok(handle) => handle.join().unwrap_or(PANIC_EXIT_CODE),
+        Err(error) => {
+            emit(
+                err,
+                &format!("dryer: cannot start the worker thread: {error}\n"),
+            );
+            PANIC_EXIT_CODE
+        }
+    }
+}
+
 /// Process entry point: runs on a thread with a large stack and exits with its code.
 pub fn main() -> ! {
     let argv: Vec<String> = std::env::args_os()
         .skip(1)
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
-    let code = match std::thread::Builder::new()
+    let started = std::thread::Builder::new()
         .stack_size(STACK_BYTES)
-        .spawn(move || run(&argv))
-    {
-        Ok(handle) => handle.join().unwrap_or(PANIC_EXIT_CODE),
-        Err(_) => PANIC_EXIT_CODE,
-    };
+        .spawn(move || run(&argv));
+    // A plain `Stderr` handle takes the lock per write, so the join below does not
+    // wait on a lock that the worker thread also wants.
+    let mut err = std::io::stderr();
+    let code = thread_exit(started, &mut err);
     std::process::exit(code)
 }
 
@@ -160,6 +175,30 @@ mod tests {
 
     fn proj_str(proj: &Path) -> String {
         proj.to_string_lossy().into_owned()
+    }
+
+    // DR-13: a worker thread that cannot start reports the error on stderr and exits 70.
+    #[test]
+    fn dr13_thread_start_failure_reports_error_and_exits_seventy() {
+        let failed = Err(std::io::Error::other("not enough memory"));
+        let mut err: Vec<u8> = Vec::new();
+        let code = thread_exit(failed, &mut err);
+        assert_eq!(code, 70);
+        let text = String::from_utf8_lossy(&err).into_owned();
+        assert!(
+            text.contains("cannot start the worker thread"),
+            "stderr was {text:?}"
+        );
+        assert!(text.contains("not enough memory"), "stderr was {text:?}");
+    }
+
+    // DR-13: a worker thread that runs keeps its exit code and writes nothing to stderr.
+    #[test]
+    fn dr13_thread_success_keeps_its_exit_code() {
+        let started = std::thread::Builder::new().spawn(|| 3);
+        let mut err: Vec<u8> = Vec::new();
+        assert_eq!(thread_exit(started, &mut err), 3);
+        assert!(err.is_empty());
     }
 
     // DR-13: --help exits 0 and prints usage to stdout without scanning.

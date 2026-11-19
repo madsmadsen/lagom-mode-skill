@@ -5,14 +5,18 @@ dryer finds code that repeats in a similar shape. It compares each function or m
 ## Install
 
 ```sh
-cargo install --git https://github.com/madsmadsen/lagom-mode-skill dryer
+cargo install --locked --git https://github.com/madsmadsen/lagom-mode-skill dryer
 ```
+
+`--locked` uses the versions in `Cargo.lock`. Without it, Cargo may take a newer grammar, and the scores can change.
 
 You must have:
 
 - The Rust stable toolchain and Cargo.
 - Git 2.30 or later, for `--changed`.
 - Network access during the build. The build fetches the Python grammar from Git. The crate pins `tree-sitter-python` to commit `26855eabccb19c6abf499fbc5b8dc7cc9ab8bc64`. The original's grammar bundle (`tree-sitter-language-pack` 1.25.0) uses this grammar shape (checked on 35 snippets and six real projects). The crates.io release 0.25.0 gives a different parse tree.
+
+A checkout below a directory named `test`, `tests`, or `spec` gives the report `No source files to analyze.`. dryer skips those directory names at every level of the path, not only inside the project. Put the checkout in a directory with another name.
 
 ## Run
 
@@ -85,9 +89,13 @@ Options for the runner:
 - `--case NAME`: Run only this case. You can repeat this option.
 - `--original DIR`: Use this checkout of the original.
 - `--port BIN`: Use this `dryer` binary.
-- `--record`: Run only the original. Write the results to `parity/expected/<case>/`. Without `--case`, this removes the old results first.
+- `--record`: Write results to `parity/expected/<case>/`. Without `--case`, this removes the old results first. A case with a `fix` also records the port's own output in `parity/expected/<case>/port/`.
 
-`cargo test` replays the recorded results in `parity/expected/`. It needs no Python. The test is `tests/parity_expected.rs`.
+The runner runs each side five times and prints the median wall-clock time of each side (DR-NFR-2, AC-10).
+
+A case with a `fix` in `coverage.toml` differs from the original on purpose. For such a case the runner compares the port with `parity/expected/<case>/port/`, not with the original. It also fails the case when the port no longer differs from the original. No entry in `parity/fixes.toml` is approved until Mads Madsen adds `approved_by`.
+
+`cargo test` replays the recorded results in `parity/expected/`. It needs no Python. The test is `tests/parity_expected.rs`. It replays every case, and a fix case is checked against its `port/` recording.
 
 ## License
 

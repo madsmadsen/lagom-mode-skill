@@ -240,7 +240,8 @@ args = ["-s", "nothing-here"]
 covers = ["no-source-files"]
 
 # DR-14: the original finds no source file here. The case carries the fix id, so the runner
-# expects a difference from the original, and parity_expected.rs does not replay it.
+# compares the port with parity/expected/jsx-fix/port/, not with the original. The recording is
+# what `run_parity.py --record` writes from the port for a fix case.
 [[case]]
 name = "jsx-fix"
 fixture = "jsx"
@@ -253,8 +254,8 @@ covers = [
 # DR-15: the original compares the functions in the #[cfg(test)] modules. The port leaves them out.
 # The pair scores 0.64 with the original, so the run uses --threshold 0.6. This keeps the fixture
 # below the 0.8 limit of the dryer gate.
-# The case carries the fix id, so the runner expects a difference from the original, and
-# parity_expected.rs does not replay it.
+# The case carries the fix id, so the runner compares the port with
+# parity/expected/rust-test-code-fix/port/, not with the original.
 [[case]]
 name = "rust-test-code-fix"
 fixture = "rust-test-code"
