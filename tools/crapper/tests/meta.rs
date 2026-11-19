@@ -111,7 +111,7 @@ fn header_ok(text: &str, commit: &str) -> bool {
 
 #[test]
 // AC-20, CR-NFR-5: MIT under the copyright of Mads Madsen, with credit to the original
-fn ac_20_license_is_0bsd() {
+fn ac_20_license_is_mit() {
     let license = read("LICENSE");
     assert!(license.starts_with("MIT License"));
     assert!(license.contains("Copyright (c) 2026 Mads Madsen <mads@onmadsen.com>"));

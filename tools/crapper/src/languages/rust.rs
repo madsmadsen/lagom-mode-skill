@@ -187,11 +187,18 @@ fn is_test_code(data: &[u8], node: Node, mods: &[String]) -> bool {
             .any(|module| has_attribute(data, module, &["#[cfg(test)]"]))
 }
 
+/// True for a line or block comment node, the two kinds that carry Rust comments.
+fn is_comment(node: Node) -> bool {
+    matches!(node.kind(), "line_comment" | "block_comment")
+}
+
 /// True when an attribute of `item` reads as one of `wanted`. The attributes of an item are
-/// the `attribute_item` siblings right before it. Spaces inside the attribute do not matter.
+/// the `attribute_item` siblings right before it; comments between them do not count.
+/// Spaces inside the attribute do not matter.
 fn has_attribute(data: &[u8], item: Node, wanted: &[&str]) -> bool {
     std::iter::successors(item.prev_sibling(), |n| n.prev_sibling())
-        .take_while(|n| n.kind() == "attribute_item")
+        .take_while(|n| n.kind() == "attribute_item" || is_comment(*n))
+        .filter(|n| n.kind() == "attribute_item")
         .any(|attr| {
             wanted.iter().any(|text| {
                 node_text(data, attr)
@@ -350,6 +357,13 @@ mod unit_tests {
     fn cr_25_a_module_named_tests_is_skipped_and_its_neighbor_is_reported() {
         let source = "fn keep() {}\nmod tests {\n    fn hidden() {}\n}\nfn neighbor() {}\n";
         assert_eq!(names_in(source), ["keep", "neighbor"]);
+    }
+
+    // CR-25 unit f: a comment between an attribute and the function does not hide the attribute.
+    #[test]
+    fn cr_25_a_comment_between_the_attribute_and_the_function_is_skipped() {
+        let source = "fn keep() {}\n#[test]\n// a note\nfn check() { if true {} }\n#[cfg(test)]\n/* a block note */\nfn helper() {}\n";
+        assert_eq!(names_in(source), ["keep"]);
     }
 
     // CR-8: impl for a generic self type takes the first type name after `for`.

@@ -137,7 +137,12 @@ fn ready_for_run(
     Some(command)
 }
 
+/// Runs `command` and reports its exit status. A command that downloads its tool is announced
+/// on stderr before it starts (CR-15).
 fn run_report(package: &Path, command: Vec<String>, exec: &mut dyn FnMut(&Cmd, &Path) -> i32) {
+    if let Some(notice) = install_notice(&command) {
+        warn(&notice);
+    }
     let code = exec(&Cmd::Argv(command), package);
     if let Some(message) = exit_warning("TypeScript", code, Some(package)) {
         warn(&message);
@@ -419,6 +424,19 @@ fn uses_vitest(package: &Path, scripts: &Map<String, Value>) -> bool {
     VITEST_CONFIGS
         .iter()
         .any(|name| package.join(name).is_file())
+}
+
+/// The notice for a command that downloads a tool from the network before it runs.
+/// `npx --yes <package>` fetches the package on demand, so the port announces it (CR-15).
+fn install_notice(command: &[String]) -> Option<String> {
+    let mut parts = command.iter().map(String::as_str);
+    if parts.next() != Some("npx") || parts.next() != Some("--yes") {
+        return None;
+    }
+    let package = parts.next()?;
+    Some(format!(
+        "Installing {package} with npx --yes. npx downloads it from the network before the run."
+    ))
 }
 
 fn c8_command(report_dir: &Path) -> Vec<String> {

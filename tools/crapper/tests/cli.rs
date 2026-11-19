@@ -515,6 +515,53 @@ fn cr_13_cr_3_successful_coverage_command_reads_reports() {
     assert!(row.contains("100.0%"), "row was: {row}");
 }
 
+// CR-15, AC-6
+#[test]
+fn cr_15_c8_download_is_announced_on_stderr_before_it_runs() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let root = temp.path().join("project");
+    let bin = temp.path().join("bin");
+    fs::create_dir_all(&bin).expect("mkdir bin");
+    write_file(
+        &root,
+        "package.json",
+        r#"{"scripts":{"test":"node --test"}}"#,
+    );
+    write_file(&root, "src/app.ts", "export function f() { return 1 }\n");
+
+    let log = temp.path().join("npx.log");
+    let npx = bin.join("npx");
+    fs::write(
+        &npx,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"{}\"\n",
+            log.display()
+        ),
+    )
+    .expect("write fake npx");
+    fs::set_permissions(&npx, fs::Permissions::from_mode(0o755)).expect("chmod npx");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_crapper"))
+        .env("PATH", &bin)
+        .args(["--root", root.to_str().expect("utf-8 temp path")])
+        .output()
+        .expect("crapper binary runs");
+
+    let err = stderr(&output);
+    let notice = err
+        .lines()
+        .position(|line| line.contains("Installing c8"))
+        .unwrap_or_else(|| panic!("no install notice on stderr: {err}"));
+    let start = err
+        .lines()
+        .position(|line| line.contains("npx --yes c8"))
+        .unwrap_or_else(|| panic!("no c8 command on stderr: {err}"));
+    assert!(notice < start, "notice not before the run: {err}");
+
+    let ran = fs::read_to_string(&log).expect("fake npx ran");
+    assert!(ran.contains("c8"), "npx log was: {ran}");
+}
+
 // CR-10, AC-25
 #[test]
 fn cr_10_ac_25_function_missing_from_the_report_scores_coverage_0_0() {

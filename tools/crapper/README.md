@@ -7,10 +7,10 @@ Requirements: `docs/prd/crapper.md` (CR-*). License: MIT (`LICENSE`). Copyright 
 ## Install
 
 ```bash
-cargo install --git https://github.com/madsmadsen/lagom-mode-skill crapper
+cargo install --locked --git https://github.com/madsmadsen/lagom-mode-skill crapper
 ```
 
-The build needs Rust stable and a C compiler.
+The build needs Rust stable and a C compiler. `--locked` makes Cargo use the committed `Cargo.lock`, so the grammar versions of a release do not move (CR-NFR-4).
 
 ## Use
 
@@ -29,7 +29,7 @@ crapper --coverage-command '<cmd>'   # run your own coverage command
 crapper --root <path> -s <tree>      # project root and source trees
 ```
 
-It prints a table on stdout (worst score first) and writes `.metrics/crap.edn`. Exit codes: `0` ok, `1` bad arguments, `2` threshold exceeded.
+It prints a table on stdout (worst score first) and writes `.metrics/crap.edn`. Exit codes: `0` ok, `1` bad arguments or a file that cannot be read, `2` threshold exceeded. A Git failure under `--changed` returns the exit code of Git.
 
 ## Parity with the original
 
