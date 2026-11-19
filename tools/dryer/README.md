@@ -64,7 +64,7 @@ Exit codes:
 | 70 | The worker thread did not start, or it panicked. |
 | Git code | With `--changed`, a Git command failed. |
 
-A Git command that cannot start gives `1`, and so does a Git process that a signal kills. A file that dryer cannot read gives a warning on standard error, and the run goes on (DR-16).
+A Git command that cannot start gives `1`. A Git process that a signal kills gives `256` minus the signal number, as the original does. A file that dryer cannot read gives a warning on standard error, and the run goes on (DR-16).
 
 The snapshot is `.metrics/dry.edn`. It uses EDN, the Clojure data format. The same files give the same snapshot on each run.
 

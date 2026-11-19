@@ -784,18 +784,19 @@ fn ac2_dr5_dr8_fixture_exists_for_each_language() {
     );
 }
 
-/// Concatenated text of every tests/*.rs file except this one.
-fn other_test_sources() -> String {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+/// Concatenated text of every `.rs` file of one directory, except this file.
+/// The fix tests live in `tests/` and in the unit tests of `src/` (DR-PB-4).
+fn rust_sources(dir: &str) -> String {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
     let entries =
         fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
     let mut text = String::new();
     for entry in entries {
-        let path = entry.expect("tests entry").path();
+        let path = entry.expect("dir entry").path();
         let is_rust = path.extension().and_then(|e| e.to_str()) == Some("rs");
         let is_this_file = path.file_name().and_then(|n| n.to_str()) == Some("parity_expected.rs");
         if is_rust && !is_this_file {
-            text.push_str(&read_file(&path).expect("readable test file"));
+            text.push_str(&read_file(&path).expect("readable source file"));
         }
     }
     text
@@ -815,7 +816,7 @@ fn ac9_dr_pb_4_every_fixes_entry_has_a_named_test() {
             .map(Vec::as_slice)
             .expect("fixes.toml: fix must be an array of tables"),
     };
-    let others = other_test_sources();
+    let others = format!("{}{}", rust_sources("tests"), rust_sources("src"));
     let mut problems = Vec::new();
     for entry in entries {
         let table = entry
@@ -826,11 +827,25 @@ fn ac9_dr_pb_4_every_fixes_entry_has_a_named_test() {
             "requirement",
             "fixture",
             "upstream",
+            "original_behavior",
             "changed_behavior",
             "test",
         ] {
             if !table.contains_key(key) {
                 problems.push(format!("fix entry missing {key}: {table:?}"));
+            }
+        }
+        // DR-PB-3: a fixture is a case name, or an inline test project that names
+        // a test file of this crate.
+        if let Some(fixture) = table.get("fixture").and_then(toml::Value::as_str) {
+            if fixture.starts_with("tests/") || fixture.starts_with("src/") {
+                let path = fixture.split("::").next().unwrap_or(fixture);
+                let full = Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+                if !full.is_file() {
+                    problems.push(format!(
+                        "fix fixture names a missing test file: {path} ({fixture})"
+                    ));
+                }
             }
         }
         let Some(id) = table.get("id").and_then(toml::Value::as_str) else {

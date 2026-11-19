@@ -46,10 +46,11 @@ fn run_program(program: &str, root: &Path, args: &[&str]) -> Result<Vec<u8>, Git
     Err(failure(&output))
 }
 
-/// The error for a failed run. A run that ends without an exit code, such as
-/// one killed by a signal, gives code 1.
+/// The error for a failed run. A run that a signal kills gives the negative of
+/// the signal number, as the original does, so the process exit is 256 minus
+/// the signal number (DR-13).
 fn failure(output: &Output) -> GitStatusError {
-    let code = output.status.code().unwrap_or(1);
+    let code = exit_code(&output.status);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let trimmed = stderr.trim();
     let message = if trimmed.is_empty() {
@@ -58,6 +59,20 @@ fn failure(output: &Output) -> GitStatusError {
         trimmed.to_string()
     };
     GitStatusError { code, message }
+}
+
+/// Exit code of a finished process. A process that a signal kills gives the
+/// negative of the signal number, which is what `subprocess.run` returns in the
+/// original. `std::process::exit` then gives the low 8 bits, so signal 9 gives
+/// 247 (DR-13). The port targets macOS and Linux only (DR-NFR-3). A status with
+/// neither a code nor a signal does not come from a finished process. It gives
+/// 1, as it did before DR-13.
+fn exit_code(status: &std::process::ExitStatus) -> i32 {
+    use std::os::unix::process::ExitStatusExt;
+    match status.signal() {
+        Some(signal) => -signal,
+        None => status.code().unwrap_or(1),
+    }
 }
 
 /// Path for the name part of one `git status --porcelain -z` entry (`XY PATH`), relative to the repo top.
@@ -482,17 +497,31 @@ mod failure_tests {
         assert!(err.message.starts_with("dryer-no-such-program-xyz: "));
     }
 
-    // DR-7: a run killed by a signal has no exit code and reports code 1.
+    // DR-13: a run killed by signal 9 has no exit code and reports code -9,
+    // which the process exit turns into 247.
     #[test]
-    fn dr7_a_run_killed_by_a_signal_gives_code_1() {
+    fn dr13_a_run_killed_by_a_signal_gives_minus_the_signal() {
         let output = Output {
             status: ExitStatus::from_raw(9),
             stdout: Vec::new(),
             stderr: Vec::new(),
         };
         let err = failure(&output);
-        assert_eq!(err.code, 1);
+        assert_eq!(err.code, -9);
+        assert_eq!(err.code & 0xff, 247);
         assert_eq!(err.message, "git status failed");
+    }
+
+    // DR-13: a status with neither an exit code nor a signal, such as a stopped
+    // process, gives 1 as before.
+    #[test]
+    fn dr13_a_status_without_code_or_signal_gives_1() {
+        let output = Output {
+            status: ExitStatus::from_raw(0x7f),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        };
+        assert_eq!(failure(&output).code, 1);
     }
 
     // DR-7: a run with an exit code reports that code and its trimmed stderr.

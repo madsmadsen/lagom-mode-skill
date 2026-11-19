@@ -177,7 +177,8 @@ mod tests {
         proj.to_string_lossy().into_owned()
     }
 
-    // DR-13: a worker thread that cannot start reports the error on stderr and exits 70.
+    // DR-13, AC-9: the test of fix worker-thread-exit-70 in parity/fixes.toml.
+    // A worker thread that cannot start reports the error on stderr and exits 70.
     #[test]
     fn dr13_thread_start_failure_reports_error_and_exits_seventy() {
         let failed = Err(std::io::Error::other("not enough memory"));

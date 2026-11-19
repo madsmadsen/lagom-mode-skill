@@ -51,6 +51,21 @@ impl Project {
             .expect("run dryer")
     }
 
+    /// Runs dryer with `dir` first on `PATH`, which fakes the Git program.
+    fn run_with_path(&self, args: &[&str], dir: &std::path::Path) -> Output {
+        let path = format!(
+            "{}:{}",
+            dir.display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        Command::new(env!("CARGO_BIN_EXE_dryer"))
+            .current_dir(&self.root)
+            .env("PATH", path)
+            .args(args)
+            .output()
+            .expect("run dryer")
+    }
+
     fn git(&self, args: &[&str]) {
         let out = Command::new("git")
             .current_dir(&self.root)
@@ -386,6 +401,19 @@ fn dr16_unreadable_file_warns_and_the_scan_goes_on() {
             .count(),
         1
     );
+    // DR-16: the snapshot covers the two files that the port could read and
+    // does not name the file that it could not read.
+    let snapshot =
+        fs::read_to_string(project.root.join(".metrics/dry.edn")).expect("read snapshot");
+    assert!(
+        snapshot.contains(":file \"a.py\""),
+        "snapshot was {snapshot:?}"
+    );
+    assert!(
+        snapshot.contains(":file \"b.py\""),
+        "snapshot was {snapshot:?}"
+    );
+    assert!(!snapshot.contains("locked.py"), "snapshot was {snapshot:?}");
 }
 
 // DR-15, AC-9: the test of fix rust-test-code-left-out in parity/fixes.toml. The original
@@ -409,4 +437,32 @@ fn dr15_cfg_test_module_functions_are_not_compared() {
         text_of(&out),
         "DUPLICATE score=0.86\n  src/a.rs:1-12\n  src/b.rs:1-13\n"
     );
+}
+
+// DR-13: a Git process that a signal kills gives the exit status of the
+// original, which is 256 minus the signal number. A fake `git` kills itself
+// with signal 9 and then with signal 15.
+#[cfg(unix)]
+#[test]
+fn dr13_a_git_process_killed_by_a_signal_gives_256_minus_the_signal() {
+    use std::os::unix::fs::PermissionsExt;
+
+    for (signal, expected) in [(9, 247), (15, 241)] {
+        let project = Project::new();
+        project.write("a.py", A_PY);
+        let bin = project.root.join("fakebin");
+        fs::create_dir_all(&bin).expect("create fake bin dir");
+        let script = bin.join("git");
+        fs::write(&script, format!("#!/bin/sh\nkill -{signal} $$\n")).expect("write fake git");
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).expect("chmod fake git");
+
+        let out = project.run_with_path(&["--changed"], &bin);
+        assert_eq!(
+            out.status.code(),
+            Some(expected),
+            "signal {signal}: status {:?}, stderr {:?}",
+            out.status,
+            stderr_of(&out)
+        );
+    }
 }

@@ -46,7 +46,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 - DR-10: The port scores each pair with the Jaccard similarity of structural fingerprints. It compares forms only within one language.
 - DR-11: The port selects the forms for each language with the table in the README of the original, section "What each language compares". DR-15 changes this for Rust test code.
 - DR-12: The port supports `--threshold` (default 0.82), `--min-lines` (default 4), `--min-nodes` (default 20), `--format`, `--edn`, and `--text`.
-- DR-13: The port exits `0` after a report, `1` on a usage error, and `2` on an unknown `--format`. It also exits `70` when the worker thread does not start or when that thread panics. With `--changed`, a Git failure gives the exit code of Git. A Git process that a signal kills gives `1`. A Git command that cannot start gives `1`. A snapshot that cannot be written gives `1`.
+- DR-13: The port exits `0` after a report, `1` on a usage error, and `2` on an unknown `--format`. It also exits `70` when the worker thread does not start or when that thread panics. With `--changed`, a Git failure gives the exit code of Git. A Git process that a signal kills gives the exit status of the original, which is `256` minus the signal number. A Git command that cannot start gives `1`. A snapshot that cannot be written gives `1`.
 
 ### 5.1 Upstream fixes
 
@@ -66,12 +66,12 @@ Each requirement in this section differs from the original at the pinned commit 
 - DR-NFR-1: Determinism. Two runs on the same files write byte-identical snapshots.
 - DR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port is lower than the median wall-clock time of 5 runs of the original. Both run on one named CI runner: Linux x86_64, Ubuntu 22.04. The time of the original includes Python start-up and excludes the clone and the install.
 - DR-NFR-3: Platforms. The port builds and runs on macOS 14 or later (arm64 and x86_64) and on Linux (x86_64 and arm64).
-- DR-NFR-4: Install. The repository is public on GitHub. It is not on crates.io. A user installs the port with one `cargo install --locked --git <repo>` command.
+- DR-NFR-4: Install. The repository is public on GitHub. It is not on crates.io. A user installs the port with one `cargo install --locked --git <repo> dryer` command.
 - DR-NFR-5: License. The port uses the MIT License. `tools/dryer/LICENSE` names Mads Madsen (`mads@onmadsen.com`) as the copyright holder. It also says that the port is based on dryer by Robert C. Martin, which uses the BSD Zero Clause License. Each `.rs` file starts with the lines `// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `// SPDX-License-Identifier: MIT`. Each file that matches a file of the original names that file.
 
 ## 7. Parity and bug fixes
 
-The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them. It also has two deliberate differences that are not bug fixes: DR-15 leaves out Rust test code, and DR-16 prints a warning for a file that it cannot read and goes on.
+The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them. It also has three deliberate differences that are not bug fixes: DR-13 exits `70` when the worker thread does not start or panics, DR-15 leaves out Rust test code, and DR-16 prints a warning for a file that it cannot read and goes on.
 
 - DR-PB-1: `tools/dryer/parity/upstream.toml` records the pinned commit of the original.
 - DR-PB-2: A change of the pinned commit needs a new parity run.
