@@ -365,6 +365,16 @@ mod unit_tests {
         assert_eq!(names_in(source), ["keep"]);
     }
 
+    // CR-25: an `impl` is not a module. A `#[cfg(test)] impl` keeps its functions as
+    // production code, while a `#[cfg(test)] mod` still hides its functions.
+    #[test]
+    fn cr_25_a_cfg_test_impl_block_keeps_its_functions_as_production_code() {
+        let source = "#[cfg(test)]\nimpl Board {\n    fn place(&self) {}\n}\n#[cfg(test)]\nmod unit_tests {\n    fn hidden() {}\n}\n";
+        let dir = crate_named("demo");
+        let functions = functions_in(&dir, "src/lib.rs", source);
+        assert_eq!(summary(&functions), [("demo::Board", "place", 1)]);
+    }
+
     // CR-8: impl for a generic self type takes the first type name after `for`.
     #[test]
     fn cr_8_impl_for_a_generic_type_uses_its_base_name() {

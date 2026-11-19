@@ -55,9 +55,9 @@ You need Git 2.30 or later, the Rust stable toolchain, and a C compiler.
 1. Install the three tools:
 
    ```bash
-   cargo install --git https://github.com/madsmadsen/lagom-mode-skill crapper
-   cargo install --git https://github.com/madsmadsen/lagom-mode-skill dryer
-   cargo install --git https://github.com/madsmadsen/lagom-mode-skill mutator
+   cargo install --locked --git https://github.com/madsmadsen/lagom-mode-skill crapper
+   cargo install --locked --git https://github.com/madsmadsen/lagom-mode-skill dryer
+   cargo install --locked --git https://github.com/madsmadsen/lagom-mode-skill mutator
    ```
 
    The dryer build downloads a Python grammar from Git, so it needs network access. It does not need Python.
