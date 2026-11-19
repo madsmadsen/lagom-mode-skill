@@ -8,7 +8,7 @@ export CARGO_TARGET_DIR=$HOME/target
 export CARGO_TERM_COLOR=never
 crates=("$@"); [ ${#crates[@]} -gt 0 ] || crates=(crapper dryer mutator)
 out=$HOME/results.txt
-{ echo "== $(date -u +%FT%TZ) $(uname -m) python3=[$(command -v python3 || true)] python=[$(command -v python || true)]"; } >> "$out"
+{ echo "== $(date -u +%FT%TZ) $(uname -m) python3=[$(command -v python3 || true)] python3.12=[$(command -v python3.12 || true)] python=[$(command -v python || true)]"; } >> "$out"
 for c in "${crates[@]}"; do
   cd "$HOME/src/$c" || exit 1
   # One target dir per crate: the crates share dependency names but not features.

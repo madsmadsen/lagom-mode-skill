@@ -3,6 +3,8 @@
 # dpkg --force-depends keeps the rest of the system (netplan, cloud-init) installed but broken,
 # which is fine for a guest that is only used to run `guest-test.sh` and is never rebooted.
 set -uo pipefail
+# The package pattern and the rm below also remove the deadsnakes 3.12 of guest-setup.sh: `libpython3`
+# matches libpython3.12-*, and `/usr/bin/python3.*` matches /usr/bin/python3.12.
 pkgs=$(dpkg-query -W -f='${Package}\n' 2>/dev/null | grep -E '^(python3|python3\.[0-9]+|libpython3|python3-.*)' || true)
 # shellcheck disable=SC2086
 sudo dpkg --purge --force-depends $pkgs >/dev/null 2>&1
