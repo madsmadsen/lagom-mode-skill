@@ -28,7 +28,7 @@ On uncommitted changes (the unit gates), get the lines from `git diff -U0 HEAD -
 
 On the feature files (the feature gates), get the lines from `git diff -U0 <base-commit> HEAD -- <file>`.
 
-Get the changed lines from the hunk headers of the diff. A hunk header looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. Join the lines of all hunks of the file with commas.
+Get the changed lines from the hunk headers of the diff. A hunk header looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. A hunk with `c` of 0 and `d` of 0 gives no line. Join the lines of all hunks of the file with commas.
 
 Do not run `crapper` on a test file. It gives the test functions 0% coverage, so each test function with a complexity of 3 or more fails the gate. The `lagom-mode` skill lists the test paths.
 

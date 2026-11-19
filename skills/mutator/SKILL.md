@@ -40,7 +40,7 @@ On uncommitted changes (the unit gates), get the lines from `git diff -U0 HEAD -
 
 On the feature files (the feature gates), get the lines from `git diff -U0 <base-commit> HEAD -- <file>`.
 
-Get the changed lines from the hunk headers of the diff. A hunk header looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. Join the lines of all hunks of the file with commas.
+Get the changed lines from the hunk headers of the diff. A hunk header looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. A hunk with `c` of 0 and `d` of 0 gives no line. Join the lines of all hunks of the file with commas.
 
 To list the sites without a test run, use `mutator --scan <path>`.
 
@@ -59,7 +59,7 @@ A checked form is a form whose `:file` is that changed file and whose `:line` to
 
 | Code | Meaning | What you do |
 | --- | --- | --- |
-| 0 | Every executed mutant was killed, or nothing ran. | Read the snapshots. The gate passes only if `:uncovered` is 0 in every checked form. An exit 0 with a `No coverage data` message on stderr is a fail: no report was found, so no site was covered. Fix the coverage command. An exit 0 with a message that holds `will score 0%` is also a fail: a coverage tool failed, so every site scores 0%. Fix the coverage run. Do not pass `--no-coverage`: it treats every site as covered, so the gate passes with no test. |
+| 0 | Every executed mutant was killed, or nothing ran. | Read the snapshots. The gate passes only if `:uncovered` is 0 in every checked form. An exit 0 with a `No coverage data` message on stderr is a fail: no report was found, so no site was covered. Fix the coverage command. An exit 0 with a message that holds `will score 0%` is also a fail: a coverage tool failed, so every site scores 0%. Fix the coverage run. Do not pass `--no-coverage`: it sets `:uncovered` to 0, so the snapshot check proves nothing. It also edits a gate command (SK-9). |
 | 1 | Usage error. | Fix the command. |
 | 2 | The baseline tests failed. | Fix the failing tests first. mutator cannot judge the tests until they pass. |
 | 3 | At least one mutant survived. | Confirm that the survivor is on a changed line, because an old snapshot carries outcomes forward. Then find the survivors in `:outcomes` and kill them, as below. |
