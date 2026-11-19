@@ -28,7 +28,7 @@ On uncommitted changes (the unit gates), get the lines from `git diff -U0 HEAD -
 
 On the feature files (the feature gates), get the lines from `git diff -U0 <base-commit> HEAD -- <file>`.
 
-A hunk header of the diff looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. Join the lines of all hunks of the file with commas.
+Get the changed lines from the hunk headers of the diff. A hunk header looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. Join the lines of all hunks of the file with commas.
 
 Do not run `crapper` on a test file. It gives the test functions 0% coverage, so each test function with a complexity of 3 or more fails the gate. The `lagom-mode` skill lists the test paths.
 
@@ -38,7 +38,7 @@ crapper runs the coverage command of the project. It prints a table on stdout wi
 
 Each row of the table has one function with its complexity, its coverage, and its CRAP score. Read the rows above 10. If every row is at or below 10, all functions pass.
 
-Exit 0 only proves that the scored functions pass. Confirm that each changed function has a row. `No source files to analyze.` comes from file selection, so check the paths. An empty table alone does not prove that the line list is wrong, because a change outside any function also gives an empty table. Check that the line list holds the changed lines. A missing function means the same.
+Exit 0 only proves that the scored functions pass. Confirm that each changed function has a row. `No source files to analyze.` comes from file selection, so check the paths. An empty table alone does not prove that the line list is wrong, because a change outside any function also gives an empty table. Check that the line list holds the changed lines. A missing function means that the line list is wrong.
 
 ## Exit codes
 
