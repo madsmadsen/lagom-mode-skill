@@ -193,12 +193,11 @@ fn is_comment(node: Node) -> bool {
 }
 
 /// True when an attribute of `item` reads as one of `wanted`. The attributes of an item are
-/// the `attribute_item` siblings right before it; comments between them do not count.
+/// the `attribute_item` siblings right before it. Comments between them do not count.
 /// Spaces inside the attribute do not matter.
 fn has_attribute(data: &[u8], item: Node, wanted: &[&str]) -> bool {
     std::iter::successors(item.prev_sibling(), |n| n.prev_sibling())
         .take_while(|n| n.kind() == "attribute_item" || is_comment(*n))
-        .filter(|n| n.kind() == "attribute_item")
         .any(|attr| {
             wanted.iter().any(|text| {
                 node_text(data, attr)

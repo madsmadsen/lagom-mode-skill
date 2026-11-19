@@ -1188,6 +1188,8 @@ mod tests {
     fn cr_15_install_notice_is_only_for_a_download_command() {
         assert_eq!(install_notice(&strings(&["npx", "vitest", "run"])), None);
         assert_eq!(install_notice(&strings(&["npx"])), None);
+        assert_eq!(install_notice(&strings(&["pnpm", "--yes", "c8"])), None);
+        assert_eq!(install_notice(&strings(&["npx", "--yes"])), None);
         let notice = install_notice(&strings(&["npx", "--yes", "c8"])).expect("a c8 notice");
         assert_eq!(
             notice,
