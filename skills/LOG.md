@@ -20,3 +20,9 @@
 - Copied `skills/<name>/SKILL.md` and `LICENSE` of the four skills to the skill folder of the agent, as after commit 9089d0a. Reason: the agent that runs the loop reads the installed copy.
 - Updated `README.md`, `tools/crapper/README.md`, `tools/mutator/README.md`, and the risk table of `docs/prd/mutator.md` to show `--lines`. Reason: the gates now use `--lines`, and the docs still showed `--changed` for `crapper` and `mutator`.
 - Added the citations CR-26 (crapper) and MU-2 (mutator) for `--lines` to the tool table of `docs/prd/skills.md`. Reason: `--lines` is an option of the original mutator, so MU-2 already requires it, and CR-26 adds it to crapper. No new MU requirement is needed.
+
+## 2026-11-19
+
+- Changed the four skills after the review. `lagom-mode`: step 12 returns to step 11 when the source branch moved, `.metrics` must be ignored by Git, the worktree path is outside the repository, the retry count has a scope, and the tool skills load with one sentence. `crapper`, `dryer`, and `mutator`: complete exit code tables, checks for a stale snapshot, a missing file, and a coverage failure, the README path and URL, and the side effects of the tools. Reason: the review found these gaps (SK-5, SK-8, SK-9, SK-12, SK-14, SK-15, SK-20, SK-24, SK-25, SK-NFR-1).
+- Left unchanged: SK-22 (the reason alone does not pass the gate), SK-23 (equivalent mutants), the deletion-hunk rule of SK-8, and section 5 of `docs/prd/skills.md`. Reason: each needs a PRD change that Mads Madsen must approve.
+- Required the `lagom-mode` skill and the `code-writer` agent in `AGENTS.md`. Reason: the `implementer` agent does not exist.
