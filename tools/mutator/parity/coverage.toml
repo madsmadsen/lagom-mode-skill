@@ -6,6 +6,9 @@
 #                { mutator = [...] } runs the side's tool with those args
 #   args         arguments for the tool, after setup
 #   expect_exit  optional; both sides must exit with this code
+#   fix          optional. A fixes.toml id, or a list of ids, that explains the
+#                difference this run shows. The run prints DIFF-ALLOWED for a
+#                FAIL only when Mads Madsen approved every id (AC-1, MU-PB-6).
 #   covers       the flags, README rows, PRD ids (MU-*, AC-*), and exit codes this run exercises
 #
 # Mutating runs get `--max-workers 2` unless args has -h/--help/--scan/--max-workers,
@@ -18,6 +21,7 @@ name = "flag-help-short"
 fixture = "fixtures/python"
 args = ["-h"]
 expect_exit = 0
+fix = ["worker-cap-half-the-cores", "max-memory-limit"]
 # Fix worker-cap-half-the-cores (parity/fixes.toml): e6b7084 caps workers at half the cores, so the help text differs from the original on purpose. Fix max-memory-limit adds the --max-memory-mb lines.
 allow_stdout_diff = true
 covers = ["-h", "exit 0"]
@@ -27,6 +31,7 @@ name = "flag-help-long"
 fixture = "fixtures/python"
 args = ["--help"]
 expect_exit = 0
+fix = ["worker-cap-half-the-cores", "max-memory-limit"]
 # Fix worker-cap-half-the-cores (parity/fixes.toml): e6b7084 caps workers at half the cores, so the help text differs from the original on purpose. Fix max-memory-limit adds the --max-memory-mb lines.
 allow_stdout_diff = true
 covers = ["--help", "exit 0"]

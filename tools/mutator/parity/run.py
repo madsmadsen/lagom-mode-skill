@@ -27,8 +27,9 @@ Options:
   --show            print the unified diff of normalized stdout and stderr
                     for every run where they differ
 
-Exit 1 when any run FAILs. A FAIL whose fixture has an approved entry in
-fixes.toml prints DIFF-ALLOWED and does not set exit 1.
+Exit 1 when any run FAILs. A FAIL whose run names, with `fix = "<id>"` or a
+list of ids, only entries of fixes.toml that Mads Madsen approved prints
+DIFF-ALLOWED and does not set exit 1 (AC-1, MU-PB-6).
 """
 
 from __future__ import annotations
@@ -77,14 +78,27 @@ def edn_reader():
     return loads
 
 
-def normalize_fixture(text: str) -> str:
-    return Path(text).as_posix()
+def approved_fix_ids(path: Path = FIXES_TOML) -> set[str]:
+    """Ids of the fixes.toml entries that Mads Madsen approved (MU-PB-6)."""
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    return {fix["id"] for fix in data.get("fix", [])
+            if fix.get("approved") is True and "id" in fix}
 
 
-def approved_fixtures() -> set[str]:
-    data = tomllib.loads(FIXES_TOML.read_text(encoding="utf-8"))
-    return {normalize_fixture(fix["fixture"])
-            for fix in data.get("fix", []) if fix.get("approved") is True and "fixture" in fix}
+def named_fixes(entry: dict) -> list[str]:
+    """The fix ids that a run names: `fix = "<id>"` or `fix = ["<id>", ...]`."""
+    listed = entry.get("fix", [])
+    return [listed] if isinstance(listed, str) else list(listed)
+
+
+def status_for(problems: list[str], entry: dict, approved: set[str]) -> str:
+    """AC-1: a difference that fixes.toml lists and Mads approved is not a failure."""
+    if not problems:
+        return "PASS"
+    fixes = named_fixes(entry)
+    if fixes and all(fix in approved for fix in fixes):
+        return "DIFF-ALLOWED"
+    return "FAIL"
 
 
 def worker_capped(args: list[str], expect_exit: int | None) -> list[str]:
@@ -221,7 +235,7 @@ def show_details(sides: dict[str, Outcome]) -> list[str]:
     return rows
 
 
-def run_entry(entry: dict, loads, allowed: set[str], original_only: bool,
+def run_entry(entry: dict, loads, approved: set[str], original_only: bool,
               show: bool) -> tuple[str, list[str]]:
     name = entry["name"]
     fixture = PARITY / entry["fixture"]
@@ -240,12 +254,7 @@ def run_entry(entry: dict, loads, allowed: set[str], original_only: bool,
     except Exception as exc:  # a setup or tool failure is a FAIL of this run only
         problems = [f"error: {exc}"]
         summary = ""
-    if not problems:
-        status = "PASS"
-    elif normalize_fixture(entry["fixture"]) in allowed:
-        status = "DIFF-ALLOWED"
-    else:
-        status = "FAIL"
+    status = status_for(problems, entry, approved)
     tail = f"  | {'; '.join(problems)}" if problems else ""
     return f"{status:<12} {name:<36} {summary}{tail}", details
 
@@ -261,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     opts = parser.parse_args(argv)
 
     loads = edn_reader()
-    allowed = approved_fixtures()
+    approved = approved_fix_ids()
     entries = tomllib.loads(COVERAGE_TOML.read_text(encoding="utf-8")).get("run", [])
     if opts.only:
         known = {entry["name"] for entry in entries}
@@ -272,7 +281,7 @@ def main(argv: list[str] | None = None) -> int:
 
     failed = 0
     for entry in entries:
-        line, details = run_entry(entry, loads, allowed, opts.original_only, opts.show)
+        line, details = run_entry(entry, loads, approved, opts.original_only, opts.show)
         print(line, flush=True)
         for row in details:
             print(row)

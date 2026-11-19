@@ -30,7 +30,8 @@ mutator --max-workers 3 src/demo/core.clj
 mutator --max-memory-mb 1024         # kill a mutant test run over 1024 MiB (default 4096, 0 = off)
 ```
 
-`mutator --help` lists every flag. Flags, arguments, exit codes, and snapshots match the original:
+`mutator --help` lists every flag. Flags, arguments, exit codes, and snapshots match the original,
+apart from `--max-memory-mb`, which only the port has (MU-25):
 
 | Exit code | Meaning |
 | --- | --- |
@@ -44,12 +45,56 @@ directories that crapper skips.
 
 ## Differences from the original
 
-The only differences are in `parity/fixes.toml`:
+The only differences are the entries of `parity/fixes.toml`. Each entry names its requirement
+and its test. Mads Madsen approves each entry (MU-PB-6).
 
-1. A mutant that times out, or runs within 10% of its timeout, runs once more with 2 times the
-   timeout. The second result decides (MU-21).
-2. The `:tested-at` line of a snapshot changes only when another value in the snapshot changes, so
-   repeated runs give byte-identical files (MU-NFR-1).
+1. `second-run-near-timeout` (MU-21). A mutant that times out, or runs within 10% of its timeout,
+   runs once more with 2 times the timeout. The second result decides.
+2. `idempotent-tested-at` (MU-NFR-1). The `:tested-at` line of a snapshot changes only when another
+   value in the snapshot changes, so repeated runs give byte-identical files.
+3. `worker-cap-half-the-cores` (MU-17). The default worker count is half the cores, at least one,
+   and `--help` says so. The original runs one mutant per core. No run uses more workers than
+   half the cores, even when `--max-workers` asks for more.
+4. `ts-dot-imports-are-relative` (MU-22, upstream issue 29). A TypeScript or JavaScript test that
+   imports its module from `'.'` or `'..'` runs against the mutant. The original reports a killed
+   mutant as SURVIVED.
+5. `python-more-operators` (MU-23, upstream issue 10). Python files get sites for `is`, `is not`,
+   `in`, `not in`, `//`, `%`, `**`, `@`, `+=`, `-=`, `*=`, and `/=`. The file holds more mutants.
+6. `python-clause-coverage-line` (MU-24, upstream issue 9). A Python site in an `elif` condition,
+   an `except` clause, or a `case` guard takes the first line of that clause. A site on a line
+   that no test runs is an uncovered site.
+7. `max-memory-limit` (MU-25). The port kills a mutant test run whose process group uses more than
+   the limit, and counts the mutant as killed. The flag `--max-memory-mb N` sets the limit in MiB.
+   The default is 4096, and 0 turns the limit off. The original has no limit and rejects the flag.
+8. `rust-test-code-by-attribute` (MU-26). The port leaves out a Rust function in a `#[cfg(test)]`
+   module, and a function with `#[test]` or `#[cfg(test)]`. The original leaves out only the
+   functions of a `mod` named `tests`.
+
+## Coverage installs and the network
+
+MU-11: when a coverage tool is missing, the port installs it the same way as the original, and it
+prints the install on stderr first. These commands use the network and write outside the project
+tree:
+
+| Language | Command | Writes |
+| --- | --- | --- |
+| Python | `<python> -m pip install --disable-pip-version-check coverage` | Site packages of the project interpreter. |
+| Python | `<python> -m pip install --disable-pip-version-check pytest` | Site packages of the project interpreter, only when a pytest config exists and pytest does not import. |
+| TypeScript | `npm install --no-save --no-package-lock @vitest/coverage-v8[@<version>]` | `node_modules`. The port restores `package.json` and the lockfile from a copy it takes first. |
+| TypeScript | `npx --yes c8 ...` | The npm cache, on the first run. |
+| Rust | `cargo install cargo-llvm-cov --locked` | `~/.cargo/bin`. |
+| Rust | `rustup component add llvm-tools-preview` | The toolchain, when `rustup` exists. |
+
+The port installs nothing else. In particular it installs no Python package into the project
+requirements, and it changes no `Cargo.toml`.
+
+## Restore from the backup
+
+MU-18: before a run that is not a scan run, the port copies every file under
+`target/mutator-backup/` back over the source file at the same relative path, and then removes the
+backup file. This puts back a source file that an interrupted older run left mutated (MU-NFR-5). A
+file under that directory overwrites its source file, so keep it out of Git and check it before a
+run if another tool wrote it.
 
 ## Parity runner
 

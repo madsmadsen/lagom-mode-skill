@@ -44,10 +44,18 @@ Each output line is `PASS`, `FAIL`, or `DIFF-ALLOWED`. The runner exits 1 if any
 
 ## Approved differences
 
-`fixes.toml` lists the intentional differences. A run whose fixture has an entry
-there with `approved = true` prints `DIFF-ALLOWED` instead of `FAIL`. The
-fixture string in `fixes.toml` must match the run's `fixture` path, for example
-`fixtures/python`.
+`fixes.toml` lists the intentional differences. A run names the difference it
+shows with `fix = "<id>"`, or with a list of ids when more than one entry
+explains it. When every named id has `approved = true` in `fixes.toml`, a `FAIL`
+prints `DIFF-ALLOWED` instead of `FAIL`. Mads Madsen approves each entry
+(MU-PB-6). A run that names no fix, or an id that is not approved, prints
+`FAIL`.
+
+The runner compares fix ids, not fixture paths. One approval therefore
+excuses only the runs that name it. `parity/test_status.py` tests this rule
+with fake ids. It needs Python 3.11 or later, and no original:
+
+    python3.12 -m unittest parity/test_status.py
 
 ## Fixtures
 
