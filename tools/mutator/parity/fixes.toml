@@ -29,10 +29,11 @@ approved = false
 id = "worker-cap-half-the-cores"
 requirement = "MU-17"
 description = """The original runs one mutant per core by default and its help text says `one per
-core`. Commit e6b7084 changed the port to half the cores, at least one, so mutants do not starve the
-test commands they start. Half the cores is a hard cap: no run uses more workers than that, also
-when `--max-workers` asks for more, so `--max-workers 10000` on an 8-core host gives 4 workers. The
-help text of `--max-workers` and the long text say so."""
+core`. The port uses half the cores, at least one, so mutants do not starve the test commands they
+start (`worker_count` and `cap_for` in `src/workers.rs`). Half the cores is a hard cap: no run uses
+more workers than that, also when `--max-workers` asks for more, so `--max-workers 10000` on an
+8-core host gives 4 workers. The help text of `--max-workers` and the long text say so. The test is
+`tests/worker_cap.rs`."""
 changed_behavior = "The worker count is the smaller of the sites, half the cores (at least 1), and an explicit --max-workers, so --max-workers cannot raise it above half the cores, and `--help` says so instead of `one per core`."
 fixture = "tests/worker_cap.rs (no fixture project; the test calls workers::worker_count and runs --help)"
 test = "tests/worker_cap.rs::mu_17_default_worker_count_is_half_the_cores_at_least_one"

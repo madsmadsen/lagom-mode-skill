@@ -34,7 +34,9 @@ mutator --max-memory-mb 1024         # kill a mutant test run over 1024 MiB (def
 ```
 
 `mutator --help` lists every flag. Flags, arguments, exit codes, and snapshots match the original,
-apart from `--max-memory-mb`, which only the port has (MU-25):
+apart from two flags. `--max-memory-mb` is a flag that only the port has (MU-25). `--max-workers`
+is a flag that both have, but the port caps it at half the cores and uses that cap as the default
+(MU-17):
 
 | Exit code | Meaning |
 | --- | --- |
@@ -42,11 +44,18 @@ apart from `--max-memory-mb`, which only the port has (MU-25):
 | `1` | Usage error. |
 | `2` | The baseline tests failed. The snapshots keep their bytes. |
 | `3` | At least one mutant survived. |
-| other | The `--coverage-command` failed and returned its own code. stderr names the code. |
+| other | The `--coverage-command` failed and returned its own code. stderr names the code. Also, `--changed` ran and Git failed: the port returns the code of Git, for example `128` outside a Git repository, and prints the message of Git on stderr. |
 
 The tool skips 22 directory names, the list of crapper's `discover.py`. The list holds `test`,
 `tests`, `spec`, `specs`, `__tests__`, `vendor`, `node_modules`, `target`, and build output
 directories such as `dist`, `build`, and `out`. MU-6 gives the whole list.
+
+The port also drops any source file whose full path has a part named `test`, `tests`, `spec`,
+`specs`, or `__tests__`. That rule reads the whole absolute path, not only the part below the
+project root. So a directory that you name is walked, but the port drops every file in it. A
+project whose own path holds one of these names selects no file: the run prints
+`No source files to mutate.` and exits `0`. Work around it by moving or copying the project to a
+path with no such part.
 
 ## Differences from the original
 
