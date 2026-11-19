@@ -39,13 +39,15 @@ A unit or a feature passes its gates when all of these are true at once:
 1. All tests pass.
 2. `crapper` reports no function with a CRAP score higher than 10 in the functions that contain a changed line.
 3. `dryer` reports no candidate pair with a score of 0.8 or more in the checked files.
-4. `mutator` exits `0` for the changed lines, and its snapshots have 0 uncovered sites in the checked functions.
+4. `mutator` exits `0` for the changed lines, and its snapshots have 0 uncovered sites in the checked functions. Delete the snapshot of the file before each run, as below. Then a survivor can come only from a changed line.
 
 `dryer` checks whole files. `crapper` and `mutator` check only the changed lines of each file. Run them once for each changed file that is not a test file. Leave out a file that no longer exists. Give each run the changed lines of that file in `--lines`. Skip a file that has no changed line. Skip a file that is not source code in a language the tools know, such as `Cargo.toml` or `README.md`. Do not use `--changed` for `crapper` or `mutator`.
 
 `--lines <n,n,...>` has the same meaning for both tools. `crapper --lines` scores only the functions that contain one of the lines. With `--threshold`, its exit status depends only on those functions. `mutator --lines` runs only the mutations on those lines. You run one command for each file, because `mutator --lines` applies one set of lines to every file in a run.
 
 The unit gates run these commands on uncommitted changes. The lines come from `git diff -U0 HEAD -- <file>`. A new file that git does not track yet has no diff. For that file, use all its lines.
+
+In both gates, before each `mutator` run on a file, delete each snapshot under `.metrics/mutate/` that holds a form whose `:file` is that file. The snapshot path is `<namespace>.edn`, and the parts of the namespace become the directories. A Rust function in `crate::foo::Bar` is in `.metrics/mutate/crate/foo/Bar.edn` (MU-4). You can see the paths of the snapshots that a run writes in its `Wrote <path>` lines on stderr. mutator writes the file again on the next run. Two checked files can share one snapshot. Delete it once, then give each of those files its run after the delete, and do not delete again. The first run writes its own forms, and the second run keeps them and adds its own. Then each checked file starts with no earlier outcome, and an exit `3` comes only from a line that its run changed.
 
 ```bash
 dryer --changed --threshold 0.8
@@ -78,6 +80,7 @@ When one of these happens, stop the loop. If a worktree exists, keep the worktre
 3. `git merge --ff-only` fails because the worktree of the source branch has uncommitted changes. Report the changes.
 4. The rebase of step 11 has a conflict.
 5. The remote rejects the push. Do not force-push.
+6. The fast-forward still fails because the source branch moved, after 5 returns to step 11. Report the returns and the log.
 
 ## The loop
 
@@ -94,7 +97,7 @@ Make every edit, test run, gate run, and commit inside the loop worktree. Do not
 9. If the feature has more behavior, go to step 3.
 10. Run the feature gates on the feature files. If a gate fails, refactor or add tests, then run the tests and go to step 7.
 11. Run `git rev-parse <source-branch>`. If the source branch moved since the base commit, run `git rebase <source-branch>` in the worktree. Write the rebase and the new base commit in the log. Then run all tests and the feature gates again. If the rebase has a conflict, stop (stop condition 4). Go to step 12 only if the tests and the gates pass.
-12. Find the worktree that has the source branch checked out with `git worktree list`. In that worktree, run `git merge --ff-only lagom-mode/<short-feature-name>`. This makes no merge commit. If the command fails because that worktree has uncommitted changes, stop (stop condition 3). If it fails because the source branch moved after step 11, go back to step 11. Never move the source branch with `git branch -f` or `git update-ref`.
+12. Find the worktree that has the source branch checked out with `git worktree list`. In that worktree, run `git merge --ff-only lagom-mode/<short-feature-name>`. This makes no merge commit. If the command fails because that worktree has uncommitted changes, stop (stop condition 3). If it fails because the source branch moved after step 11, go back to step 11. You may return 5 times. After the fifth return, if the command fails for that reason again, stop (stop condition 6). Never move the source branch with `git branch -f` or `git update-ref`.
 13. If the source branch tracks a remote branch, push the source branch. If the remote rejects the push, stop (stop condition 5).
 14. Remove the loop worktree with `git worktree remove <path>`. Delete the loop branch with `git branch -d lagom-mode/<short-feature-name>`. If the worktree has uncommitted changes, do not remove it. Report the changes for a decision by the developer.
 15. Report the log.

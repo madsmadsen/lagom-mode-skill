@@ -46,7 +46,7 @@ The parts are independent:
 
 ### 5.1 Order of delivery
 
-1. Skills work and port work can overlap. The skills ship first and use the Python originals. The skills PRD states how each original goes on the PATH (one wrapper script per tool) and that the mutator original needs a crapper checkout at ../crapper.
+1. Skills work and port work can overlap. The skills use the Rust port of each tool, because the gates need `crapper --lines` and `mutator --lines` (skills SK-8), and the Python crapper rejects `--lines` (CR-26). The skills PRD states this interface in section 5.
 2. A port replaces its original only after it passes its parity criteria and Mads Madsen approves.
 3. The ports can come in any order, because no port depends on another. `[ASSUMPTION]` crapper comes first, because the skills need it in every gate.
 4. The development of this repository uses `lagom-mode` with the tools that are installed at that time.

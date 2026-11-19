@@ -42,7 +42,7 @@ Agents that work in parallel in one checkout also see the changes of each other.
 
 ## 5. The tools
 
-The skills use three commands from the `PATH`: `crapper`, `dryer`, and `mutator`. A skill works the same with the Python version or the Rust version of each tool. The skills depend only on this interface:
+The skills use three commands from the `PATH`: `crapper`, `dryer`, and `mutator`. A skill works with the Rust port of each tool, because the gates pass `--lines` to `crapper` and to `mutator` (SK-8). The Python crapper rejects that option (CR-26). The skills depend only on this interface:
 
 | Command | Used interface |
 | --- | --- |
@@ -92,18 +92,18 @@ The loop runs the gates two times. The unit gates see only uncommitted changes, 
   1. All tests pass.
   2. crapper reports no function with a CRAP score higher than 10 in the checked files.
   3. dryer reports no candidate pair with a score of 0.8 or more in the checked files.
-  4. mutator exits `0` for the checked files, and the snapshots have 0 uncovered sites in the checked functions.
-- SK-8: `dryer` checks whole files. The unit gates run `dryer --changed --threshold 0.8`. The feature gates run `dryer --threshold 0.8` with the feature files as positional arguments, test files included. The agent gets the feature files with `git diff --name-only <base-commit>`. `crapper` and `mutator` check only the changed lines. In both gates, the agent runs `crapper --threshold 10 --lines <changed-lines> <file>` and `mutator --lines <changed-lines> <file>` once for each changed file that is not a test file. The agent skips a file that has no changed line, and a file that no longer exists. The agent does not use `--changed` for `crapper` or `mutator`. The agent runs one command for each file, because `mutator --lines` applies one set of lines to every file in a run. The agent does not run `crapper` on a test file, because `crapper` gives the test functions in a named test file 0% coverage and the gate then fails for a reason that no repair clears. In the unit gates, the agent takes the changed lines of a file from `git diff -U0 HEAD -- <file>`, and uses all lines of a new file that git does not track yet. In the feature gates, the agent takes them from `git diff -U0 <base-commit> HEAD -- <file>`.
+  4. mutator exits `0` for the checked files, and the snapshots have 0 uncovered sites in the checked functions. The agent deletes the snapshot of the file before each run (SK-8). So a survivor can come only from a changed line.
+- SK-8: `dryer` checks whole files. The unit gates run `dryer --changed --threshold 0.8`. The feature gates run `dryer --threshold 0.8` with the feature files as positional arguments, test files included. The agent gets the feature files with `git diff --name-only <base-commit>`. `crapper` and `mutator` check only the changed lines. In both gates, the agent runs `crapper --threshold 10 --lines <changed-lines> <file>` and `mutator --lines <changed-lines> <file>` once for each changed file that is not a test file. The agent skips a file that has no changed line, and a file that no longer exists. The agent does not use `--changed` for `crapper` or `mutator`. The agent runs one command for each file, because `mutator --lines` applies one set of lines to every file in a run. The agent does not run `crapper` on a test file, because `crapper` gives the test functions in a named test file 0% coverage and the gate then fails for a reason that no repair clears. In the unit gates, the agent takes the changed lines of a file from `git diff -U0 HEAD -- <file>`, and uses all lines of a new file that git does not track yet. In the feature gates, the agent takes them from `git diff -U0 <base-commit> HEAD -- <file>`. Get the changed lines from the hunk headers of the diff. A hunk header looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. A hunk with `c` of 0 and `d` of 0 gives no line. Join the lines of all hunks of the file with commas. Before each `mutator` run on a file, the agent deletes each snapshot under `.metrics/mutate/` that holds a form whose `:file` is that file. The snapshot path is `<namespace>.edn`, and the namespace parts become the directories, so `crate::foo::Bar` is `.metrics/mutate/crate/foo/Bar.edn` (MU-4). mutator writes that file again on the next run. Two checked files can share one snapshot. The agent deletes it once and then runs `mutator` on each of those files after the delete, without another delete. The first run writes its own forms, and the second run keeps them and adds its own.
 - SK-9: `lagom-mode` sets a retry limit of 5 tries for each gate. If a gate still fails after the limit, the agent stops and reports the failure and the log. It does not lower a threshold, delete a test, or edit a gate command to pass.
 - SK-10: `lagom-mode` tells the agent to keep a log of each action and its reason, and to report the log at the end.
 - SK-11: `lagom-mode` tells the agent to commit each unit after its unit gates pass. Each commit message states why, what changed, and how the agent proved it.
-- SK-25: `lagom-mode` lists every stop condition (SK-9, SK-12, SK-14, SK-15, SK-16) in one numbered list.
+- SK-25: `lagom-mode` lists every stop condition in one numbered list: the retry limit of SK-9, the detached HEAD of SK-12, the failed fast-forward and the return limit of SK-14, the rebase conflict of SK-15, and the rejected push of SK-16.
 
 ### 7.3 Worktree
 
 - SK-12: At the start of a loop, the agent records the source branch and the base commit. It creates a new worktree on a new branch `lagom-mode/<short-feature-name>` from the base commit. If the loop starts on a detached HEAD, the agent stops before it creates the worktree and asks for a source branch.
 - SK-13: The agent makes every edit, test run, gate run, and commit inside the loop worktree. It does not change files in another worktree, except the fast-forward in SK-14.
-- SK-14: After the feature gates pass, the agent fast-forwards the source branch to the loop branch with `git merge --ff-only`. It runs the command in the worktree that has the source branch checked out. It makes no merge commit. If the command fails because that worktree has uncommitted changes, the agent stops and reports.
+- SK-14: After the feature gates pass, the agent fast-forwards the source branch to the loop branch with `git merge --ff-only`. It runs the command in the worktree that has the source branch checked out. It makes no merge commit. If the command fails because that worktree has uncommitted changes, the agent stops and reports. If the command fails because the source branch moved after SK-15, the agent goes back to the rebase of SK-15. The agent may return 5 times. If the command fails for that reason after the fifth return, the agent stops and reports.
 - SK-15: If the source branch moved since the base commit, the agent rebases the loop branch onto the new tip of the source branch. Then it runs all tests and the feature gates again, and does SK-14 only if they pass. If the rebase has a conflict, the agent stops and reports.
 - SK-16: If the source branch tracks a remote branch, the agent pushes the source branch after the fast-forward. If the remote rejects the push, the agent stops and reports. It does not force-push.
 - SK-17: The agent records the worktree path, the loop branch, the source branch, and the base commit at the top of the log. It records each rebase and the new base commit.
@@ -114,7 +114,7 @@ The loop runs the gates two times. The unit gates see only uncommitted changes, 
 
 - SK-20: Each tool skill names the document with the install instructions of its tool: the README of its port. It also states how to run the tool on uncommitted changes and on a list of files, and how to read its output.
 - SK-21: The crapper skill maps a high score to an action: split the function, add tests, or both. It states when a `match` or `case` is worth splitting.
-- SK-22: The dryer skill maps a candidate pair to an action: extract the shared shape, or record why the pair stays.
+- SK-22: The dryer skill maps a candidate pair to an action: the agent extracts the shared shape. If the two forms look alike but mean different things, the agent changes one form so that its shape differs. A written reason alone does not pass the gate. If the agent cannot lower the score below 0.8, the gate fails and the retry limit of SK-9 applies.
 - SK-23: The mutator skill maps each outcome to an action: cover an uncovered site, or kill a survivor with a new test. If no test can kill a survivor, the code is dead, and the agent deletes it.
 - SK-24: Each tool skill states the exit codes of its tool and what the agent does for each code.
 
@@ -134,7 +134,7 @@ The sample features run on the sample Rust project `samples/rust-todo`, a comman
 5. Add a `--tag <name>` option to `add`, and a `--tag <name>` filter to `list`.
 
 1. AC-1 (SK-1, SK-3, SK-4, SK-5, SK-20 to SK-25): `docs/skill-checklist.md` has one item for each of these requirements. Mads Madsen inspects the skills and records pass or fail for each item. All items pass.
-2. AC-2 (SK-7, SK-9): An agent loads `lagom-mode` and gets a small feature request. The agent ends with all four conditions of SK-7 true for the feature files, or with a stop report after the retry limit. Mads Madsen reviews the log for the 5 sample features.
+2. AC-2 (SK-7, SK-9, SK-14 to SK-16, SK-25): An agent loads `lagom-mode` and gets a small feature request. The agent ends with all four conditions of SK-7 true for the feature files, or with one of the stop reports of SK-25. A stop report names its stop condition, and a stop after the retry limit of SK-9 reports the failure and the log. Mads Madsen reviews the log for the 5 sample features.
 3. AC-3 (SK-6): In the log of each sample feature, every unit has a run of its failing test, with the failure reason recorded, before the first change to production code in that unit.
 4. AC-4 (SK-8): In one sample feature, unit 1 and unit 3 add two functions that dryer scores 0.8 or more. The unit gates pass, the feature gates fail, and the agent removes the duplication before it finishes.
 5. AC-5 (SK-9): For every sample feature, a script finds no change to a gate command or a threshold under `skills/`, and no deleted test file in the diff of the loop branch.
@@ -163,7 +163,7 @@ The sample features run on the sample Rust project `samples/rust-todo`, a comman
 1. Git 2.30 or later on each host that runs a loop.
 2. `crapper`, `dryer`, and `mutator` on the `PATH`, with the interface in section 5.
 3. The test tools of the project that the agent works on.
-4. Until a Rust port replaces its original, one wrapper script for each tool puts the Python original on the `PATH` under the command name `crapper`, `dryer`, or `mutator`. The mutator original needs a crapper checkout at `../crapper`, next to the mutator checkout.
+4. The command names `crapper`, `dryer`, and `mutator` on the `PATH` belong to the Rust ports. The gates pass `--lines` to `crapper` and to `mutator`, and the Python crapper rejects that option (CR-26). A wrapper script that puts a Python original on the `PATH` under one of these names cannot run a gate.
 
 ## 12. Open questions
 
