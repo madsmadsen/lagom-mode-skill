@@ -93,15 +93,17 @@ Options for the runner:
 
 `--record` rewrites `parity/expected/<case>/port/` from the current binary. A regression in a fix case becomes the expected output. The owner must review each `port/` diff before the commit.
 
-The runner runs each side five times and prints the median wall-clock time of each side (DR-NFR-2, AC-10). Run 1 gives the compared result. Runs 2 to 5 reuse the copy only for timing, and the runner removes `.metrics` before each of them. A timing run that exits unlike run 1 stops the runner, so a crashed run cannot lower the median.
+The runner runs each side five times and prints the median wall-clock time of each side (DR-NFR-2, AC-10). Run 1 gives the compared result. Runs 2 to 5 reuse the copy only for timing, and the runner removes `.metrics` before each of them. A timing run that exits unlike run 1 stops the runner, so a crashed run cannot lower the median. The error names the case, the side, and the stderr of the failed run. `--record` runs every case before it deletes `parity/expected/`, so a failed case keeps the old recordings.
 
-`parity/test_run_parity.py` tests `run_side` with fake programs (DR-NFR-2). It covers the result of run 1, the median of 5 samples, the cleanup of `.metrics`, a side without a snapshot, and a timing run that crashes. Run it from `tools/dryer/`:
+`parity/test_run_parity.py` tests `run_side`, `record`, and `check` with fake programs and stubs (DR-NFR-2). It covers the result of run 1, the median of 5 samples, the cleanup of `.metrics`, a side without a snapshot, a side that always exits 1, a timing run that crashes, the error text of that crash, and the `--record` delete. Run it from `tools/dryer/`:
 
 ```sh
 python3 -m unittest discover -s .
 ```
 
-That discovery command finds the test from `parity/` alone, which is what `crapper` and `mutator` use. `parity/__init__.py` makes `parity/` a package for it.
+`cargo test` also runs it, with `python3.12`, in `tests/parity_python.rs`. That test skips with a note on a host that has no `python3.12`.
+
+crapper runs `python3 -m unittest discover -s .` from the crate root. mutator runs `python3 -m unittest discover` there, with no `-s`, which finds the same tests from the top-level directory. `parity/__init__.py` makes the tests visible to both, because discovery descends only into packages.
 
 A case with a `fix` in `coverage.toml` differs from the original on purpose. For such a case the runner compares the port with `parity/expected/<case>/port/`, not with the original. It also fails the case when the port no longer differs from the original. No entry in `parity/fixes.toml` is approved until Mads Madsen adds `approved_by`.
 

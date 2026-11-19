@@ -10,7 +10,9 @@ Usage:
 Default mode runs the original and the port on each case and compares exit
 code, normalized stdout, and .metrics/dry.edn. Each side runs 5 times and the
 runner reports the median wall-clock time (DR-NFR-2, AC-10). --record writes
-parity/expected/<case>/ (exit_code, stdout, dry.edn if written).
+parity/expected/<case>/ (exit_code, stdout, dry.edn if written). It runs every
+case before it deletes the old parity/expected/, so a failed case keeps the old
+recordings.
 
 A case with a `fix` in coverage.toml differs from the original on purpose. For
 that case the runner compares the port with parity/expected/<case>/port/, which
@@ -21,8 +23,8 @@ program, applies git_setup if set, and runs `<program> --root <copy> ARGS`
 with cwd set to the copy. Run 1 gives the compared result. Runs 2 to 5 reuse
 that copy only to measure time, and the runner removes .metrics before each of
 them, so a stale snapshot can never pass a check. A timing run that exits
-unlike run 1 stops the runner (DR-NFR-2). Copy paths in stdout are replaced
-with <ROOT>.
+unlike run 1 stops the runner (DR-NFR-2), and the error names the case, the
+side, and the stderr of that run. Copy paths in stdout are replaced with <ROOT>.
 
 Stdlib only; Python >= 3.9. Set DRYER_ORIGINAL_PYTHON to choose the interpreter
 that has the original's dependencies (for example the venv python).
@@ -310,10 +312,11 @@ def median_seconds(samples):
 TIMED_RUNS = 5
 
 
-def run_side(prefix, root, args, env):
+def run_side(prefix, root, args, env, label):
     """Run one side 5 times. Run 1 gives the compared result. Runs 2 to 5 only measure time,
     each after the old .metrics is gone, so no snapshot of an earlier run can pass a check.
-    A timing run must exit like run 1. seconds is the median of the 5 runs (DR-NFR-2, AC-10).
+    A timing run must exit like run 1, and the error names the case, the side, and the
+    stderr of that run. seconds is the median of the 5 runs (DR-NFR-2, AC-10).
     """
     samples = []
     res = None
@@ -330,8 +333,10 @@ def run_side(prefix, root, args, env):
             res = Result(proc.returncode, normalize_stdout(proc.stdout, root), edn, 0.0,
                          proc.stderr.decode("utf-8", "replace"))
         elif proc.returncode != res.code:
+            detail = proc.stderr.decode("utf-8", "replace").strip()
             raise SystemExit(
-                f"timing run {index + 1} exited {proc.returncode}, but run 1 exited {res.code}"
+                f"{label}: timing run {index + 1} exited {proc.returncode}, "
+                f"but run 1 exited {res.code}; stderr: {detail or '(empty)'}"
             )
     return res._replace(seconds=median_seconds(samples))
 
@@ -393,20 +398,76 @@ def port_expected(name):
     return EXPECTED / name / "port"
 
 
+def record(cases, expected, run_one, replace):
+    """Runs every case before it writes, so a case that fails leaves the old recordings whole.
+    With replace, expected/ goes only after every case ran fine. Writes the original's
+    recording and, for a fix case, the port's own. Returns the exit code 0.
+    """
+    recorded = [(case["name"], run_one(case)) for case in cases]
+    if replace:
+        shutil.rmtree(expected, ignore_errors=True)
+    for name, (orig, port) in recorded:
+        write_expected(expected / name, orig)
+        if port is not None:
+            write_expected(expected / name / "port", port)
+        print(f"RECORDED {name} exit={orig.code} original={orig.seconds:.2f}s")
+    print(f"recorded {len(recorded)} case(s) into {expected}")
+    return 0
+
+
 def run_case(case, original_prefix, original_env, port_prefix):
     with tempfile.TemporaryDirectory(prefix="dryer-parity-") as tmp:
         tmp = Path(tmp)
         check_path(tmp)
         git_setup = case.get("git_setup")
         orig_proj = make_copy(case["fixture"], git_setup, tmp / "original")
-        orig = run_side(original_prefix, orig_proj, case["args"], original_env)
+        orig = run_side(original_prefix, orig_proj, case["args"], original_env,
+                        f"{case['name']} original")
         if "Traceback" in orig.stderr:
             raise SystemExit(f"original crashed on {case['name']}:\n{orig.stderr}")
         if port_prefix is None:
             return orig, None
         port_proj = make_copy(case["fixture"], git_setup, tmp / "port")
-        port = run_side(port_prefix, port_proj, case["args"], None)
+        port = run_side(port_prefix, port_proj, case["args"], None, f"{case['name']} port")
         return orig, port
+
+
+def check_case(name, case_fixes, orig, port):
+    """Diff lines and status of one case. A fix case compares the port with its recorded
+    output, and it must still differ from the original (DR-PB-3, DR-PB-6)."""
+    if not case_fixes:
+        diffs = compare(orig, port)
+        return diffs, judge(diffs, [], bool(diffs))
+    expected = load_expected(port_expected(name))
+    if expected is None:
+        diffs = [f"no recorded parity/expected/{name}/port/"]
+    else:
+        diffs = compare(expected, port)
+    return diffs, judge(diffs, case_fixes, bool(compare(orig, port)))
+
+
+def report_case(name, case_fixes, orig, port):
+    """Prints the verdict and the diff lines of one case, and returns its status."""
+    diffs, status = check_case(name, case_fixes, orig, port)
+    print(f"{status:<9}{name}  original={orig.seconds:.2f}s port={port.seconds:.2f}s")
+    for line in diffs:
+        print(f"    {line}")
+    if status in ("ACCEPTED", "PENDING"):
+        ids = ", ".join(fix["id"] for fix in case_fixes)
+        print(f"    {'accepted' if status == 'ACCEPTED' else 'awaiting approval'} by: {ids}")
+    return status
+
+
+def check(cases, fixes, run_one):
+    """Runs every case as a check, prints one line for each, and returns 1 when one fails."""
+    counts = dict.fromkeys(("PASS", "ACCEPTED", "PENDING", "FAIL"), 0)
+    for case in cases:
+        name = case["name"]
+        orig, port = run_one(case)
+        counts[report_case(name, fixes.get(name, []), orig, port)] += 1
+    print(f"{len(cases)} case(s), {counts['FAIL']} failed, {counts['ACCEPTED']} accepted, "
+          f"{counts['PENDING']} awaiting approval")
+    return 1 if counts["FAIL"] else 0
 
 
 def main(argv=None):
@@ -429,52 +490,17 @@ def main(argv=None):
     original_env = dict(os.environ, PYTHONPATH=str(original_root / "src"))
     port_prefix = None
 
-    if args.record and not args.cases:
-        shutil.rmtree(EXPECTED, ignore_errors=True)
-
-    failures = 0
-    accepted = 0
-    pending = 0
-    for case in cases:
-        name = case["name"]
-        case_fixes = fixes.get(name, [])
-        wants_port = not args.record or bool(case_fixes)
+    def run_one(case):
+        nonlocal port_prefix
+        wants_port = not args.record or bool(fixes.get(case["name"], []))
         if wants_port and port_prefix is None:
             port_prefix = [str(port_binary(args.port))]
-        orig, port = run_case(case, original_prefix, original_env,
-                              port_prefix if wants_port else None)
-        if args.record:
-            write_expected(EXPECTED / name, orig)
-            if port is not None:
-                write_expected(port_expected(name), port)
-            print(f"RECORDED {name} exit={orig.code} original={orig.seconds:.2f}s")
-            continue
-        if case_fixes:
-            expected = load_expected(port_expected(name))
-            if expected is None:
-                diffs = [f"no recorded parity/expected/{name}/port/"]
-            else:
-                diffs = compare(expected, port)
-            differs = bool(compare(orig, port))
-        else:
-            diffs = compare(orig, port)
-            differs = bool(diffs)
-        status = judge(diffs, case_fixes, differs)
-        accepted += status == "ACCEPTED"
-        pending += status == "PENDING"
-        failures += status == "FAIL"
-        print(f"{status:<9}{name}  original={orig.seconds:.2f}s port={port.seconds:.2f}s")
-        for line in diffs:
-            print(f"    {line}")
-        if status in ("ACCEPTED", "PENDING"):
-            ids = ", ".join(fix["id"] for fix in case_fixes)
-            print(f"    {'accepted' if status == 'ACCEPTED' else 'awaiting approval'} by: {ids}")
+        return run_case(case, original_prefix, original_env,
+                        port_prefix if wants_port else None)
 
     if args.record:
-        print(f"recorded {len(cases)} case(s) into {EXPECTED}")
-        return 0
-    print(f"{len(cases)} case(s), {failures} failed, {accepted} accepted, {pending} awaiting approval")
-    return 1 if failures else 0
+        return record(cases, EXPECTED, run_one, replace=not args.cases)
+    return check(cases, fixes, run_one)
 
 
 if __name__ == "__main__":
