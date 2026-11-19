@@ -41,13 +41,13 @@ A unit or a feature passes its gates when all of these are true at once:
 3. `dryer` reports no candidate pair with a score of 0.8 or more in the checked files.
 4. `mutator` exits `0` for the changed lines, and its snapshots have 0 uncovered sites in the checked functions. Delete the snapshot of the file before each run, as below. Then a survivor can come only from a changed line.
 
-`dryer` checks whole files. `crapper` and `mutator` check only the changed lines of each file. Run them once for each changed file that is not a test file. Leave out a file that no longer exists. Give each run the changed lines of that file in `--lines`. Skip a file that has no changed line. Skip a file that is not source code in a language the tools know, such as `Cargo.toml` or `README.md`. Do not use `--changed` for `crapper` or `mutator`.
+`dryer` checks whole files. `crapper` and `mutator` check only the changed lines of each file. Run them once for each changed file that is not a test file. Leave out a file that no longer exists. Give each run the changed lines of that file in `--lines`. Skip a file that has no changed line. Skip a file that is not source code in a language the tools know, such as the build manifest of a project or a README file. Do not use `--changed` for `crapper` or `mutator`.
 
 `--lines <n,n,...>` has the same meaning for both tools. `crapper --lines` scores only the functions that contain one of the lines. With `--threshold`, its exit status depends only on those functions. `mutator --lines` runs only the mutations on those lines. You run one command for each file, because `mutator --lines` applies one set of lines to every file in a run.
 
 The unit gates run these commands on uncommitted changes. The lines come from `git diff -U0 HEAD -- <file>`. A new file that git does not track yet has no diff. For that file, use all its lines.
 
-In both gates, before each `mutator` run on a file, delete each snapshot under `.metrics/mutate/` that holds a form whose `:file` is that file. The snapshot path is `<namespace>.edn`, and the parts of the namespace become the directories. A Rust function in `crate::foo::Bar` is in `.metrics/mutate/crate/foo/Bar.edn` (MU-4). You can see the paths of the snapshots that a run writes in its `Wrote <path>` lines on stderr. mutator writes the file again on the next run. Two checked files can share one snapshot. Delete it once, then give each of those files its run after the delete, and do not delete again. The first run writes its own forms, and the second run keeps them and adds its own. Then each checked file starts with no earlier outcome, and an exit `3` comes only from a line that its run changed.
+In both gates, before each `mutator` run on a file, delete each snapshot under `.metrics/mutate/` that holds a form whose `:file` is that file. A form without `:file` in an old snapshot takes the `:source` of that snapshot, so delete a snapshot whose `:source` is that file too. The snapshot path is `<namespace>.edn`, and the parts of the namespace become the directories. A Rust function in `<crate-name>::foo::Bar` is in `.metrics/mutate/<crate-name>/foo/Bar.edn` (MU-4). You can see the paths of the snapshots that a run writes in its `Wrote <path>` lines on stderr. mutator writes the file again on the next run. Two checked files can share one snapshot. Delete it once, then give each file that shares it its run after the delete, and read the gate result of each file right after its own run. A retry of one of those files repeats the delete, so it repeats the run of every file that shares the snapshot. Then each checked file starts with no earlier outcome, and an exit `3` comes only from a line that its run changed.
 
 ```bash
 dryer --changed --threshold 0.8
@@ -69,7 +69,7 @@ A test file is a file in a directory named `__tests__`, `spec`, `specs`, `test`,
 
 The unit gates see only uncommitted changes. The feature gates see the whole feature. They catch a problem that spans two units, for example duplication between code from unit 1 and code from unit 3.
 
-Retry limit: you have 5 tries for each gate. The count is separate for each gate of each unit and for each gate of the feature gates. The count restarts for each new unit and for the feature gates. A try is one run of the gate after a change. If a gate still fails after the limit, stop (stop condition 1). Do not lower a threshold, delete a test, or edit a gate command to pass.
+Retry limit: you have 5 tries for each gate. The count is separate for each gate of each unit and for each gate of the feature gates. The count restarts for each new unit and for the feature gates. A return to step 11 does not restart the count of tries of a gate. A try is one run of the gate after a change. If a gate still fails after the limit, stop (stop condition 1). Do not lower a threshold, delete a test, or edit a gate command to pass.
 
 ## Stop conditions
 

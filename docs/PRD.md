@@ -40,14 +40,14 @@ The parts are independent:
 
 1. The repository does not port uml-viewer.
 2. The repository does not add tools, metrics, or languages that the originals do not have.
-3. The parts are private. They are not published to crates.io or to a public skill registry.
+3. The repository is public on GitHub. The parts are not published to crates.io or to a public skill registry.
 
 ## 5. Development preferences
 
 ### 5.1 Order of delivery
 
 1. Skills work and port work can overlap. The skills use the Rust port of each tool, because the gates need `crapper --lines` and `mutator --lines` (skills SK-8), and the Python crapper rejects `--lines` (CR-26). The skills PRD states this interface in section 5.
-2. A port replaces its original only after it passes its parity criteria and Mads Madsen approves.
+2. A port replaces its original only after it passes its parity criteria and Mads Madsen approves. The skills use the Rust ports before that approval. The gates need the `--lines` option of crapper, and that option waits as the unapproved `lines-option` entry in `tools/crapper/parity/fixes.toml`.
 3. The ports can come in any order, because no port depends on another. `[ASSUMPTION]` crapper comes first, because the skills need it in every gate.
 4. The development of this repository uses `lagom-mode` with the tools that are installed at that time.
 

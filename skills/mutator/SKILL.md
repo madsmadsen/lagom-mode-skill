@@ -44,15 +44,15 @@ Get the changed lines from the hunk headers of the diff. A hunk header looks lik
 
 ## Delete the file's snapshot first
 
-Before each run on a file, delete each snapshot under `.metrics/mutate/` that holds a form of that file. A snapshot that stays keeps the outcomes of earlier runs for the whole file. `--lines` runs only the mutations on the lines that you give, but the outcome list still holds every mutation of the file, so an exit 3 can come from a line that this run did not change.
+Before each run on a file, delete each snapshot under `.metrics/mutate/` that holds a form of that file. A snapshot that stays keeps the outcomes of earlier runs, and mutator carries an outcome forward for a covered site of a form that did not change. That site lies outside the lines of this run, so an exit 3 can come from a line that this run did not change.
 
-The snapshot path follows the namespace: `.metrics/mutate/<namespace>.edn`, and the parts of the namespace become the directories (MU-4). `::` becomes `/`. A form of `crate::foo::Bar` is in `.metrics/mutate/crate/foo/Bar.edn`, and a Go form of `example.com/demo.Widget` is in `.metrics/mutate/example.com/demo.Widget.edn`.
+The snapshot path follows the namespace: `.metrics/mutate/<namespace>.edn`, and the parts of the namespace become the directories (MU-4). `::` becomes `/`. A form of `<crate-name>::foo::Bar` is in `.metrics/mutate/<crate-name>/foo/Bar.edn`, and a Go form of `example.com/demo.Widget` is in `.metrics/mutate/example.com/demo.Widget.edn`.
 
-A snapshot holds the forms of one namespace, and those forms can come from more than one file. Read each `.edn` file under `.metrics/mutate/` and look at its `:forms`. Each form has `:file`, the path of its source file relative to the project root. Delete each snapshot in which a form has `:file` equal to the path of your file. A run also prints the path of each snapshot that it writes in a `Wrote <path>` line on stderr, so an earlier run shows you the file to delete.
+A snapshot holds the forms of one namespace, and those forms can come from more than one file. Read each `.edn` file under `.metrics/mutate/` and look at its `:forms`. Each form has `:file`, the path of its source file relative to the project root. Delete each snapshot in which a form has `:file` equal to the path of your file. A form without `:file` in an old snapshot takes the `:source` of that snapshot, so delete a snapshot whose `:source` is that path too. A run also prints the path of each snapshot that it writes in a `Wrote <path>` line on stderr, so an earlier run shows you the file to delete.
 
 mutator writes the snapshot again on the next run. The delete is safe: mutator reads the snapshots when it starts and creates the directory when it writes, so a missing file only means that it starts with no earlier outcome for that file. A run that exits `2` writes no snapshot, so a deleted one stays absent until a later run. That later run treats each site in `--lines` as changed and runs it again instead of trusting an old outcome. The run takes longer and is still correct.
 
-Two checked files can share one snapshot. Delete it once, then give each of those files its run after the delete, and do not delete again. The first run writes its own forms, and the second run keeps them and adds its own.
+Two checked files can share one snapshot. Delete it once, then give each file that shares it its run after the delete, and read the gate result of each file right after its own run. A retry of one of those files repeats the delete, so it repeats the run of every file that shares the snapshot. The first run writes its own forms, and the second run keeps them and adds its own.
 
 With a fresh snapshot, a survivor comes only from a changed line.
 
