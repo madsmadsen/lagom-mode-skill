@@ -35,7 +35,8 @@ Both sides then run the same setup steps and the same arguments.
 - Every snapshot under `.metrics/mutate/**/*.edn` must exist on both sides with equal
   content. The original's reader parses each file, and the top-level `tested-at`
   key is dropped before the comparison.
-- stdout must be equal on both sides after `<ROOT>` normalization, unless the run sets `allow_stdout_diff = true`.
+- stdout must be equal on both sides after `<ROOT>` normalization. No run skips
+  this check: a stdout difference needs an approved fix (see below).
 - `git status --porcelain` of both trees must be equal.
 - stderr is informational. Its line differences are printed, not compared.
 - `--show` prints the diffs.
@@ -46,16 +47,24 @@ Each output line is `PASS`, `FAIL`, or `DIFF-ALLOWED`. The runner exits 1 if any
 
 `fixes.toml` lists the intentional differences. A run names the difference it
 shows with `fix = "<id>"`, or with a list of ids when more than one entry
-explains it. When every named id has `approved = true` in `fixes.toml`, a `FAIL`
-prints `DIFF-ALLOWED` instead of `FAIL`. Mads Madsen approves each entry
-(MU-PB-6). A run that names no fix, or an id that is not approved, prints
-`FAIL`.
+explains it. When every named id has `approved = true` in `fixes.toml`, a
+`DIFF-ALLOWED` replaces `FAIL`. Mads Madsen approves each entry (MU-PB-6). A run
+that names no fix, or an id that is not approved, prints `FAIL`.
+
+An approval excuses the stdout difference of its run, and only that. A
+mismatch of the exit code, a metrics difference, a git status difference, and an
+error stay a `FAIL`, approved or not.
 
 The runner compares fix ids, not fixture paths. One approval therefore
 excuses only the runs that name it. `parity/test_status.py` tests this rule
-with fake ids. It needs Python 3.11 or later, and no original:
+with fake ids, and it checks that `fixes.toml` has no approved entry. It needs
+Python 3.11 or later, and no original. Run one of:
 
     python3.12 -m unittest parity/test_status.py
+    python3.12 -m unittest discover -s .   # from tools/mutator, as crapper does
+
+`parity/__init__.py` marks `parity/` as a package, so discovery finds the tests
+and crapper can measure their coverage.
 
 ## Fixtures
 

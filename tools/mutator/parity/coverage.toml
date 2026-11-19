@@ -23,7 +23,6 @@ args = ["-h"]
 expect_exit = 0
 fix = ["worker-cap-half-the-cores", "max-memory-limit"]
 # Fix worker-cap-half-the-cores (parity/fixes.toml): e6b7084 caps workers at half the cores, so the help text differs from the original on purpose. Fix max-memory-limit adds the --max-memory-mb lines.
-allow_stdout_diff = true
 covers = ["-h", "exit 0"]
 
 [[run]]
@@ -33,7 +32,6 @@ args = ["--help"]
 expect_exit = 0
 fix = ["worker-cap-half-the-cores", "max-memory-limit"]
 # Fix worker-cap-half-the-cores (parity/fixes.toml): e6b7084 caps workers at half the cores, so the help text differs from the original on purpose. Fix max-memory-limit adds the --max-memory-mb lines.
-allow_stdout_diff = true
 covers = ["--help", "exit 0"]
 
 [[run]]

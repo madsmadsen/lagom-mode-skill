@@ -15,8 +15,7 @@ with the original (`python -m mutator` from the venv) and once with the port
 - every file under .metrics/ after the original's EDN reader parses the .edn
   files and the top-level `tested-at` key is dropped;
 - the `git status --porcelain` lines of the fixture tree (AC-5: sources untouched);
-- stdout, after each side's temp root is replaced with `<ROOT>` (an entry with
-  `allow_stdout_diff = true` skips this check).
+- stdout, after each side's temp root is replaced with `<ROOT>`;
 
 stderr is normalized the same way (root replaced, `Wrote <path>` lines replaced
 with `Wrote <PATH>`) and its differences are reported as information only.
@@ -56,6 +55,8 @@ WORKER_CAP = ["--max-workers", "2"]
 CAP_EXEMPT = {"-h", "--help", "--scan", "--max-workers"}
 GIT_INIT = "git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init"
 WROTE_LINE = re.compile(r"^Wrote .*$", re.MULTILINE)
+# The only problem an approved fix excuses (MU-PB-6). `status_for` matches on it.
+STDOUT_PREFIX = "stdout differs in "
 TIMEOUT = 900
 
 
@@ -91,12 +92,24 @@ def named_fixes(entry: dict) -> list[str]:
     return [listed] if isinstance(listed, str) else list(listed)
 
 
+def suppressing_runs(text: str) -> list[str]:
+    """Names of the runs in a coverage.toml text that skip the stdout check with
+    `allow_stdout_diff = true`. A difference needs an approval instead (MU-PB-6)."""
+    entries = tomllib.loads(text).get("run", [])
+    return [entry.get("name", "?") for entry in entries
+            if entry.get("allow_stdout_diff", False)]
+
+
 def status_for(problems: list[str], entry: dict, approved: set[str]) -> str:
-    """AC-1: a difference that fixes.toml lists and Mads approved is not a failure."""
+    """AC-1, MU-PB-6: an approved fix excuses the stdout difference of its run, and
+    only that. An exit code mismatch, a metrics difference, a git status difference,
+    and an error stay a FAIL."""
     if not problems:
         return "PASS"
     fixes = named_fixes(entry)
-    if fixes and all(fix in approved for fix in fixes):
+    if not fixes or any(fix not in approved for fix in fixes):
+        return "FAIL"
+    if all(problem.startswith(STDOUT_PREFIX) for problem in problems):
         return "DIFF-ALLOWED"
     return "FAIL"
 
@@ -209,10 +222,9 @@ def problems_for(entry: dict, sides: dict[str, Outcome]) -> list[str]:
     found += metrics_problems(orig, port)
     if orig.status != port.status:
         found.append(f"git status differs (original {orig.status}, port {port.status})")
-    if not entry.get("allow_stdout_diff", False):
-        stdout = changed_count(stream_diff(orig, port, "stdout"))
-        if stdout:
-            found.append(f"stdout differs in {stdout} lines")
+    stdout = changed_count(stream_diff(orig, port, "stdout"))
+    if stdout:
+        found.append(f"{STDOUT_PREFIX}{stdout} lines")
     return found
 
 

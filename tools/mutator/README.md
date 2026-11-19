@@ -82,8 +82,8 @@ tree:
 | Python | `<python> -m pip install --disable-pip-version-check pytest` | Site packages of the project interpreter, only when a pytest config exists and pytest does not import. |
 | TypeScript | `npm install --no-save --no-package-lock @vitest/coverage-v8[@<version>]` | `node_modules`. The port restores `package.json` and the lockfile from a copy it takes first. |
 | TypeScript | `npx --yes c8 ...` | The npm cache, on the first run. |
-| Rust | `cargo install cargo-llvm-cov --locked` | `~/.cargo/bin`. |
 | Rust | `rustup component add llvm-tools-preview` | The toolchain, when `rustup` exists. |
+| Rust | `cargo install cargo-llvm-cov --locked` | `~/.cargo/bin`. |
 
 The port installs nothing else. In particular it installs no Python package into the project
 requirements, and it changes no `Cargo.toml`.

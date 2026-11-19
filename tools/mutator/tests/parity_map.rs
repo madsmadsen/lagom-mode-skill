@@ -21,49 +21,41 @@ fn fixes_toml() -> String {
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
 }
 
-/// The fix id named by a comment, from the token after `Fix ` up to the next space.
-fn named_fix(comment: &str) -> Option<&str> {
-    if !comment.starts_with('#') {
-        return None;
+/// Names of the `[[run]]` blocks in a coverage.toml text that set
+/// `allow_stdout_diff = true`. A run must not skip the stdout check (MU-PB-6).
+fn suppressing_runs(coverage: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let mut current: Option<String> = None;
+    for line in coverage.lines() {
+        let line = line.trim();
+        if line == "[[run]]" {
+            current = Some(String::new());
+        } else if let Some(name) = current.as_mut() {
+            if let Some(rest) = line.strip_prefix("name = \"") {
+                *name = rest.trim_end_matches('"').to_string();
+            } else if line == "allow_stdout_diff = true" {
+                if name.is_empty() {
+                    *name = "?".to_string();
+                }
+                names.push(name.clone());
+            }
+        }
     }
-    let (_, rest) = comment.split_once("Fix ")?;
-    rest.split(' ').next()
+    names
 }
 
-/// MU-PB-3: every `allow_stdout_diff = true` run names, in the comment above it, a fix in fixes.toml.
+/// MU-PB-6: no run of coverage.toml skips the stdout check. A stdout difference needs
+/// an approved fix, so a run that allows it on its own would hide the difference.
 #[test]
-fn mu_pb_3_allow_stdout_diff_names_a_fix_in_fixes_toml() {
+fn mu_pb_6_no_run_skips_the_stdout_check() {
     let coverage = coverage_toml();
-    let fixes = fixes_toml();
-    let lines: Vec<&str> = coverage.lines().collect();
-    let mut checked = 0;
-    for (i, line) in lines.iter().enumerate() {
-        if line.trim() != "allow_stdout_diff = true" {
-            continue;
-        }
-        checked += 1;
-        let comment = lines[..i]
-            .iter()
-            .rev()
-            .find(|l| !l.trim().is_empty())
-            .map_or("", |l| l.trim());
-        let id = named_fix(comment).unwrap_or_else(|| {
-            panic!(
-                "line {} allows a stdout diff but the comment above names no fix: {comment:?}",
-                i + 1
-            )
-        });
-        let entry = format!("id = \"{id}\"");
-        assert!(
-            fixes.lines().any(|l| l.trim() == entry),
-            "parity/fixes.toml has no {entry}, named above line {}",
-            i + 1
-        );
-    }
-    assert!(
-        checked > 0,
-        "parity/coverage.toml has no allow_stdout_diff line"
-    );
+    assert_eq!(suppressing_runs(&coverage), Vec::<String>::new());
+
+    // The check above is not vacuous: the helper flags a run that sets the field.
+    let sample = "[[run]]\nname = \"sample\"\nallow_stdout_diff = true\n";
+    assert_eq!(suppressing_runs(sample), vec!["sample".to_string()]);
+    let clean = "[[run]]\nname = \"sample\"\nargs = [\"-h\"]\n";
+    assert_eq!(suppressing_runs(clean), Vec::<String>::new());
 }
 
 /// The flags in the Options block of `--help`: `-h`, `-s`, and every `--name`.
