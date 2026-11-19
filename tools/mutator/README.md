@@ -112,5 +112,8 @@ cargo fmt
 
 `cargo test` also runs `python3.12 -m unittest discover -s . -p 'test_*.py'` for
 the parity runner through `tests/parity_map.rs`. That test skips with a note when
-the host has no `python3.12` and no `python3` with `tomllib`.
+the host has no `python3.12` and no `python3` with `tomllib`. It kills the run
+after 120 s, and it writes no bytecode into the crate. The Linux guests of
+`ci/linux-vm/` install `python3.12`, so the parity tests run there. The results
+line of `guest-test.sh` names the interpreter path that was found.
 

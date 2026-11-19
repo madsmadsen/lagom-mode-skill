@@ -4,20 +4,25 @@
 //! rows, one per language (MU-12).
 
 use std::fs;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, Command, ExitStatus};
+use std::thread;
+use std::time::{Duration, Instant};
+
+/// Seconds that the Python parity tests may run. A test that starts a subprocess could
+/// otherwise block `cargo test` for ever.
+const PARITY_TIMEOUT_SECS: u64 = 120;
 
 /// The six languages named in the README table.
 const LANGUAGES: [&str; 6] = ["clojure", "java", "go", "typescript", "rust", "python"];
 
-fn coverage_toml() -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("parity/coverage.toml");
-    fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
-}
-
-/// The fixes registry, which names every difference from the original (MU-PB-3).
-fn fixes_toml() -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("parity/fixes.toml");
+/// The text of a parity registry file: `coverage.toml` holds the runs, and `fixes.toml`
+/// names every difference from the original (MU-PB-3).
+fn parity_file(name: &str) -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("parity")
+        .join(name);
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
 }
 
@@ -48,7 +53,7 @@ fn suppressing_runs(coverage: &str) -> Vec<String> {
 /// an approved fix, so a run that allows it on its own would hide the difference.
 #[test]
 fn mu_pb_6_no_run_skips_the_stdout_check() {
-    let coverage = coverage_toml();
+    let coverage = parity_file("coverage.toml");
     assert_eq!(suppressing_runs(&coverage), Vec::<String>::new());
 
     // The check above is not vacuous: the helper flags a run that sets the field.
@@ -69,9 +74,84 @@ fn parity_python() -> Option<&'static str> {
     })
 }
 
+/// A parity run: how it ended, and what it printed.
+struct ParityRun {
+    /// `None` when the run was killed at `PARITY_TIMEOUT_SECS`.
+    status: Option<ExitStatus>,
+    stdout: String,
+    stderr: String,
+}
+
+/// Reads a pipe to its end in its own thread, so that a full pipe cannot block the child.
+fn drain(pipe: Option<impl std::io::Read + Send + 'static>) -> thread::JoinHandle<String> {
+    thread::spawn(move || {
+        let mut text = String::new();
+        if let Some(mut pipe) = pipe {
+            let _ = pipe.read_to_string(&mut text);
+        }
+        text
+    })
+}
+
+/// Kills the process group of `child`, which was spawned with `process_group(0)`, and reaps it.
+fn kill_group(child: &mut Child) {
+    if let Ok(pid) = i32::try_from(child.id()) {
+        // SAFETY: `pid` is the child's pid and the child leads its own process group, so
+        // `-pid` names that group. The child is not reaped yet, so the id cannot be reused.
+        unsafe { libc::kill(-pid, libc::SIGKILL) };
+    }
+    let _ = child.wait();
+}
+
+/// Runs `command` for at most `limit`. A run that takes longer is killed, and its status is
+/// `None`.
+fn run_with_deadline(command: &mut Command, limit: Duration) -> ParityRun {
+    let mut child = command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .process_group(0)
+        .spawn()
+        .expect("running the parity tests");
+    let stdout = drain(child.stdout.take());
+    let stderr = drain(child.stderr.take());
+    let started = Instant::now();
+    let status = loop {
+        match child.try_wait().expect("polling the parity tests") {
+            Some(status) => break Some(status),
+            None if started.elapsed() >= limit => {
+                kill_group(&mut child);
+                break None;
+            }
+            None => thread::sleep(Duration::from_millis(50)),
+        }
+    };
+    ParityRun {
+        status,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
+    }
+}
+
+/// MU-PB-6, AC-1: a parity run that takes longer than its deadline is killed, so that a
+/// hanging Python test cannot block `cargo test`.
+#[test]
+fn mu_pb_6_a_parity_run_that_takes_too_long_is_killed() {
+    let mut command = Command::new("sh");
+    command.args(["-c", "sleep 30"]);
+    let started = Instant::now();
+    let run = run_with_deadline(&mut command, Duration::from_secs(1));
+    assert!(run.status.is_none(), "the killed run reported a status");
+    assert!(
+        started.elapsed() < Duration::from_secs(10),
+        "the deadline did not end the run: {:?}",
+        started.elapsed()
+    );
+}
+
 /// MU-PB-6, AC-1: the Python tests of the parity runner pass. No other automatic check
 /// runs them, so a broken `status_for` would pass every other check. The test skips when
-/// no interpreter has `tomllib`.
+/// no interpreter has `tomllib`, and it fails when the run takes longer than
+/// `PARITY_TIMEOUT_SECS`.
 #[test]
 fn mu_pb_6_ac_1_the_parity_status_tests_pass() {
     let Some(python) = parity_python() else {
@@ -81,17 +161,25 @@ fn mu_pb_6_ac_1_the_parity_status_tests_pass() {
         );
         return;
     };
-    let out = Command::new(python)
+    let mut command = Command::new(python);
+    command
         .args(["-m", "unittest", "discover", "-s", ".", "-p", "test_*.py"])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .expect("running the parity tests");
+        .env("PYTHONDONTWRITEBYTECODE", "1");
+    let run = run_with_deadline(&mut command, Duration::from_secs(PARITY_TIMEOUT_SECS));
+    let Some(status) = run.status else {
+        panic!(
+            "{python} -m unittest discover ran past {PARITY_TIMEOUT_SECS} s and was killed\n\
+             stdout:\n{}\nstderr:\n{}",
+            run.stdout, run.stderr
+        );
+    };
     assert!(
-        out.status.success(),
+        status.success(),
         "{python} -m unittest discover exited {:?}\nstdout:\n{}\nstderr:\n{}",
-        out.status.code(),
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr)
+        status.code(),
+        run.stdout,
+        run.stderr
     );
 }
 
@@ -131,8 +219,8 @@ const PORT_ONLY_FLAGS: [(&str, &str); 1] = [("--max-memory-mb", "max-memory-limi
 /// MU-25: a flag that only the port has is named by a fix in fixes.toml instead.
 #[test]
 fn mu_ac_1_coverage_toml_covers_every_flag_and_table_row() {
-    let coverage = coverage_toml();
-    let fixes = fixes_toml();
+    let coverage = parity_file("coverage.toml");
+    let fixes = parity_file("fixes.toml");
     let flags = help_flags();
     for (flag, id) in PORT_ONLY_FLAGS {
         assert!(flags.iter().any(|f| f == flag), "help lists no {flag}");

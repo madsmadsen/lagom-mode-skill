@@ -66,7 +66,8 @@ Do not delete it. It needs Python 3.11 or later, and no original. Run one of:
 
 `tests/parity_map.rs` runs the second command for you: `cargo test` runs it in
 `tools/mutator`. The test skips with a note when the host has no `python3.12`
-and no `python3` with `tomllib`.
+and no `python3` with `tomllib`, and it kills the run after 120 s. The Linux
+guests of `ci/linux-vm/` install `python3.12`.
 
 `parity/__init__.py` marks `parity/` as a package, so discovery finds the tests
 and crapper can measure their coverage.
