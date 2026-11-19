@@ -515,7 +515,7 @@ fn cr_13_cr_3_successful_coverage_command_reads_reports() {
     assert!(row.contains("100.0%"), "row was: {row}");
 }
 
-// CR-15, AC-6
+// CR-15
 #[test]
 fn cr_15_c8_download_is_announced_on_stderr_before_it_runs() {
     let temp = tempfile::tempdir().expect("tempdir");

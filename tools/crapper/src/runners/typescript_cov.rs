@@ -435,7 +435,7 @@ fn install_notice(command: &[String]) -> Option<String> {
     }
     let package = parts.next()?;
     Some(format!(
-        "Installing {package} with npx --yes. npx downloads it from the network before the run."
+        "Installing {package} with npx --yes. npx downloads {package} from the network if it is not installed."
     ))
 }
 
@@ -1180,6 +1180,19 @@ mod tests {
             vitest_install_notice("@vitest/coverage-v8@4.1.11"),
             "Installing @vitest/coverage-v8@4.1.11 so Vitest can write LCOV. \
              package.json and the lockfile are restored afterward."
+        );
+    }
+
+    // CR-15 the install notice names the tool, and only a download command gets one
+    #[test]
+    fn cr_15_install_notice_is_only_for_a_download_command() {
+        assert_eq!(install_notice(&strings(&["npx", "vitest", "run"])), None);
+        assert_eq!(install_notice(&strings(&["npx"])), None);
+        let notice = install_notice(&strings(&["npx", "--yes", "c8"])).expect("a c8 notice");
+        assert_eq!(
+            notice,
+            "Installing c8 with npx --yes. \
+             npx downloads c8 from the network if it is not installed."
         );
     }
 
