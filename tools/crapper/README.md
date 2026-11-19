@@ -10,6 +10,8 @@ Requirements: `docs/prd/crapper.md` (CR-*). License: MIT (`LICENSE`). Copyright 
 cargo install --locked --git https://github.com/madsmadsen/lagom-mode-skill crapper
 ```
 
+The port is published in a public repository on GitHub. It is not published to crates.io, so the install command takes the repository URL and the name `crapper`.
+
 The build needs Rust stable and a C compiler. `--locked` makes Cargo use the committed `Cargo.lock`, so the grammar versions of a release do not move (CR-NFR-4).
 
 ## Use
