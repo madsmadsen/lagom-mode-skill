@@ -12,7 +12,7 @@ crapper gives each function a CRAP score. A high score means the function is com
 
 ## Install
 
-The install instructions are in the README of the Rust port of crapper. Run `crapper --help` to make sure that the command is on the `PATH`.
+The install instructions are in `tools/crapper/README.md` of the repository at https://github.com/madsmadsen/lagom-mode-skill. Run `crapper --help` to make sure that the command is on the `PATH`.
 
 ## Run
 
@@ -22,7 +22,7 @@ Run `crapper` once for each changed file that is not a test file. Give the chang
 crapper --threshold 10 --lines <n,n,...> <file>
 ```
 
-Skip a file that has no changed line. Do not use `--changed` for the gates.
+Skip a file that has no changed line. Skip a file that no longer exists. Do not use `--changed` for the gates.
 
 On uncommitted changes (the unit gates), get the lines from `git diff -U0 HEAD -- <file>`. For a new file that git does not track yet, use all its lines.
 
@@ -30,21 +30,25 @@ On the feature files (the feature gates), get the lines from `git diff -U0 <base
 
 A hunk header of the diff looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. Join the lines of all hunks of the file with commas.
 
-Do not run `crapper` on a test file. It gives the test functions 0% coverage and the gate fails. The `lagom-mode` skill lists the test paths.
+Do not run `crapper` on a test file. It gives the test functions 0% coverage, so each test function with a complexity of 3 or more fails the gate. The `lagom-mode` skill lists the test paths.
 
-crapper runs the coverage command of the project. It prints a table on stdout with the worst score first. It also writes `.metrics/crap.edn`.
+crapper runs the coverage command of the project. It prints a table on stdout with the worst score first. It also writes `.metrics/crap.edn`. Each run overwrites that file. crapper can install a missing coverage tool from the network (CR-14).
 
 ## Read the output
 
-Each row of the table has one function with its complexity, its coverage, and its CRAP score. Read the first rows. If the first row is at or below 10, all functions pass.
+Each row of the table has one function with its complexity, its coverage, and its CRAP score. Read the rows above 10. If every row is at or below 10, all functions pass.
+
+Exit 0 only proves that the scored functions pass. Confirm that each changed function has a row. `No source files to analyze.` or an empty table means that the line list is wrong. So does a missing function.
 
 ## Exit codes
 
 | Code | Meaning | What you do |
 | --- | --- | --- |
-| 0 | The worst score is 10 or lower. | The crapper gate passes. |
-| 1 | Bad arguments. | Fix the command. Do not change the threshold. |
-| 2 | The worst score is higher than 10. | Act on the first row of the table, as below. Run the gate again. |
+| 0 | The worst score is 10 or lower. | Confirm that each changed function has a row. Then the crapper gate passes. |
+| 1 or any other code | Bad arguments, or a failure to read. | Read stderr. Fix the command or the file. Do not change the threshold. |
+| 2 | The worst score is higher than 10. | Read stderr for a coverage warning first. If a line holds `will score 0%`, fix the coverage run, not the code. Otherwise act on each row above 10, as below. Run the gate again. |
+
+Code 1 covers a bad argument, an unreadable file, a bad coverage report, and a metrics write error. A Git error returns its own code.
 
 ## Act on a high score
 
