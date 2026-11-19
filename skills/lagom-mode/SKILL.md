@@ -22,11 +22,7 @@ The loop is for one small feature. If the request is large, ask the user to spli
 
 ## Tool skills
 
-Three tools give the same verdict for the same files. You cannot argue with them. Load the skill of a tool when you first run that tool:
-
-* `crapper`: scores each function for complexity and missing tests. Load it at the unit gates (step 7).
-* `dryer`: finds code that repeats in a similar shape. Load it at the unit gates (step 7).
-* `mutator`: changes the code and checks that a test fails. Load it at the unit gates (step 7).
+Three tools give the same verdict for the same files. You cannot argue with them. All three run at the unit gates (step 7), so load the skill of each tool there: `crapper` scores each function for complexity and missing tests, `dryer` finds code that repeats in a similar shape, and `mutator` changes the code and checks that a test fails.
 
 ## Definitions
 
@@ -45,7 +41,7 @@ A unit or a feature passes its gates when all of these are true at once:
 3. `dryer` reports no candidate pair with a score of 0.8 or more in the checked files.
 4. `mutator` exits `0` for the changed lines, and its snapshots have 0 uncovered sites in the checked functions.
 
-`dryer` checks whole files. `crapper` and `mutator` check only the changed lines of each file. Run them once for each changed file that is not a test file. Leave out a file that no longer exists. Give each run the changed lines of that file in `--lines`. Skip a file that has no changed line. Do not use `--changed` for `crapper` or `mutator`.
+`dryer` checks whole files. `crapper` and `mutator` check only the changed lines of each file. Run them once for each changed file that is not a test file. Leave out a file that no longer exists. Give each run the changed lines of that file in `--lines`. Skip a file that has no changed line. Skip a file that is not source code in a language the tools know, such as `Cargo.toml` or `README.md`. Do not use `--changed` for `crapper` or `mutator`.
 
 `--lines <n,n,...>` has the same meaning for both tools. `crapper --lines` scores only the functions that contain one of the lines. With `--threshold`, its exit status depends only on those functions. `mutator --lines` runs only the mutations on those lines. You run one command for each file, because `mutator --lines` applies one set of lines to every file in a run.
 
@@ -71,11 +67,11 @@ A test file is a file in a directory named `__tests__`, `spec`, `specs`, `test`,
 
 The unit gates see only uncommitted changes. The feature gates see the whole feature. They catch a problem that spans two units, for example duplication between code from unit 1 and code from unit 3.
 
-Retry limit: you have 5 tries for each gate. A try is one run of the gate after a change. If a gate still fails after the limit, stop (stop condition 1). Do not lower a threshold, delete a test, or edit a gate command to pass.
+Retry limit: you have 5 tries for each gate. The count is separate for each gate of each unit and for each gate of the feature gates. The count restarts for each new unit and for the feature gates. A try is one run of the gate after a change. If a gate still fails after the limit, stop (stop condition 1). Do not lower a threshold, delete a test, or edit a gate command to pass.
 
 ## Stop conditions
 
-When one of these happens, stop the loop. Keep the worktree and the loop branch. Report the cause, the names of the worktree and the loop branch, and the log.
+When one of these happens, stop the loop. If a worktree exists, keep the worktree and the loop branch. Report the cause, the names of the worktree and the loop branch, and the log.
 
 1. A gate still fails after 5 tries. Report the failure and the log of the gate.
 2. The loop starts on a detached HEAD. Stop before you create the worktree. Ask the user for a source branch.
@@ -88,7 +84,7 @@ When one of these happens, stop the loop. Keep the worktree and the loop branch.
 Make every edit, test run, gate run, and commit inside the loop worktree. Do not change files in another worktree. The only exception is the fast-forward in step 12.
 
 1. Record the source branch and the base commit. Run `git branch --show-current` and `git rev-parse HEAD`. If the output of the first command is empty, HEAD is detached. Stop (stop condition 2).
-2. Create the worktree on a new branch from the base commit: `git worktree add -b lagom-mode/<short-feature-name> <path> <base-commit>`. Write the worktree path, the loop branch, the source branch, and the base commit at the top of the log. Go into the worktree. Do the next steps there.
+2. Create the worktree on a new branch from the base commit: `git worktree add -b lagom-mode/<short-feature-name> <path> <base-commit>`. Put `<path>` outside the repository, at a sibling path `<repo>-lagom-<short-feature-name>` or at a scratch path such as `/tmp/<repo>-lagom-<short-feature-name>`. If the branch or the path exists, add a number. Write the worktree path, the loop branch, the source branch, and the base commit at the top of the log. Go into the worktree. Do the next steps there. Before the first test, run `git check-ignore -q .metrics`. If Git does not ignore it, add `.metrics/` to the file given by `git rev-parse --git-path info/exclude`. Never commit `.metrics/`.
 3. Write one failing test for the next behavior of the feature.
 4. Run the test. Make sure that it fails for the reason that you expect. Write the failure reason in the log. Do not change production code before this step is done.
 5. Make the smallest change that makes the test pass.
@@ -98,7 +94,7 @@ Make every edit, test run, gate run, and commit inside the loop worktree. Do not
 9. If the feature has more behavior, go to step 3.
 10. Run the feature gates on the feature files. If a gate fails, refactor or add tests, then run the tests and go to step 7.
 11. Run `git rev-parse <source-branch>`. If the source branch moved since the base commit, run `git rebase <source-branch>` in the worktree. Write the rebase and the new base commit in the log. Then run all tests and the feature gates again. If the rebase has a conflict, stop (stop condition 4). Go to step 12 only if the tests and the gates pass.
-12. Find the worktree that has the source branch checked out with `git worktree list`. In that worktree, run `git merge --ff-only lagom-mode/<short-feature-name>`. This makes no merge commit. If the command fails because that worktree has uncommitted changes, stop (stop condition 3). Never move the source branch with `git branch -f` or `git update-ref`.
+12. Find the worktree that has the source branch checked out with `git worktree list`. In that worktree, run `git merge --ff-only lagom-mode/<short-feature-name>`. This makes no merge commit. If the command fails because that worktree has uncommitted changes, stop (stop condition 3). If it fails because the source branch moved after step 11, go back to step 11. Never move the source branch with `git branch -f` or `git update-ref`.
 13. If the source branch tracks a remote branch, push the source branch. If the remote rejects the push, stop (stop condition 5).
 14. Remove the loop worktree with `git worktree remove <path>`. Delete the loop branch with `git branch -d lagom-mode/<short-feature-name>`. If the worktree has uncommitted changes, do not remove it. Report the changes for a decision by the developer.
 15. Report the log.
