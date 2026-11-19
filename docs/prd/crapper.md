@@ -164,6 +164,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
     6. With a second file, the same line list applies to both files.
     7. `--lines 0`, `--lines x`, `--lines 1.5`, `--lines ,`, and `--lines` with no value each exit `1` with a message and the help text on stderr.
     8. `crapper --help` lists `--lines <n,n,...>`.
+36. AC-36 (CR-25): On a Rust file with `#[cfg(test)] impl Board { fn place(&self) {} }` and `#[cfg(test)] mod unit_tests { fn hidden() {} }`, the port scores `place` and does not score `hidden`. The unit test `cr_25_a_cfg_test_impl_block_keeps_its_functions_as_production_code` in `tools/crapper/src/languages/rust.rs` checks this case on the function list of the port.
 
 ## 9. Risks
 
