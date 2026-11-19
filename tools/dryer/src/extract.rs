@@ -524,6 +524,13 @@ mod tests {
         assert_eq!(spans(Language::Rust, "a.rs", source), vec![(14, 16)]);
     }
 
+    // DR-15: a block comment between a test attribute and its item does not hide the attribute.
+    #[test]
+    fn dr15_block_comment_between_a_test_attribute_and_its_item_keeps_the_item_out() {
+        let source = "#[cfg(test)]\n/* unit tests */\nmod unit_tests {\n    fn gamma(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\nmod inner {\n    #[cfg(test)]\n    /* why this is test code */\n    fn helper(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n    fn delta(xs: Vec<i32>) -> usize {\n        xs.len()\n    }\n}\n";
+        assert_eq!(spans(Language::Rust, "a.rs", source), vec![(14, 16)]);
+    }
+
     // DR-15: code that only looks like test code stays production code: cfg(not(test)),
     // cfg(all(test, ..)), and tokio::test are not matched.
     #[test]

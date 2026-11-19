@@ -91,7 +91,9 @@ Options for the runner:
 - `--port BIN`: Use this `dryer` binary.
 - `--record`: Write results to `parity/expected/<case>/`. Without `--case`, this removes the old results first. A case with a `fix` also records the port's own output in `parity/expected/<case>/port/`.
 
-The runner runs each side five times and prints the median wall-clock time of each side (DR-NFR-2, AC-10).
+`--record` rewrites `parity/expected/<case>/port/` from the current binary. A regression in a fix case becomes the expected output. The owner must review each `port/` diff before the commit.
+
+The runner runs each side five times and prints the median wall-clock time of each side (DR-NFR-2, AC-10). Run 1 gives the compared result. Runs 2 to 5 reuse the copy only for timing, and the runner removes `.metrics` before each of them.
 
 A case with a `fix` in `coverage.toml` differs from the original on purpose. For such a case the runner compares the port with `parity/expected/<case>/port/`, not with the original. It also fails the case when the port no longer differs from the original. No entry in `parity/fixes.toml` is approved until Mads Madsen adds `approved_by`.
 

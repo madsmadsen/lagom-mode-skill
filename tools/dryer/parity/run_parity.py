@@ -18,7 +18,10 @@ that case the runner compares the port with parity/expected/<case>/port/, which
 
 Each case copies fixtures/<fixture>/ into a fresh temp directory for each
 program, applies git_setup if set, and runs `<program> --root <copy> ARGS`
-with cwd set to the copy. Copy paths in stdout are replaced with <ROOT>.
+with cwd set to the copy. Run 1 gives the compared result. Runs 2 to 5 reuse
+that copy only to measure time, and the runner removes .metrics before each of
+them, so a stale snapshot can never pass a check. Copy paths in stdout are
+replaced with <ROOT>.
 
 Stdlib only; Python >= 3.9. Set DRYER_ORIGINAL_PYTHON to choose the interpreter
 that has the original's dependencies (for example the venv python).
@@ -307,20 +310,25 @@ TIMED_RUNS = 5
 
 
 def run_side(prefix, root, args, env):
-    """Run one side 5 times and keep the last result; seconds is the median (DR-NFR-2)."""
+    """Run one side 5 times. Run 1 gives the compared result. Runs 2 to 5 only measure time,
+    each after the old .metrics is gone, so no snapshot of an earlier run can pass a check.
+    seconds is the median of the 5 runs (DR-NFR-2, AC-10).
+    """
     samples = []
     res = None
-    for _ in range(TIMED_RUNS):
+    for index in range(TIMED_RUNS):
+        if index:
+            shutil.rmtree(root / ".metrics", ignore_errors=True)
         start = time.perf_counter()
         proc = subprocess.run(prefix + ["--root", str(root)] + args, cwd=root, env=env,
                               capture_output=True)
         samples.append(time.perf_counter() - start)
-        snap = root / ".metrics" / "dry.edn"
-        edn = snap.read_bytes() if snap.exists() else None
-        res = Result(proc.returncode, normalize_stdout(proc.stdout, root), edn, 0.0,
-                     proc.stderr.decode("utf-8", "replace"))
-    res = res._replace(seconds=median_seconds(samples))
-    return res
+        if index == 0:
+            snap = root / ".metrics" / "dry.edn"
+            edn = snap.read_bytes() if snap.exists() else None
+            res = Result(proc.returncode, normalize_stdout(proc.stdout, root), edn, 0.0,
+                         proc.stderr.decode("utf-8", "replace"))
+    return res._replace(seconds=median_seconds(samples))
 
 
 def edn_diffs(orig_edn, port_edn):
