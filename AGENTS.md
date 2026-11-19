@@ -35,10 +35,11 @@ Each crate is a separate Cargo project. There is no Cargo workspace. A crate mus
 
 ## How to make a change
 
-1. Follow ub-mode: make it work, then make it right, then follow the practice rules.
-2. Write the failing test first. Run it and record why it fails. Then make the smallest change that makes it pass.
-3. For implementation work, give each small unit to the `implementer` agent with a complete brief. That agent does not build or test. The agent that gives the brief runs every build, test, and gate.
-4. Run these commands in the crate directory (`tools/<crate>/`) before each commit:
+1. Use the `lagom-mode` skill (`skills/lagom-mode/SKILL.md`) for every implementation work. Read it before you change code, and follow its loop from start to end. Do not skip a step or a gate.
+2. Follow ub-mode: make it work, then make it right, then follow the practice rules.
+3. Write the failing test first. Run it and record why it fails. Then make the smallest change that makes it pass.
+4. For implementation work, give each small unit to the `code-writer` agent with a complete brief. This agent runs on a small, light model. Use a small model for each unit, never the model that gives the brief. The brief names the worktree, the files, the change, and the build and test commands. The agent does not run gates, Git, or commits. The agent that gives the brief runs every build, test, and gate. If no `code-writer` agent exists, create an agent that uses a small model and follows the same rules.
+5. Run these commands in the crate directory (`tools/<crate>/`) before each commit:
 
    ```bash
    cargo build --release
@@ -47,8 +48,8 @@ Each crate is a separate Cargo project. There is no Cargo workspace. A crate mus
    cargo fmt
    ```
 
-5. Run the quality gates on the changed files. Each function must have a CRAP score of 10 or lower (`crapper --threshold 10`). No pair of forms can have a dryer score of 0.8 or more (`dryer --threshold 0.8`). The mutation run must have no survivors and no uncovered sites.
-6. Add each action and its reason to `tools/<crate>/LOG.md`.
+6. Run the quality gates on the changed files. Each function must have a CRAP score of 10 or lower (`crapper --threshold 10`). No pair of forms can have a dryer score of 0.8 or more (`dryer --threshold 0.8`). The mutation run must have no survivors and no uncovered sites.
+7. Add each action and its reason to `tools/<crate>/LOG.md`.
 
 ## Load on the host
 
