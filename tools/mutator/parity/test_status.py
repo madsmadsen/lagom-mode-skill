@@ -142,12 +142,16 @@ class ApprovedFixIds(unittest.TestCase):
             path.write_text(text, encoding="utf-8")
             self.assertEqual(run.approved_fix_ids(path), set())
 
-    def test_mu_pb_6_the_real_fixes_toml_has_nothing_approved(self):
+    def test_mu_pb_6_the_real_fixes_toml_has_these_approved_ids(self):
         # AGENTS.md "Parity with the original" rule 3: only Mads Madsen approves an
-        # entry, so this test fails as soon as a worker approves one. When Mads Madsen
-        # approves an entry on purpose, change this test to name the approved id. Do
-        # not delete it: the rule stays, and so does the test that guards it.
-        self.assertEqual(run.approved_fix_ids(), set())
+        # entry. He approved these eight on 2026-11-20. This test names them, so a
+        # worker who approves a ninth entry makes it fail. Do not widen the set unless
+        # Mads Madsen approves the new entry.
+        self.assertEqual(run.approved_fix_ids(), {
+            "second-run-near-timeout", "idempotent-tested-at", "worker-cap-half-the-cores",
+            "ts-dot-imports-are-relative", "python-more-operators",
+            "python-clause-coverage-line", "max-memory-limit",
+            "rust-test-code-by-attribute"})
 
 
 class CoverageFixIds(unittest.TestCase):

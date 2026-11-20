@@ -360,3 +360,9 @@ Tool worker. Worktree `/tmp/lagom-fix8`, branch `lagom-mode/open-items-2`. Files
 ## 2026-11-20: full parity run after the approval (MU-PB-2, MU-PB-6, AC-1)
 
 - Ran the mutator parity runner on a scratch copy of 987d9dd. The original: `pip install git+https://github.com/unclebob/mutator@a5a0cb803b66e0cdb8bf471b3b08af701d424a41` in a python3.12 venv (pip records that commit in `direct_url.json`), plus crapper `6fd92c4`. Command: `ORIGINAL_PYTHON=<venv>/bin/python MUTATOR_BIN=target/release/mutator <venv>/bin/python parity/run.py`. Result: 36 PASS, 2 DIFF-ALLOWED (`flag-help-short` and `flag-help-long`, excused by the approved `worker-cap-half-the-cores` and `max-memory-limit`), 0 FAIL, exit 0. Run with plain `python3.12` instead of the venv interpreter, the runner fails at `import mutator.edn`. With `ORIGINAL_PYTHON` set to a venv that has no pinned original (the dryer venv), the pin check stops the runner with exit 1 and its message. Host: arm64, 14 logical CPUs.
+
+## 2026-11-21: macOS on x86_64 is not a target (mutator)
+
+- Mads Madsen said that macOS on x86_64 is not relevant. The platform requirement of this crate now names macOS 14 or later on arm64 and Linux on x86_64 and arm64, and says that macOS on x86_64 is not a target. Older log lines that say macOS x86_64 was not available stay as written. Proof: `cargo test` for the crate checks that cite the PRD still pass (see the commit message).
+
+- Correction to the approval entry of 2026-11-20: that commit (987d9dd) did not run the full `cargo test` of this crate, and the test `test_mu_pb_6_the_real_fixes_toml_has_nothing_approved` in `parity/test_status.py` failed from then on (it pinned the empty set, as its own comment said to change). `cargo test` failed in `tests/parity_map.rs` with that test. The test is now `test_mu_pb_6_the_real_fixes_toml_has_these_approved_ids` and names the 8 approved ids. Proof: `cargo test` passes with 528 tests.
