@@ -293,3 +293,63 @@ Loop log (lagom-mode). Worktree `/tmp/lagom-wt/dryer`. Loop branch `lagom-mode/r
 - Correction to the counts above: the new tests are 55, not 52. Two more tests close the last coverage gaps: `test_ac_1_ensure_original_clones_into_the_cache_once` patches `CACHE` and `subprocess.run`, so it proves the clone runs once and a rerun only checks out the pinned commit, and `Toml.test_ac_1_load_toml_reads_a_table_and_a_repeated_table` plus `test_ac_1_load_toml_refuses_a_bad_line_and_a_bad_value` read the real reader. After them `load_toml` is at 100% coverage, CRAP 8.0, and `mutator` reports 0 uncovered sites instead of 9.
 - The fake git in the cache test returned `bytes` for stdout while `ensure_original` reads text, so the first run of that test failed with `SystemExit: original at ... is b'aaaa...'`. That was my stub, not the runner. The stub returns `str` now.
 - Final checks after the last test: `cargo build --release` clean, `cargo test` 236 passed, `python3.12 -m unittest parity.test_run_parity` 55 tests OK, `crapper --threshold 10 parity/run_parity.py` exit 0, `crapper --threshold 10 parity/test_run_parity.py` exit 0, `mutator --max-workers 2 --lines 259,260,261,262,263,264,265,266,267,268,269,270,271,272,273,274 parity/run_parity.py` 6 killed, 0 survived, 0 uncovered, exit 0, and `./target/release/dryer --threshold 0.8 parity/run_parity.py parity/test_run_parity.py` exit 0 with `No duplicate candidates found.`.
+
+## 2026-11-21: AC-10 timing check in the Ubuntu 22.04 x86_64 qemu guest (DR-NFR-2, AC-10)
+
+- Reason: DR-NFR-2 names Linux x86_64 on Ubuntu 22.04 as the measuring host. The earlier AC-10 run on 2026-11-20 ran on macOS arm64, so it did not measure the named host. The guests of `ci/linux-vm/` give Ubuntu 22.04 x86_64, the way `tools/crapper/LOG.md` L4 measured AC-17. This entry is that run.
+- Guest facts, from commands inside the guest. `uname -a` gave `Linux dryer-x86 5.15.0-203-generic #213-Ubuntu SMP Fri Oct 23 13:21:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux`. `/etc/os-release` gave `PRETTY_NAME="Ubuntu 22.04.5 LTS"`. `ldd --version | head -1` gave `ldd (Ubuntu GLIBC 2.35-0ubuntu3.15) 2.35`. `lscpu` gave `Model name: QEMU TCG CPU version 2.5+`. So the CPU is emulated by qemu TCG (`-accel tcg,thread=multi -cpu max` in `vm.sh`), with 8 vCPUs and 8 GB of RAM.
+- Commands on the host, in this order, each with `WORK=/tmp/linux-vm` from the `lagom-mode/ac10-vm` checkout: `ci/linux-vm/vm.sh fetch` (both images downloaded and checked against `SHA256SUMS`, each printed `OK`), `create x86_64 dryer-x86`, `start x86_64 dryer-x86` (`guest dryer-x86 (x86_64) is up on port 2223`), `push x86_64`, then `bash ~/src/ci/linux-vm/guest-setup.sh` in the guest. That script printed `rustc 1.100.0 (0ef1bc386 2026-11-09)`, `cargo 1.100.0 (3acc79c0c 2026-11-05)`, `git version 2.34.1`, `Python 3.12.16`.
+- Pinned original, in the guest, the same setup as `ci/linux-vm/guest-timing.sh` but without its crapper part: `uv python install 3.12`, `uv venv --python 3.12 ~/orig/venv`, `uv pip install tree-sitter==0.26.1 tree-sitter-language-pack==1.25.0`, `git clone https://github.com/unclebob/dryer ~/orig/dryer`, `git -C ~/orig/dryer checkout 66ff6d21a42c04afcad89c78a80066176d1294b0`. `git rev-parse HEAD` printed that commit, and `~/orig/venv/bin/python -c 'import tree_sitter, tree_sitter_language_pack'` printed `deps ok`.
+- Port build, in `~/src/dryer` with `CARGO_TARGET_DIR=$HOME/target/dryer` and `cargo build --release`: exit 0, 215 s of wall clock under TCG (the files `~/build.start` and `~/build.log` differ by that much). `ls -l ~/target/dryer/release/dryer` gave 8024032 bytes, and that binary printed `Usage: dryer [options] [path-or-filter ...]`. No `cargo test` ran in this guest, because AC-10 needs only the binary.
+- The AC-10 check, run in `~/src/dryer` with the Python 3.12 of `uv python find 3.12`:
+
+  ```
+  DRYER_ORIGINAL_PYTHON=$HOME/orig/venv/bin/python \
+    ~/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12 \
+    parity/run_parity.py --original $HOME/orig/dryer \
+    --port $HOME/target/dryer/release/dryer --check-timing --timing-runs 5
+  ```
+
+  The exit code was `0` and the last line was `34 case(s), 0 failed, 4 accepted, 0 awaiting approval`. The four accepted cases are `help-long`, `help-short`, `jsx-fix`, and `rust-test-code-fix`, which `parity/fixes.toml` lists as deliberate differences, so a timing line was not their only difference. The guest clock read `2026-11-20 16:34:19 +0000` when the runner wrote `~/timing.log` (`stat -c "%y %n" ~/timing.log`).
+- The medians of 5 runs per side, in seconds, as the runner printed them (original, then port), with the status of the case:
+
+| Case | Original | Port | Status |
+| --- | --- | --- | --- |
+| default-clojure | 0.31 | 0.02 | PASS |
+| default-java | 0.47 | 0.02 | PASS |
+| default-go | 0.53 | 0.02 | PASS |
+| default-typescript | 0.51 | 0.03 | PASS |
+| default-rust | 0.48 | 0.02 | PASS |
+| default-python | 0.51 | 0.02 | PASS |
+| help-long | 0.32 | 0.01 | ACCEPTED |
+| help-short | 0.30 | 0.01 | ACCEPTED |
+| root-flag | 0.48 | 0.02 | PASS |
+| source-root-short | 0.49 | 0.02 | PASS |
+| source-root-long | 0.47 | 0.02 | PASS |
+| source-root-repeated | 0.51 | 0.02 | PASS |
+| changed | 0.50 | 0.04 | PASS |
+| threshold-0.8 | 0.47 | 0.02 | PASS |
+| threshold-0.9 | 0.45 | 0.01 | PASS |
+| threshold-missing-value | 0.29 | 0.01 | PASS |
+| threshold-bad-number | 0.28 | 0.01 | PASS |
+| min-lines | 0.48 | 0.02 | PASS |
+| min-lines-negative | 0.29 | 0.01 | PASS |
+| min-nodes | 0.48 | 0.02 | PASS |
+| min-nodes-bad-number | 0.30 | 0.01 | PASS |
+| format-text | 0.50 | 0.02 | PASS |
+| format-edn | 0.48 | 0.02 | PASS |
+| format-unknown | 0.28 | 0.01 | PASS |
+| text-flag | 0.47 | 0.02 | PASS |
+| edn-flag | 0.49 | 0.02 | PASS |
+| positional-path | 0.31 | 0.02 | PASS |
+| positional-directory | 0.32 | 0.02 | PASS |
+| positional-filter | 0.31 | 0.02 | PASS |
+| no-candidates | 0.32 | 0.02 | PASS |
+| unknown-flag | 0.28 | 0.01 | PASS |
+| no-source-files | 0.29 | 0.01 | PASS |
+| jsx-fix | 0.31 | 0.02 | ACCEPTED |
+| rust-test-code-fix | 0.47 | 0.02 | ACCEPTED |
+
+- Result: the port median is lower than the original median on all 34 cases. No case is equal or higher. The largest gap is `default-go`, 0.53 s against 0.02 s. The smallest gap is `changed`, 0.50 s against 0.04 s. The runner's own `--check-timing` found no case, so its exit code is 0.
+- Limit of this result: the guest is emulated. Both programs run on the same emulated CPU, so the relation between the two medians is a real measurement of the two programs, but both sides are slowed by TCG, and the absolute numbers say nothing about a real CI runner. The relation of AC-10 was measured here on an emulated Ubuntu 22.04 x86_64 guest, the same way `tools/crapper/LOG.md` L4 measured AC-17. A run on real x86_64 hardware is still the check that DR-NFR-2 describes.
+- Cleanup: `ci/linux-vm/vm.sh stop x86_64`, then `ci/linux-vm/vm.sh kill`, then `rm -rf /tmp/linux-vm`.
