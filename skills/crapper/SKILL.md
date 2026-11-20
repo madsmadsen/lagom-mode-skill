@@ -38,7 +38,7 @@ crapper runs the coverage command of the project. It prints a table on stdout wi
 
 Each row of the table has one function with its complexity, its coverage, and its CRAP score. Read the rows above 10. If every row is at or below 10, all functions pass.
 
-Exit 0 only proves that the scored functions pass. Confirm that each changed function has a row. `No source files to analyze.` comes from file selection, so check the paths. An empty table alone does not prove that the line list is wrong, because a change outside any function also gives an empty table. Check that the line list holds the changed lines. A missing function means that the line list is wrong.
+Exit 0 only proves that the scored functions pass. Confirm that each changed function has a row. A run that reports no source file comes from file selection, so check the paths. An empty table alone does not prove that the line list is wrong, because a change outside any function also gives an empty table. Check that the line list holds the changed lines. A missing function means that the line list is wrong.
 
 ## Exit codes
 
@@ -46,7 +46,7 @@ Exit 0 only proves that the scored functions pass. Confirm that each changed fun
 | --- | --- | --- |
 | 0 | The worst score is 10 or lower. | Confirm that each changed function has a row. Then the crapper gate passes. |
 | 1 or any other code | Bad arguments, or a failure to read. | Read stderr. Fix the command or the file. Do not change the threshold. |
-| 2 | The worst score is higher than 10. | Read stderr for a coverage warning first. If a line holds `will score 0%`, fix the coverage run, not the code. Otherwise act on each row above 10, as below. Run the gate again. |
+| 2 | The worst score is higher than 10. | Read stderr for a coverage warning first. If the coverage tool failed, fix the coverage run, not the code. Otherwise act on each row above 10, as below. Run the gate again. |
 
 Code 1 covers a bad argument, an unreadable file, a bad coverage report, and a metrics write error. A Git error returns its own code.
 

@@ -10,6 +10,7 @@ This repository holds Rust ports of three tools by Robert C. Martin, and the req
 | `tools/dryer/` | Rust port of [dryer](https://github.com/unclebob/dryer). It finds duplicated code structure. |
 | `tools/mutator/` | Rust port of [mutator](https://github.com/unclebob/mutator). It runs mutation tests. |
 | `skills/` | The `lagom-mode` skill and one skill for each tool. |
+| `samples/rust-todo/` | The sample project for section 9 of the skills PRD. |
 | `docs/prd/` | One requirements document (PRD) for each crate, and `skills.md` for the agent skills. |
 | `ci/linux-vm/` | Scripts that build and test the ports in Ubuntu 22.04 guests (arm64 and x86_64) with qemu. |
 

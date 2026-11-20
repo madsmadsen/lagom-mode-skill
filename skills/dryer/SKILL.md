@@ -45,7 +45,7 @@ dryer prints the pairs that score at or above the threshold. It also writes `.me
 
 If `:candidates` is empty, the dryer gate passes.
 
-dryer prints `No source files to analyze.` when it finds no source file. That message is a pass. dryer writes no snapshot in that run. Do not read an old `.metrics/dry.edn`.
+dryer reports no source file when it finds none. That message is a pass. dryer writes no snapshot in that run. Do not read an old `.metrics/dry.edn`.
 
 ## Exit codes
 

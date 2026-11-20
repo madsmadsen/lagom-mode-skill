@@ -73,7 +73,7 @@ A checked form is a form whose `:file` is that changed file and whose `:line` to
 
 | Code | Meaning | What you do |
 | --- | --- | --- |
-| 0 | Every executed mutant was killed, or nothing ran. | Read the snapshots. The gate passes only if `:uncovered` is 0 in every checked form. An exit 0 with a `No coverage data` message on stderr is a fail: no report was found, so no site was covered. Fix the coverage command. An exit 0 with a message that holds `will score 0%` is also a fail: a coverage tool failed, so every site scores 0%. Fix the coverage run. Do not pass `--no-coverage`: it sets `:uncovered` to 0, so the snapshot check proves nothing. It also edits a gate command (SK-9). |
+| 0 | Every executed mutant was killed, or nothing ran. | Read the snapshots. The gate passes only if `:uncovered` is 0 in every checked form. An exit 0 with a notice on stderr that no coverage data was found is a fail: no report was found, so no site was covered. Fix the coverage command. An exit 0 with a warning on stderr that the coverage tool failed is also a fail: every site scores 0%. Fix the coverage run. Do not pass `--no-coverage`: it sets `:uncovered` to 0, so the snapshot check proves nothing. It also edits a gate command (SK-9). |
 | 1 | Usage error. | Fix the command. |
 | 2 | The baseline tests failed. | Fix the failing tests first. mutator cannot judge the tests until they pass. |
 | 3 | At least one mutant survived. | Find the survivors in `:outcomes` and kill them, as below. You deleted the snapshot of the file before the run, so each survivor comes from a changed line. |

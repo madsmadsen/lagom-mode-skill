@@ -1,6 +1,6 @@
 # PRD: lagom-mode-skill
 
-Status: Draft 4. Owner and approver: Mads Madsen. Date: 2026-11-07.
+Status: Draft 5. Owner and approver: Mads Madsen. Date: 2026-11-21.
 
 This document states the overall goal of the `lagom-mode-skill` repository and the preferences for its development. Four PRDs state the requirements of the parts. This document and the four part PRDs have no open assumptions. A question that no source answers goes to the owner, Mads Madsen, or its statement is deleted (AGENTS.md, requirement 3).
 
@@ -40,7 +40,7 @@ The parts are independent:
 
 1. The repository does not port uml-viewer.
 2. The repository does not add tools, metrics, or languages that the originals do not have.
-3. The repository is public on GitHub. The parts are not published to crates.io or to a public skill registry.
+3. Mads Madsen says that the repository is public on GitHub. This document does not check it. The parts are not published to crates.io or to a public skill registry.
 
 ## 5. Development preferences
 
@@ -84,7 +84,7 @@ None. This document and the four part PRDs have no open assumptions. A question 
 ## 8. Acceptance criteria
 
 1. AC-1 (section 2, item 1): For each of `tools/crapper/`, `tools/dryer/`, and `tools/mutator/`, `cargo metadata` lists no path dependency and no git dependency on another package in this repository.
-2. AC-2 (section 2, item 2): No file under `skills/` mentions `cargo` or this repository. A search under `skills/` for `cargo` and for `lagom-mode-skill` finds no match.
+2. AC-2 (section 2, item 2): A search under `skills/` for `cargo` and `lagom-mode-skill` finds no match. A path to another file of this repository in a skill, such as `tools/<crate>/README.md`, is allowed.
 3. AC-3 (section 2, item 3): Each command of `crapper`, `dryer`, or `mutator`, each positional file argument, flag, exit code, and output that a skill under `skills/` names, including `lagom-mode`, appears in section 5 of the skills PRD. A Git command is not part of the tool interface, because Git is a dependency (skills PRD, section 11).
 4. AC-4 (section 1, determinism): crapper PRD AC-10, dryer PRD AC-7, and mutator PRD AC-13 pass. On each port's fixtures, after any tool install, two runs of each SK-8 gate command give the same exit code and byte-identical snapshots.
 5. AC-5 (section 3, uml-viewer user): Each `fixes.toml` entry that changes snapshot keys or shape has the fields `uml_viewer_commit` and `uml_viewer_checked_on`, and the fixture snapshot of that entry renders with no error in uml-viewer at that commit.

@@ -126,7 +126,7 @@ Read `AGENTS.md` before you change anything, and `CONTRIBUTING.md` before you ru
 
 ## Status
 
-The three tools pass their tests. The skills are written, but the acceptance runs that use an agent (the skills PRD, AC-2 to AC-13) are not done yet.
+The three tools pass their tests. The skills are written, but the acceptance runs that use an agent (the skills PRD, AC-2 to AC-14) are not done yet.
 
 ## License
 
