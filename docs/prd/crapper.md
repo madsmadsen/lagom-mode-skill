@@ -30,7 +30,7 @@ crapper gives a CRAP score to each function, so that a human or an agent can fin
 
 1. The port does not add languages or metrics. It adds one flag that the original does not have: `--lines` (CR-26).
 2. The port does not change the formula or the threshold logic of the original. A bug fix is not a change of formula. A fixes.toml entry is not a change of formula.
-3. The port is published in a public repository on GitHub. It is not published to crates.io.
+3. Mads Madsen says that the port is published in a public repository on GitHub. This document does not check that. The port is not published to crates.io.
 4. The port does not support Windows.
 
 ## 5. Functional requirements
@@ -104,9 +104,9 @@ This section holds a difference that does not come from an upstream issue or pul
 ## 6. Non-functional requirements
 
 - CR-NFR-1: Determinism. Two runs on the same files with the same coverage report write byte-identical snapshots.
-- CR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port is lower than the median wall-clock time of 5 runs of the original. Both the original and the port run with `--use-existing-coverage` on the same stored coverage report, on one named CI runner: Linux x86_64, Ubuntu 22.04. The time of the original includes Python start-up and excludes the clone and the install.
+- CR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port is lower than the median wall-clock time of 5 runs of the original. Both the original and the port run with `--use-existing-coverage` on the same stored coverage report, on one named CI runner: the Ubuntu 22.04 x86_64 guest of `ci/linux-vm`, run in qemu with TCG. The guest is emulated, so the check measures only the relation of the two medians and not absolute times. The time of the original includes Python start-up and excludes the clone and the install.
 - CR-NFR-3: Platforms. The port builds and runs on macOS 14 or later on arm64 and on Linux with glibc 2.35 or later (Ubuntu 22.04) on x86_64 and arm64. macOS on x86_64 is not a target.
-- CR-NFR-4: Install. The port is published in a public repository on GitHub and not on crates.io. A user installs it with one `cargo install --locked --git <repo> crapper` command, which builds from the committed `Cargo.lock`.
+- CR-NFR-4: Install. Mads Madsen says that the port is published in a public repository on GitHub. It is not on crates.io. A user installs it with one `cargo install --locked --git <repo> crapper` command, which builds from the committed `Cargo.lock`.
 - CR-NFR-5: License. The port uses the MIT License. `tools/crapper/LICENSE` names Mads Madsen (`mads@onmadsen.com`) as the copyright holder. It also says that the port is based on crapper by Robert C. Martin, which uses the BSD Zero Clause License. Each `.rs` file in `tools/crapper/` starts with a header comment. The first line is `// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>`. The second line is `// SPDX-License-Identifier: MIT`. The next lines name the upstream repository and the pinned commit. A file that ports an upstream file also names that upstream file path. A file with no upstream counterpart says `upstream-path: none`.
 
 ## 7. Parity and bug fixes
@@ -137,7 +137,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 14. AC-14 (CR-6): On a fixture with the directories `test/`, `src/test/`, `spec/`, `vendor/`, `node_modules/`, `target/`, and `testing/`, each with a source file, the original and the port select the same files.
 15. AC-15 (CR-10): The port gives these known values, with coverage stated as a fraction (coverage / 100): CC=1 and coverage 0 give `2`; CC=5 and coverage 0.5 give `8.125`; CC=5 and coverage 1 give `5`.
 16. AC-16 (CR-12): For each of the four coverage formats, a stored coverage report read with `--use-existing-coverage` gives the same coverage for each function in the original and the port.
-17. AC-17 (CR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as CR-NFR-2 defines.
+17. AC-17 (CR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as CR-NFR-2 defines. The check runs in the named runner, the Ubuntu 22.04 x86_64 guest of `ci/linux-vm`. That guest runs in qemu with TCG. The guest is emulated, so the check measures only the relation of the two medians and not absolute times.
 18. AC-18 (CR-NFR-3): A CI matrix of three targets (macOS 14 arm64, Linux x86_64 with glibc 2.35 or later on Ubuntu 22.04, and Linux arm64 with glibc 2.35 or later on Ubuntu 22.04) builds the port and passes the parity fixtures with `--use-existing-coverage` on each target.
 19. AC-19 (CR-NFR-4): On a clean host with Rust stable and a C compiler, `cargo install --locked --git <repo> crapper` succeeds, and `crapper --help` exits `0`.
 20. AC-20 (CR-NFR-5): `tools/crapper/LICENSE` is the MIT License text with the copyright line of Mads Madsen and the credit to Robert C. Martin. A check finds the CR-NFR-5 header comment in every `.rs` file in `tools/crapper/`: each header starts with the copyright line and the SPDX line, and names the upstream repository, the commit, and either an upstream file path or `upstream-path: none`. The commit in each header equals the commit in `tools/crapper/parity/upstream.toml`.

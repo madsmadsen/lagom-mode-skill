@@ -357,3 +357,59 @@ Loop `lagom-mode/crapper-lines` in `/tmp/lagom-wt/crapper-lines`, source branch 
 ## 2026-11-21: macOS on x86_64 is not a target (crapper)
 
 - Mads Madsen said that macOS on x86_64 is not relevant. The platform requirement of this crate now names macOS 14 or later on arm64 and Linux on x86_64 and arm64, and says that macOS on x86_64 is not a target. Older log lines that say macOS x86_64 was not available stay as written. Proof: `cargo test` for the crate checks that cite the PRD still pass (see the commit message).
+
+## 2026-11-21: review round six, crapper findings (CR-1, CR-13, CR-18, AC-1, AC-17, AC-27, CR-NFR-2)
+
+Corrections first, because this file never rewrites an old line.
+
+- Correction to the entry `2026-11-20: full parity run after the approval (CR-PB-2, CR-PB-6, AC-22)`. It says the run wrote `parity/recorded/cr13-*` for the six live language runs, and it reports `pass=49`. Both statements are true of the run. The sentence leaves the wrong impression about commit c3276b4, which adds only four recording directories: `cr13-clojure`, `cr13-go`, `cr13-java` and `cr13-python`. `cr13-rust` and `cr13-typescript` date from cfda2ab and did not change content. `git show --diff-filter=A c3276b4` lists 12 added files under those four directories, and no file of `cr13-rust` or `cr13-typescript`. The runner rewrites every recording (`parity/run.py`, `record_run`), so the run did write six and the commit added four.
+- Correction to the same entry's claim that the six live runs are proof of live coverage. Two of the six held a failed coverage tool. `parity/recorded/cr13-java/stdout.txt` line 1 was `[ERROR] Could not create local repository at ~/.m2/repository -> [Help 1]`. Maven never ran, and `cr13-java/crap.edn` gave coverage `0.0` for both methods, where the stored-report run gives `40.0%` and `100.0%` on the same fixture. `cr13-clojure/crap.edn` gave `0.0` for all three functions, where `clojure-existing` gives `66.7%`, `100.0%` and `0.0%`. Both runs passed only because the original and the port printed the same failure. See the re-run below.
+- Correction to the same entry's `--lines` gate line. The line says "Main must use lines `170,181,215` for the final gate". Those numbers held at that commit. After the module comment change of this round the functions are at `175`, `186` and `220`, and the gate ran on those lines (below).
+- Correction to the AC-27 entry: the log said `cargo test` ran 426 tests. The count in this crate is 341 in the library unit tests, 0 in the main binary, 53 in `tests/cli.rs`, 10 in `tests/fixes.rs`, 10 in `tests/meta.rs`, 12 in `tests/recorded.rs`, and 0 doc-tests: 426 passed and 0 ignored. A static `grep` of `#[test]` finds 427. The extra hit is `src/languages/rust.rs:324`, which is a `#[test]` line inside a Rust source string that the test feeds to the parser. It is data, not an attribute. The other 426 are real attributes.
+
+### The two failed live runs, re-run with a writable home (CR-13, AC-1)
+
+The root causes were in the fixtures, not in the tools.
+
+- Java: the fixture had no test source, so `mvn ... prepare-agent test ... report` printed `Skipping JaCoCo execution due to missing execution data file` and wrote no `jacoco.xml`. Added `parity/fixtures/java/src/test/java/demo/pkg/BoardTest.java` with three JUnit 5 tests, and the `junit-jupiter` 5.10.2 test dependency in `parity/fixtures/java/pom.xml`.
+- Clojure: cloverage 1.2.4 with the old alias printed `No namespaces selected for instrumentation using {:ns-regex (), :ns-exclude-regex ()}` because it defaults `src-ns-path` and `test-ns-path` to empty. The fixture also had no test namespace. Added `parity/fixtures/clojure/test/demo/core_test.clj` and pointed the alias at `-p src -s test -t .*-test`. Cloverage and clojure.test print an elapsed time and a download notice, so the alias now runs the entry point `cov.quiet` in `parity/fixtures/clojure/test/cov/quiet.clj`, which captures that text, prints it on stderr and exits with the cloverage status. `deps.edn` now has `:paths ["src" "test"]`.
+- The Maven and `clj` runs need a writable `~/.m2`. The host blocked `~/.m2`. I ran with `_JAVA_OPTIONS=-Duser.home=/tmp/par-home` plus `CLJ_CONFIG`, `CLJ_CACHE` and `GITLIBS` under `/tmp/par-home`, and a pre-created `/tmp/par-home/.m2/repository`. I did not set `HOME`, because the Rust fixture needs `~/.cargo`, and an earlier full run with `HOME=/tmp/par-home` recorded `cr13-rust` at coverage `0.0` instead of `66.6667`. That run is why the recording below has no `HOME` override.
+- Command, in `tools/crapper`, once, with the release binary and the original from a python3.12 venv at pinned commit `6fd92c4` with `tree-sitter==0.26.1` and `tree-sitter-language-pack==1.25.0`: `_JAVA_OPTIONS=-Duser.home=/tmp/par-home CLJ_CONFIG=/tmp/par-home/.clojure CLJ_CACHE=/tmp/par-home/.clj-cache GITLIBS=/tmp/par-home/.gitlibs PATH=/tmp/cov-venv/bin:/opt/homebrew/opt/openjdk/bin:$PATH python3.12 parity/run.py --port-bin target/release/crapper --original-python /tmp/par3-venv/bin/python --record`
+- Output tail: `SUMMARY runs=58 pass=49 skip=0 diff=9 failed=0`, `RESULT pass`, exit 0. The nine diffs are the nine approved `fixes.toml` entries, each reported as `exempt: approved fixes.toml entry`. The run covers the changed `vitest-pnpm` stub, so `recorded/fix-vitest-package-manager` is current.
+- `parity/recorded/cr13-java/crap.edn` now gives `place` `66.6667` and `name` `100.0`. `parity/recorded/cr13-clojure/crap.edn` now gives `grade` `92.3077`, `describe-item` `94.4444` and `tag` `100.0`. `grep -rn "/Users/\|\[ERROR\]\|Picked up" parity/recorded/` finds nothing.
+- `parity/recorded/cr13-python` changed in the same run, because I first added `parity/fixtures/python/test_pricing.py` to give the Python fixture a test. The old recording happened to equal `python-existing` and so was a copy of a stored-report run, not of a live run. The new one is live: `discount` `83.3333`, `label` `100.0`, `clamp` `50.0`.
+- `parity/last-run.toml` after the run: `commit = "6fd92c4c9bcc56efb64a2f8743d5a2993bcfd42d"`, `result = "pass"`, `runs = 58`, `skipped = []`, and the nine `fix-*` ids in `diffs`. The runner wrote it. No hand edit.
+
+### The AC-27 test does fail on a port that does not restore (AC-27, CR-18)
+
+- Scratch copy `/tmp/lagom-norestore` of this crate. In `src/runners/typescript_cov.rs` I replaced the body of `restore_all` with `let _ = snapshot;`, built, and ran `cargo test --test fixes cr_18_ac_27`.
+- Result: exit 101, `0 passed; 1 failed`. Message: `assertion left == right failed: vitest-yarn: manifest bytes or lockfile presence changed` at `tests/fixes.rs:211`. `left` held the stub's `changed by the install stub` bytes for the manifests the stub overwrote, and `right` held the fixture bytes. The test checks restoration and not only the install.
+- Second variant, same copy with `restore_all` restored: `parity/fixtures/vitest-pnpm/.stubs/pnpm` replaced by `#!/bin/sh` and `exit 0`. Result: exit 101, `0 passed; 1 failed`, `vitest-pnpm: coverage run failed:` at `tests/fixes.rs:206`, and the port printed `Vitest's coverage provider is missing. TypeScript coverage will score 0%`. The no-op stub fails the coverage assertion, as intended.
+- Neither scratch change is in the worktree.
+
+### L4: the crapper gate on the changed lines of `tests/fixes.rs`
+
+- After the comment change the functions are at `175` (`install_manifest_bytes`), `186` (`assert_fixture_install`) and `220` (the AC-27 test).
+- `PATH=/tmp/cov-venv/bin:$PATH crapper --threshold 10 --lines 175,186,220 tests/fixes.rs` exited 0. Report: `assert_fixture_install` CC 1, coverage 0.0, CRAP 2.0 and `install_manifest_bytes` CC 1, coverage 0.0, CRAP 2.0. Both are below the threshold. The test function is not scored, because a `#[test]` function is test code (CR-25), and the same command with `--lines 220` prints an empty table and exits 0. The earlier gate at `170,180,214` scored only `install_manifest_bytes`, which is why it did not score `assert_fixture_install`.
+- `PATH=/tmp/cov-venv/bin:$PATH dryer --threshold 0.8 tests/fixes.rs` exited 0 with no duplicate candidates.
+
+### L5: the module comment of `tests/fixes.rs`
+
+- The comment said "One test for each entry of `parity/fixes.toml`" and "The property is false for the recorded output of the original", and the AC-27 matrix is a second test for the same entry and reads no recording. Added one paragraph that names `cr_18_ac_27_fixtures_print_install_commands_and_restore_manifest_bytes`, says it is the AC-27 matrix, says it reads no recording, and says what it checks (CR-18, AC-27).
+
+### I1: the named runner for CR-NFR-2 and AC-17
+
+- CR-NFR-2 now names the runner: the Ubuntu 22.04 x86_64 guest of `ci/linux-vm`, run in qemu with TCG. The guest is emulated, so the requirement says the check measures only the relation of the two medians and not absolute times. AC-17 names the same runner and says the same. The wording follows DR-NFR-2 and AC-10 of `docs/prd/dryer.md`. `tools/crapper/README.md` has no timing text, so nothing there needed the change.
+
+### I3: the real test count
+
+- `cargo test --no-fail-fast` in `tools/crapper` exited 0. Per suite: `src/lib.rs` 341 passed, `src/main.rs` 0, `tests/cli.rs` 53, `tests/fixes.rs` 10, `tests/meta.rs` 10, `tests/recorded.rs` 12, doc-tests 0. Total 426 passed, 0 ignored, 0 failed. `cargo test --lib -- --list` counts 341, which matches the library total.
+- `grep -rc "^\s*#\[test\]" src tests --include=*.rs` sums to 427. The one extra is `src/languages/rust.rs:324`: inside the multi-line `let source = "..."` string of `cr_25_functions_in_a_cfg_test_module_are_skipped`, the text `    #[test]` starts a line. It is fixture text for the parser, not an attribute. So 427 static lines and 426 tests are both right, and the log's earlier 426 was right too.
+
+### Decision 2: the public repository sentence
+
+- `docs/prd/crapper.md` non-goal 3 and CR-NFR-4, and `tools/crapper/README.md`, now attribute the statement to Mads Madsen and say the document does not check it. The repository is not checked here.
+
+### Checks
+
+- `cargo build --release` exited 0. `cargo test` exited 0 with 426 passed. `cargo clippy --all-targets` exited 0 with no issues. `cargo fmt --check` exited 0. `PATH=/tmp/cov-venv/bin:$PATH python3.12 parity/run.py --check-meta` exited 0 and printed `meta ok`.

@@ -11,6 +11,11 @@
 //! states one property of the fixed behavior. The property is false for the
 //! recorded output of the original and true for the output of the port. The
 //! tests need no Python.
+//!
+//! One test, `cr_18_ac_27_fixtures_print_install_commands_and_restore_manifest_bytes`,
+//! is the AC-27 matrix. It reads no recording. It runs the port on the four
+//! install fixtures and checks the install command, the coverage, and that each
+//! manifest byte and lockfile presence came back as it was (CR-18, AC-27).
 
 use std::ffi::OsString;
 use std::fs;

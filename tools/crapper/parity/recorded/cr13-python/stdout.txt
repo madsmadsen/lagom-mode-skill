@@ -4,6 +4,6 @@ Languages: python
 
 Function                       Namespace                             CC    Cov%     CRAP
 ----------------------------------------------------------------------------------------
-discount                       pricing                                4  50.0%      6.0
-label                          pricing                                2   0.0%      6.0
 clamp                          util                                   3  50.0%      4.1
+discount                       pricing                                4  83.3%      4.1
+label                          pricing                                2 100.0%      2.0
