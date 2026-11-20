@@ -15,7 +15,8 @@ fine, so a failed case keeps the old recordings.
 AC-10: --check-timing turns the time into a verdict. A case fails when the
 median of the port is not lower than the median of the original, and an equal
 median fails. --timing-runs sets the count of runs per side. check_timing
-reports the two medians in one line.
+reports the two medians in one line. --check-timing rejects fewer than 3 runs,
+because a median of 2 samples has no middle sample.
 
 The fake program counts its runs, prints the count, and writes the count into
 .metrics/dry.edn. It also records whether a snapshot was already on disk when
@@ -27,7 +28,7 @@ AC-1: load_cases reads parity/coverage.toml and rejects a case that lacks a
 name, a fixture, or args, a duplicate name, and a selected name that no case
 has.
 
-Fifty-five tests run. Some of them fail on the runner before this change, and
+Fifty-seven tests run. Some of them fail on the runner before this change, and
 some pass there too: the two median tests only check that median_seconds
 reports the middle sample, and that function did not change. Several tests
 pin behavior that an earlier commit added, such as the result of run 1 and the
@@ -550,6 +551,26 @@ class RunSide(unittest.TestCase):
         self.assertEqual(len(diffs), 1)
         self.assertTrue(diffs[0].startswith("timing: port median "), diffs[0])
 
+    # AC-10, DR-NFR-2: a fix case takes the same timing check. Its port output
+    # matches the recording, so the case is ACCEPTED without --check-timing, and
+    # a port that is slower than the original makes it FAIL with the flag.
+    def test_ac_10_a_fix_case_with_a_slower_port_fails_the_timing_check(self):
+        base = self.root.parent
+        expected = base / "expected"
+        recorded = run.Result(0, "port\n", None, 0.0, "")
+        orig = run.Result(0, "orig\n", None, 0.2, "")
+        slow = run.Result(0, "port\n", None, 9.0, "")
+        fix = [{"id": "f1", "fixture": "fixed", "approved_by": "Mads Madsen"}]
+        (expected / "fixed" / "port").mkdir(parents=True)
+        (expected / "fixed" / "port" / "exit_code").write_text("0\n", encoding="utf-8")
+        (expected / "fixed" / "port" / "stdout").write_text("port\n", encoding="utf-8")
+        with mock.patch.object(run, "EXPECTED", expected):
+            self.assertEqual(run.check_case("fixed", fix, orig, recorded), ([], "ACCEPTED"))
+            diffs, status = run.check_case("fixed", fix, orig, slow, timing=True)
+        self.assertEqual(status, "FAIL")
+        self.assertEqual(len(diffs), 1, diffs)
+        self.assertTrue(diffs[0].startswith("timing: port median "), diffs[0])
+
     # AC-10: AC-10 asks for a median that is lower, so an equal median fails.
     def test_ac_10_a_port_that_is_as_fast_as_the_original_fails(self):
         same = run.Result(0, "", None, 0.5, "")
@@ -589,6 +610,18 @@ class RunSide(unittest.TestCase):
             with self.assertRaises(run.argparse.ArgumentTypeError) as caught:
                 run.positive_int(bad)
             self.assertIn("runs", str(caught.exception))
+
+    # AC-10: a timing verdict needs a median with a middle sample, so
+    # --check-timing rejects 2 runs with a message that names the least count.
+    # Without --check-timing, 2 runs still measure a time.
+    def test_ac_10_check_timing_rejects_fewer_than_three_runs(self):
+        same = run.Result(0, "same\n", None, 0.1, "")
+        with mock.patch("sys.stderr", new=io.StringIO()) as said:
+            with self.assertRaises(SystemExit) as caught:
+                run.main(["--check-timing", "--timing-runs", "2"])
+        self.assertEqual(caught.exception.code, 2)
+        self.assertIn("--check-timing needs --timing-runs of at least 3", said.getvalue())
+        self.assertEqual(self.main_with_one_case([(same, same)], ["--timing-runs", "2"]), 0)
 
     # AC-10, DR-PB-6: report_case prints the verdict, the diff lines, and the
     # approval line, and it counts the time only when the caller asks for it.
@@ -744,18 +777,26 @@ class LoadCases(TempParity):
             self.load(["typo", "known"])
         self.assertEqual(str(caught.exception), "unknown case(s): typo")
 
-    # AC-1: the real case list loads, and each case carries the three keys. The
-    # runner reads this file on every run, so a broken case stops every run.
+    # AC-1: the real case list loads, and it matches an independent read of the
+    # file with tomllib: the same count, and the same name, fixture, and args for
+    # each case. The runner reads this file on every run, so a case that the
+    # runner dropped or rewrote stops this test.
     def test_ac_1_load_cases_reads_the_real_coverage_toml(self):
+        try:
+            import tomllib
+        except ImportError:  # Python 3.9 and 3.10 have no tomllib
+            self.skipTest("tomllib needs Python 3.11 or later")
         real_parity = Path(run.__file__).resolve().parent
         with mock.patch.object(run, "PARITY", real_parity):
             cases = run.load_cases([])
-            self.assertGreater(len(cases), 0)
-            names = [case["name"] for case in cases]
-            self.assertEqual(len(names), len(set(names)))
-            for case in cases:
-                self.assertTrue({"name", "fixture", "args"} <= set(case), case)
-            first = run.load_cases([names[0]])
+            first = run.load_cases([cases[0]["name"]])
+        with (real_parity / "coverage.toml").open("rb") as fh:
+            expected = tomllib.load(fh)["case"]
+        self.assertEqual(len(cases), len(expected))
+        for case, table in zip(cases, expected):
+            self.assertEqual(case["name"], table["name"])
+            self.assertEqual(case["fixture"], table["fixture"])
+            self.assertEqual(case["args"], table["args"])
         self.assertEqual(first, cases[:1])
 
 
@@ -798,8 +839,8 @@ class LoadFixes(TempParity):
                 run.load_fixes()
             self.assertIn(f"fix missing {missing}", str(caught.exception))
 
-    # DR-PB-6: a checkout with no fixes.toml reads as no fix, so every case is a
-    # plain comparison.
+    # DR-PB-6: a fixes.toml with no [[fix]] table reads as no fix, so every case
+    # is a plain comparison. The file is there and holds one comment line.
     def test_dr_pb_6_load_fixes_reads_a_missing_table_as_no_fix(self):
         (self.base / "fixes.toml").write_text("# no entries\n", encoding="utf-8")
         self.assertEqual(run.load_fixes(), {})

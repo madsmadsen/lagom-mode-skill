@@ -802,6 +802,36 @@ fn rust_sources(dir: &str) -> String {
     text
 }
 
+/// The text of a file of the crate, or `None` when it cannot be read.
+fn test_file_text(path: &str) -> Option<String> {
+    fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).ok()
+}
+
+/// AC-9: the problem of one `path::name` value, or none when the file exists and holds
+/// `fn name`. A renamed test then cannot leave a dead reference here. The checks use
+/// combinators, so this integration test file stays at a low complexity.
+fn one_test_key_problem(item: &str) -> Option<String> {
+    let parts = item.split_once("::");
+    let not_path_name = parts
+        .is_none()
+        .then(|| format!("test value is not path::name: {item}"));
+    let (path, name) = parts.unwrap_or((item, item));
+    let text = test_file_text(path);
+    let missing_file = text
+        .is_none()
+        .then(|| format!("test value names a missing file: {path}"));
+    let missing_fn = text
+        .filter(|body| !body.contains(&format!("fn {name}(")))
+        .map(|_| format!("{path} has no fn {name}"));
+    not_path_name.or(missing_file).or(missing_fn)
+}
+
+/// AC-9: the problems of one `test` field. A value may list more than one
+/// `path::name` after a comma.
+fn test_key_problems(value: &str) -> Vec<String> {
+    value.split(", ").filter_map(one_test_key_problem).collect()
+}
+
 /// AC-9, DR-PB-4: every [[fix]] entry in parity/fixes.toml has the required
 /// keys and a test that names its id. With no entries this passes, but the
 /// file must still parse.
@@ -853,6 +883,10 @@ fn ac9_dr_pb_4_every_fixes_entry_has_a_named_test() {
         };
         if !FIX_TESTS_IN_THIS_FILE.contains(&id) && !others.contains(id) {
             problems.push(format!("no test names fix {id}"));
+        }
+        // AC-9: the test key names a function that exists, in a file that exists.
+        if let Some(value) = table.get("test").and_then(toml::Value::as_str) {
+            problems.extend(test_key_problems(value));
         }
     }
     assert!(

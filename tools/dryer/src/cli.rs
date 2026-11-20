@@ -101,7 +101,7 @@ pub fn run(argv: &[String]) -> i32 {
 /// start. A thread that could not start reports why on stderr first.
 fn thread_exit(started: std::io::Result<std::thread::JoinHandle<i32>>, err: &mut dyn Write) -> i32 {
     match started {
-        Ok(handle) => handle.join().unwrap_or(PANIC_EXIT_CODE),
+        Ok(handle) => joined_exit(handle.join()),
         Err(error) => {
             emit(
                 err,
@@ -110,6 +110,13 @@ fn thread_exit(started: std::io::Result<std::thread::JoinHandle<i32>>, err: &mut
             PANIC_EXIT_CODE
         }
     }
+}
+
+/// DR-13: exit code of the worker thread's join result, or 70 when it panicked.
+/// The port installs no panic hook, so the default hook of Rust may print its own
+/// message on stderr before this code is returned.
+fn joined_exit(joined: std::thread::Result<i32>) -> i32 {
+    joined.unwrap_or(PANIC_EXIT_CODE)
 }
 
 /// Process entry point: runs on a thread with a large stack and exits with its code.
@@ -177,8 +184,9 @@ mod tests {
         proj.to_string_lossy().into_owned()
     }
 
-    // DR-13, AC-9: the test of fix worker-thread-exit-70 in parity/fixes.toml.
-    // A worker thread that cannot start reports the error on stderr and exits 70.
+    // DR-13, AC-9: the tests of fix worker-thread-exit-70 in parity/fixes.toml, the
+    // start-failure path and the panic path. A worker thread that cannot start reports
+    // the error on stderr and exits 70. A worker thread that panics exits 70.
     #[test]
     fn dr13_thread_start_failure_reports_error_and_exits_seventy() {
         let failed = Err(std::io::Error::other("not enough memory"));
@@ -191,6 +199,22 @@ mod tests {
             "stderr was {text:?}"
         );
         assert!(text.contains("not enough memory"), "stderr was {text:?}");
+    }
+
+    // DR-13: a worker thread that panics exits the process with 70. The exit
+    // status is the part that DR-13 fixes. The port installs no panic hook, so
+    // the default hook may print its own message on stderr, and this test does
+    // not check that text. The 4 in the second assertion keeps the check honest:
+    // a mapping that returned a constant would fail it.
+    #[test]
+    fn dr13_a_panicking_worker_thread_exits_seventy() {
+        let panicked = std::thread::Builder::new()
+            .spawn(|| -> i32 { panic!("worker thread failed") })
+            .expect("spawn the worker thread")
+            .join();
+        assert!(panicked.is_err());
+        assert_eq!(joined_exit(panicked), 70);
+        assert_eq!(joined_exit(Ok(4)), 4);
     }
 
     // DR-13: a worker thread that runs keeps its exit code and writes nothing to stderr.

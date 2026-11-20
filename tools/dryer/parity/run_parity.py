@@ -12,8 +12,12 @@ code, normalized stdout, and .metrics/dry.edn. Each side runs 5 times and the
 runner reports the median wall-clock time (DR-NFR-2, AC-10). --check-timing
 also fails a case whose port median is not lower than its original median, and
 --timing-runs N sets the count of runs per side (default 5, the count that
-DR-NFR-2 names). Run --check-timing on the named CI runner (Linux x86_64,
-Ubuntu 22.04); a timing on any other host does not prove AC-10. --record writes
+DR-NFR-2 names). --check-timing needs at least 3 runs per side, because a median
+of 2 samples has no middle sample, and it rejects a smaller count. Run
+--check-timing in the named runner: the Ubuntu 22.04 x86_64 guest of
+ci/linux-vm, run in qemu with TCG. That guest is emulated, so it measures the
+relation of the two medians and not absolute times. A timing on any other host
+does not prove AC-10. --record writes
 parity/expected/<case>/ (exit_code, stdout, dry.edn if written). It runs every
 case before it deletes the old parity/expected/, so a failed case keeps the old
 recordings.
@@ -313,8 +317,9 @@ def median_seconds(samples):
 
 
 def positive_int(text):
-    """Argument type of --timing-runs: a whole number of runs, at least 2, so a median has
-    a middle sample that a single run cannot give."""
+    """Argument type of --timing-runs: a whole number of runs, at least 2. Two runs give a
+    time, and --check-timing asks for at least 3, because a median of 2 samples has no
+    middle sample."""
     try:
         value = int(text)
     except ValueError:
@@ -322,6 +327,10 @@ def positive_int(text):
     if value < 2:
         raise argparse.ArgumentTypeError(f"needs a whole number of at least 2 runs, got {text!r}")
     return value
+
+
+# DR-NFR-2, AC-10: the least count of runs per side that gives a median a middle sample.
+MIN_TIMING_RUNS = 3
 
 
 # DR-NFR-2, AC-10: wall-clock time of one program on one copy, median of 5 runs.
@@ -513,10 +522,19 @@ def main(argv=None):
     parser.add_argument("--port", metavar="BIN", help="port binary (default: target/)")
     parser.add_argument("--check-timing", action="store_true",
                         help="fail a case whose port median is not lower than its original median "
-                             "(DR-NFR-2, AC-10); run it on the named CI runner")
+                             "(DR-NFR-2, AC-10); run it in the named runner, the Ubuntu 22.04 "
+                             "x86_64 guest of ci/linux-vm under qemu with TCG")
     parser.add_argument("--timing-runs", type=positive_int, default=TIMED_RUNS, metavar="N",
-                        help=f"runs per side for the median (default {TIMED_RUNS}, as DR-NFR-2 says)")
+                        help=f"runs per side for the median (default {TIMED_RUNS}, as DR-NFR-2 says; "
+                             f"--check-timing needs at least {MIN_TIMING_RUNS})")
     args = parser.parse_args(argv)
+    # DR-NFR-2, AC-10: a timing verdict needs a median with a middle sample, so
+    # --check-timing with 2 runs is an error and not a weaker check.
+    if args.check_timing and args.timing_runs < MIN_TIMING_RUNS:
+        parser.error(
+            f"--check-timing needs --timing-runs of at least {MIN_TIMING_RUNS}, "
+            f"because a median of {args.timing_runs} samples has no middle sample"
+        )
 
     pinned = load_toml(PARITY / "upstream.toml")
     original_root = ensure_original(args.original, pinned)

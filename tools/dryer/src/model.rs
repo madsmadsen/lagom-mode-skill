@@ -1,6 +1,6 @@
 // Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 // SPDX-License-Identifier: MIT
-// Ports the data shapes shared across the Python modules in src/dryer/*.py.
+// Ports src/dryer/model.py: the data shapes shared across the Python modules.
 
 /// A source language that dryer can analyze.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

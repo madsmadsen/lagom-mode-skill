@@ -1,0 +1,67 @@
+# AC-10 timing check on the named runner (DR-NFR-2).
+#
+# This file is the raw runner output of one run, with a header of the facts of
+# that run. The runner output itself is unedited below the header.
+#
+# date -u of the write of ~/timing.log in the guest: 2026-11-20T23:51:40Z
+# guest clock at the copy out: 2026-11-20T23:51:50Z
+# uname -a: Linux dryer-x86 5.15.0-203-generic #213-Ubuntu SMP Fri Oct 23 13:21:06 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux
+# /etc/os-release PRETTY_NAME: Ubuntu 22.04.5 LTS
+# ldd --version | head -1: ldd (Ubuntu GLIBC 2.35-0ubuntu3.15) 2.35
+# lscpu Model name: QEMU TCG CPU version 2.5+
+# guest size: 6 vCPUs and 6 GB, the defaults of ci/linux-vm/vm.sh (VM_CPUS=6, VM_MEM=6G). nproc 6, free -g Mem total 5.
+# rustc 1.100.0 (0ef1bc386 2026-11-09), cargo 1.100.0 (3acc79c0c 2026-11-05)
+# original: the clone of https://github.com/unclebob/dryer at 66ff6d21a42c04afcad89c78a80066176d1294b0
+# port: ~/target/dryer/release/dryer, 8024032 bytes, cargo build --release in the guest (3m 42s)
+#
+# The exact command, run in ~/src/dryer in the guest:
+#
+#   PY=$HOME/.local/share/uv/python/cpython-3.12-linux-x86_64-gnu/bin/python3.12
+#   DRYER_ORIGINAL_PYTHON=$HOME/orig/venv/bin/python "$PY" parity/run_parity.py \
+#     --original "$HOME/orig/dryer" --port "$HOME/target/dryer/release/dryer" \
+#     --check-timing --timing-runs 5 > "$HOME/timing.log" 2>&1
+#   echo "exit=$?" >> "$HOME/timing.log"
+#
+# The command redirected to ~/timing.log and then appended the exit code. The
+# body below is that file, copied out with `cat`. The exit code of the run is 0.
+
+PASS     default-clojure  original=0.34s port=0.02s
+PASS     default-java  original=0.47s port=0.02s
+PASS     default-go  original=0.49s port=0.02s
+PASS     default-typescript  original=0.46s port=0.02s
+PASS     default-rust  original=0.47s port=0.02s
+PASS     default-python  original=0.46s port=0.02s
+ACCEPTED help-long  original=0.31s port=0.01s
+    accepted by: help-long-names-javascript
+ACCEPTED help-short  original=0.28s port=0.01s
+    accepted by: help-short-names-javascript
+PASS     root-flag  original=0.44s port=0.02s
+PASS     source-root-short  original=0.47s port=0.02s
+PASS     source-root-long  original=0.43s port=0.01s
+PASS     source-root-repeated  original=0.45s port=0.02s
+PASS     changed  original=0.49s port=0.05s
+PASS     threshold-0.8  original=0.46s port=0.01s
+PASS     threshold-0.9  original=0.46s port=0.01s
+PASS     threshold-missing-value  original=0.30s port=0.01s
+PASS     threshold-bad-number  original=0.36s port=0.01s
+PASS     min-lines  original=0.48s port=0.02s
+PASS     min-lines-negative  original=0.29s port=0.01s
+PASS     min-nodes  original=0.48s port=0.02s
+PASS     min-nodes-bad-number  original=0.28s port=0.01s
+PASS     format-text  original=0.47s port=0.02s
+PASS     format-edn  original=0.44s port=0.02s
+PASS     format-unknown  original=0.27s port=0.01s
+PASS     text-flag  original=0.44s port=0.02s
+PASS     edn-flag  original=0.48s port=0.02s
+PASS     positional-path  original=0.29s port=0.02s
+PASS     positional-directory  original=0.32s port=0.02s
+PASS     positional-filter  original=0.34s port=0.02s
+PASS     no-candidates  original=0.37s port=0.02s
+PASS     unknown-flag  original=0.29s port=0.01s
+PASS     no-source-files  original=0.29s port=0.01s
+ACCEPTED jsx-fix  original=0.28s port=0.01s
+    accepted by: js-read-as-typescript
+ACCEPTED rust-test-code-fix  original=0.47s port=0.01s
+    accepted by: rust-test-code-left-out
+34 case(s), 0 failed, 4 accepted, 0 awaiting approval
+exit=0

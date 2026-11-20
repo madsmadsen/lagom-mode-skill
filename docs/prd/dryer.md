@@ -30,7 +30,7 @@ dryer finds pairs of code forms that have the same structure, so that a human or
 
 1. The port does not add languages, metrics, or flags that the original does not have.
 2. The port does not change the scoring or the defaults of the original. A bug fix is not a change of scoring.
-3. The port is not published to crates.io. It is published in a public repository on GitHub.
+3. The port is not published to crates.io. Mads Madsen says that the repository is public on GitHub. The repository holds no check of that statement.
 
 ## 5. Functional requirements
 
@@ -64,9 +64,9 @@ Each requirement in this section differs from the original at the pinned commit 
 ## 6. Non-functional requirements
 
 - DR-NFR-1: Determinism. Two runs on the same files write byte-identical snapshots.
-- DR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port is lower than the median wall-clock time of 5 runs of the original. Both run on one named CI runner: Linux x86_64, Ubuntu 22.04. The time of the original includes Python start-up and excludes the clone and the install.
+- DR-NFR-2: Speed. On each parity fixture, the median wall-clock time of 5 runs of the port is lower than the median wall-clock time of 5 runs of the original. Both run on one named runner: the Ubuntu 22.04 x86_64 guest of `ci/linux-vm`, run in qemu with TCG. The guest is emulated, which slows both programs. Only the relation of the two medians is measured there. The absolute times of that guest say nothing about other hardware. The time of the original includes Python start-up and excludes the clone and the install.
 - DR-NFR-3: Platforms. The port builds and runs on macOS 14 or later on arm64 and on Linux on x86_64 and arm64. macOS on x86_64 is not a target.
-- DR-NFR-4: Install. The repository is public on GitHub. It is not on crates.io. A user installs the port with one `cargo install --locked --git <repo> dryer` command.
+- DR-NFR-4: Install. Mads Madsen says that the repository is public on GitHub. It is not on crates.io. A user installs the port with one `cargo install --locked --git <repo> dryer` command.
 - DR-NFR-5: License. The port uses the MIT License. `tools/dryer/LICENSE` names Mads Madsen (`mads@onmadsen.com`) as the copyright holder. It also says that the port is based on dryer by Robert C. Martin, which uses the BSD Zero Clause License. Each `.rs` file under `src/` and `tests/` starts with the lines `// Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>` and `// SPDX-License-Identifier: MIT`. Each file that matches a file of the original names that file. The exception is a fixture project that a test uses as data, which needs no header: the `.rs` files under `parity/fixtures/rust/` and `parity/fixtures/rust-test-code/`.
 
 ## 7. Parity and bug fixes
@@ -75,11 +75,11 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 
 - DR-PB-1: `tools/dryer/parity/upstream.toml` records the pinned commit of the original.
 - DR-PB-2: A change of the pinned commit needs a new parity run.
-- DR-PB-3: Each bug fix, and each other difference from the original, has an entry in `tools/dryer/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference. The runner stops a case whose original prints a traceback. In that case the entry may name an inline test project in place of a parity case, and it says why it has no parity case.
+- DR-PB-3: Each bug fix, and each other difference from the original, has an entry in `tools/dryer/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference. The runner stops a case whose original prints a traceback. In that case the entry may name an inline test project in place of a parity case, and it says why it has no parity case. An entry may also name an inline or test-only fixture for a difference that exists only in the structure of the port and that the original cannot show, such as a worker thread. The entry says why no parity case can show it.
 - DR-PB-4: Each bug fix, and each other difference from the original, has a test that fails on the behavior of the original and passes on the port.
 - DR-PB-5: A bug that comes from Python only needs no entry if the port cannot have it.
 - DR-PB-6: Mads Madsen approves each entry in `tools/dryer/parity/fixes.toml`.
-- DR-PB-7: A difference without an upstream issue or pull request, such as DR-15, goes in section 5.2 and not in section 5.1. Its `fixes.toml` entry names no upstream source. Its `upstream` field says that there is none.
+- DR-PB-7: A difference without an upstream issue or pull request, such as DR-15, goes in section 5.2 and not in section 5.1. Its `fixes.toml` entry names no upstream source. Its `upstream` field says that there is none. The exit code `70` of DR-13 is the one exception: its requirement stays in section 5, because DR-13 holds every exit code of the port in one place. Its entry in `fixes.toml` follows the other rules of this requirement.
 
 ## 8. Acceptance criteria
 
@@ -92,13 +92,13 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 7. AC-7 (DR-NFR-1): Two runs on each fixture write byte-identical snapshots.
 8. AC-8 (Goal 3): All fixtures pass with the port on a host that has no Python installed. The expected results come from an earlier parity run.
 9. AC-9 (DR-PB-4): Each entry in `fixes.toml` has a test that names the entry and passes on the port.
-10. AC-10 (DR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as DR-NFR-2 defines. `parity/run_parity.py --check-timing` checks this, and it runs on the named runner host.
+10. AC-10 (DR-NFR-2): On each parity fixture, the median wall-clock time of the port is lower than the median wall-clock time of the original, measured as DR-NFR-2 defines. `parity/run_parity.py --check-timing` checks this, with `--timing-runs` at 3 or more, and it runs in the named runner: the Ubuntu 22.04 x86_64 guest of `ci/linux-vm`. That guest runs in qemu with TCG and the defaults of `ci/linux-vm/vm.sh`, which are `VM_MEM=6G` and `VM_CPUS=6`. The guest is emulated, so the check measures the relation of the two medians and not absolute times.
 11. AC-11 (DR-14): On a fixture with only `.jsx` source files and two forms that score 0.85, `dryer --threshold 0.8` reports the pair and does not print "No source files to analyze". A file `src/a.test.jsx` in the same fixture is not scanned. On the TypeScript fixture, the port writes the same snapshot as before the change. The output of `dryer --help` names JavaScript and lists the extensions `.js`, `.jsx`, `.mjs`, and `.cjs`.
 12. AC-12 (DR-15): On the fixture `rust-test-code`, the functions sit only in a module with `#[cfg(test)]` that is not named `tests`. The original reports a pair there with `--threshold 0.6`. The port prints "No duplicate candidates found." for the same run. With `--threshold 0.8`, two similar functions in such a module give no pair, and the same two functions outside a test module give a pair. Tests show that the port leaves out a function in each of the four rules of DR-15. They also show that a `#[cfg(not(test))]` module, a `#[cfg(all(test, unix))]` module, a `#[tokio::test]` function, and a plain function next to a module named `tests` stay in the scan.
 13. AC-13 (DR-16): With one source file that the port cannot read and two source files that hold a pair, the port exits `0`, prints the pair, and prints one warning that names the unreadable file on standard error. The original stops with a traceback and reports nothing.
-14. AC-14 (DR-NFR-3): A check finds both Linux guest targets in the CI scripts. `ci/linux-vm/vm.sh` names the Ubuntu 22.04 images for arm64 and x86_64, and `ci/linux-vm/guest-test.sh` builds, tests, and runs clippy on each target. The log records a guest of each target that ran those three commands. No script builds the port on macOS, so Mads Madsen inspects the port on macOS 14 arm64.
+14. AC-14 (DR-NFR-3): A check finds both Linux guest targets in the CI scripts. `ci/linux-vm/vm.sh` names the Ubuntu 22.04 images for arm64 and x86_64, and `ci/linux-vm/guest-test.sh` builds, tests, and runs clippy on each target. The default crate list of `ci/linux-vm/guest-test.sh` contains `dryer`. The log records a guest of each target that ran those three commands. No script builds the port on macOS, so Mads Madsen inspects the port on macOS 14 arm64.
 15. AC-15 (DR-NFR-4): A check finds the line `cargo install --locked --git https://github.com/madsmadsen/lagom-mode-skill dryer` in `tools/dryer/README.md`. No check runs the install, because the build fetches a grammar from Git. Mads Madsen inspects the install on a clean host and records the command and its result in the log.
-16. AC-16 (DR-NFR-5): `tools/dryer/LICENSE` is the MIT License text with the copyright line of Mads Madsen and names Robert C. Martin and the BSD Zero Clause License. A check finds the two header lines of DR-NFR-5 at the start of every `.rs` file under `src/` and `tests/`. The check leaves out the fixture projects under `parity/fixtures/rust/` and `parity/fixtures/rust-test-code/`.
+16. AC-16 (DR-NFR-5): `tools/dryer/LICENSE` is the MIT License text with the copyright line of Mads Madsen and names Robert C. Martin and the BSD Zero Clause License. The license holds the MIT permission sentence `Permission is hereby granted` and the BSD Zero Clause credit. A check finds the two header lines of DR-NFR-5 at the start of every `.rs` file under `src/` and `tests/`. A check also finds, in the third line of each file under `src/` that matches a file of the original, the path of a `.py` file of the original. The check leaves out the fixture projects under `parity/fixtures/rust/` and `parity/fixtures/rust-test-code/`. The check does not open the original, because the CI run has no checkout of it.
 
 ## 9. Risks
 
