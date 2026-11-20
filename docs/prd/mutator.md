@@ -40,7 +40,7 @@ mutator makes small changes to the code and runs the tests after each change. A 
 ### 5.1 Command line and files
 
 - MU-1: The port is a Rust binary named `mutator`.
-- MU-2: The port accepts every flag and positional argument of the original, with the same meaning and the same default. It rejects each flag that the original rejects, with the same exit code. There are two exceptions. `--max-memory-mb` is a flag that the original rejects and the port accepts (MU-25). `--max-workers` is a flag that both accept, but the port caps it at half the cores and uses that cap as the default (MU-17).
+- MU-2: The port accepts every flag and positional argument of the original, with the same meaning and the same default. It rejects each flag that the original rejects, with the same exit code. Each number value, for example an item of `--lines`, follows the rules of Python `int()` or `float()` as the original does. So `1_0` means 10, `+5` means 5, and a value with spaces around it is accepted. There are two exceptions. `--max-memory-mb` is a flag that the original rejects and the port accepts (MU-25). `--max-workers` is a flag that both accept, but the port caps it at half the cores and uses that cap as the default (MU-17).
 - MU-3: The port returns the same exit code as the original for the same input.
 - MU-4: The port writes one snapshot for each namespace to `.metrics/mutate/<namespace>.edn`, in the same EDN shape and with the same keys as the original.
 - MU-5: The port detects the language of each file by its extension, the same as the original.
