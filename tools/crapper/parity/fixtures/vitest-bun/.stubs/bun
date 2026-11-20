@@ -1,0 +1,6 @@
+#!/bin/sh
+# Deliberately change every manifest to exercise restoration and new-lockfile removal.
+for manifest in package.json package-lock.json npm-shrinkwrap.json pnpm-lock.yaml yarn.lock bun.lockb bun.lock; do
+  printf 'changed by the install stub\n' > "$manifest"
+done
+mkdir -p node_modules/@vitest/coverage-v8

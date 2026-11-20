@@ -1,0 +1,7 @@
+{
+  "name": "vitest-bun",
+  "private": true,
+  "scripts": {
+    "test": "vitest run"
+  }
+}

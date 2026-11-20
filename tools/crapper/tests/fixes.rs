@@ -157,6 +157,75 @@ fn fix_vitest_package_manager_installs_with_pnpm_on_a_pnpm_project() {
     });
 }
 
+const INSTALL_MANIFESTS: &[&str] = &[
+    "package.json",
+    "package-lock.json",
+    "npm-shrinkwrap.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "bun.lockb",
+    "bun.lock",
+];
+
+fn install_manifest_bytes(project: &Path) -> Vec<Option<Vec<u8>>> {
+    INSTALL_MANIFESTS
+        .iter()
+        .map(|name| {
+            let path = project.join(name);
+            path.is_file()
+                .then(|| fs::read(path).expect("read manifest"))
+        })
+        .collect()
+}
+
+fn assert_fixture_install(fixture: &str, command: &str) {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let project = temp.path().join("project");
+    copy_dir(&parity_dir().join("fixtures").join(fixture), &project);
+    let before = install_manifest_bytes(&project);
+    assert!(!project.join("node_modules/@vitest/coverage-v8").exists());
+    let done = Command::new(env!("CARGO_BIN_EXE_crapper"))
+        .current_dir(&project)
+        .env("PATH", stubbed_path(&project))
+        .output()
+        .expect("crapper runs");
+    let stderr = String::from_utf8_lossy(&done.stderr);
+    assert!(
+        stderr.contains(&format!(") {command}\n")),
+        "{fixture}: install command missing from stderr:\n{stderr}"
+    );
+    let outcome = Outcome {
+        code: done.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&done.stdout).into_owned(),
+    };
+    assert!(
+        has_coverage(&outcome, "big", "100.0%"),
+        "{fixture}: coverage run failed:\n{}\n{stderr}",
+        outcome.stdout
+    );
+    assert_eq!(
+        install_manifest_bytes(&project),
+        before,
+        "{fixture}: manifest bytes or lockfile presence changed"
+    );
+}
+
+// CR-18, AC-27: each manager command reaches stderr and restores existing and new lockfiles.
+#[test]
+fn cr_18_ac_27_fixtures_print_install_commands_and_restore_manifest_bytes() {
+    for (fixture, manager_args) in [
+        ("vitest-yarn", "yarn add -D --no-lockfile"),
+        ("vitest-bun", "bun add -d --no-save"),
+        ("vitest-package-manager-field", "pnpm add -D --no-lockfile"),
+        ("vitest-pnpm", "pnpm add -D --no-lockfile"),
+    ] {
+        assert_fixture_install(
+            fixture,
+            &format!("{manager_args} --ignore-scripts @vitest/coverage-v8@2.1.9"),
+        );
+    }
+}
+
 // fix: vitest-npm-lockfile (CR-19, AC-28). npm keeps the locked semver, so the stub run covers `big` fully.
 #[test]
 fn fix_vitest_npm_lockfile_keeps_the_locked_dependency_version() {

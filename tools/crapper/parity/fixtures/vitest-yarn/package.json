@@ -1,0 +1,7 @@
+{
+  "name": "vitest-yarn",
+  "private": true,
+  "scripts": {
+    "test": "vitest run"
+  }
+}

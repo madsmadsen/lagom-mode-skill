@@ -1,0 +1,4 @@
+#!/bin/sh
+# Never call a real package manager if selection regresses.
+echo "unexpected package manager: pnpm" >&2
+exit 1
