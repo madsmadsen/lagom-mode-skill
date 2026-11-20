@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # Copyright (C) 2026 Mads Madsen <mads@onmadsen.com>
 # SPDX-License-Identifier: MIT
-"""Tests for run_side, record, check, and the runner steps (DR-NFR-2, AC-10).
+"""Tests for run_side, record, check, and the runner steps (DR-NFR-2, AC-10),
+and for the case list reader (AC-1).
 
 DR-NFR-2: the runner reports the wall-clock time of one program. run_side runs
 one side 5 times. Run 1 gives the result that the runner compares, and runs 2
@@ -22,7 +23,11 @@ it started. Several tests run one of these stubs, and the timing tests run
 FAKE against SLOW, which sleeps 0.05 s on each run. The other tests replace
 run_case, run_side, or make_copy with a stub.
 
-Twenty-seven tests run. Some of them fail on the runner before this change, and
+AC-1: load_cases reads parity/coverage.toml and rejects a case that lacks a
+name, a fixture, or args, a duplicate name, and a selected name that no case
+has.
+
+Fifty-five tests run. Some of them fail on the runner before this change, and
 some pass there too: the two median tests only check that median_seconds
 reports the middle sample, and that function did not change. Several tests
 pin behavior that an earlier commit added, such as the result of run 1 and the
@@ -651,3 +656,443 @@ class RunSide(unittest.TestCase):
         with self.stubbed_main(cases, lambda *_args: (same, same), expected):
             self.assertEqual(run.main(["--timing-runs", "2"]), 0)
         self.assertEqual(self.mocks["run_case"].call_args.args[-1], 2)
+
+
+# AC-1: the case list of parity/coverage.toml is what the runner compares. A
+# case needs a name, a fixture, and args, a name appears once, and a selected
+# name must name a case. Each test writes the case list it needs into a temp
+# directory and points load_cases at it, so the checks run for real.
+class TempParity(unittest.TestCase):
+    """Points PARITY at a temp directory, so a test writes the tables it reads."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="parity-table-test-")
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name)
+        patcher = mock.patch.object(run, "PARITY", self.base)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def write_table(self, filename, table, *entries):
+        lines = []
+        for fields in entries:
+            lines.append(f"[[{table}]]")
+            lines.extend(f"{key} = {value}" for key, value in fields.items())
+        (self.base / filename).write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+class LoadCases(TempParity):
+    def write_cases(self, *cases):
+        self.write_table("coverage.toml", "case", *cases)
+
+    def load(self, selected=()):
+        return run.load_cases(list(selected))
+
+    # AC-1: every case of the file comes back in file order, with the args it
+    # names. A flag case and a plain case must both stay whole.
+    def test_ac_1_load_cases_reads_each_case_in_file_order(self):
+        self.write_cases(
+            {"name": '"threshold"', "fixture": '"a"', "args": '["--threshold", "0.8"]'},
+            {"name": '"plain"', "fixture": '"b"', "args": "[]"},
+        )
+        self.assertEqual(
+            self.load(),
+            [
+                {"name": "threshold", "fixture": "a", "args": ["--threshold", "0.8"]},
+                {"name": "plain", "fixture": "b", "args": []},
+            ],
+        )
+
+    # AC-1: a case that lacks one of its three keys stops the runner and names
+    # the key, so a half-written case cannot reach the comparison.
+    def test_ac_1_load_cases_rejects_a_case_without_a_name_a_fixture_or_args(self):
+        for missing in ("name", "fixture", "args"):
+            fields = {"name": '"a"', "fixture": '"b"', "args": "[]"}
+            del fields[missing]
+            self.write_cases(fields)
+            with self.assertRaises(SystemExit) as caught:
+                self.load()
+            self.assertIn(f"case missing {missing}", str(caught.exception))
+
+    # AC-1: two cases with one name would run the same verdict twice, so the
+    # second one stops the runner.
+    def test_ac_1_load_cases_rejects_a_duplicate_case_name(self):
+        self.write_cases(
+            {"name": '"same"', "fixture": '"a"', "args": "[]"},
+            {"name": '"same"', "fixture": '"b"', "args": "[]"},
+        )
+        with self.assertRaises(SystemExit) as caught:
+            self.load()
+        self.assertEqual(str(caught.exception), "coverage.toml: duplicate case same")
+
+    # AC-1: --case keeps the named cases in file order, not in the order of the
+    # options, and it drops the cases that the caller did not name.
+    def test_ac_1_load_cases_returns_only_the_selected_cases(self):
+        self.write_cases(
+            {"name": '"first"', "fixture": '"a"', "args": "[]"},
+            {"name": '"second"', "fixture": '"b"', "args": "[]"},
+            {"name": '"third"', "fixture": '"c"', "args": "[]"},
+        )
+        self.assertEqual([case["name"] for case in self.load(["third", "first"])],
+                         ["first", "third"])
+
+    # AC-1: a selected name that no case has stops the runner, so a mistyped
+    # --case cannot pass as a run of every case.
+    def test_ac_1_load_cases_rejects_an_unknown_selected_case(self):
+        self.write_cases({"name": '"known"', "fixture": '"a"', "args": "[]"})
+        with self.assertRaises(SystemExit) as caught:
+            self.load(["typo", "known"])
+        self.assertEqual(str(caught.exception), "unknown case(s): typo")
+
+    # AC-1: the real case list loads, and each case carries the three keys. The
+    # runner reads this file on every run, so a broken case stops every run.
+    def test_ac_1_load_cases_reads_the_real_coverage_toml(self):
+        real_parity = Path(run.__file__).resolve().parent
+        with mock.patch.object(run, "PARITY", real_parity):
+            cases = run.load_cases([])
+            self.assertGreater(len(cases), 0)
+            names = [case["name"] for case in cases]
+            self.assertEqual(len(names), len(set(names)))
+            for case in cases:
+                self.assertTrue({"name", "fixture", "args"} <= set(case), case)
+            first = run.load_cases([names[0]])
+        self.assertEqual(first, cases[:1])
+
+
+# DR-PB-6: load_fixes reads parity/fixes.toml and groups the entries by fixture,
+# because a case looks up its own entries and a case without an entry is a plain
+# comparison. A fix without an id or a fixture stops the runner.
+class LoadFixes(TempParity):
+    def write_fixes(self, *fixes):
+        self.write_table("fixes.toml", "fix", *fixes)
+
+    # DR-PB-6: the real file groups its entries by fixture, and each entry keeps
+    # the id that the verdict prints.
+    def test_dr_pb_6_load_fixes_groups_the_real_entries_by_fixture(self):
+        real_parity = Path(run.__file__).resolve().parent
+        with mock.patch.object(run, "PARITY", real_parity):
+            by_case = run.load_fixes()
+        self.assertIn("jsx-fix", by_case)
+        self.assertEqual([fix["id"] for fix in by_case["jsx-fix"]], ["js-read-as-typescript"])
+
+    # DR-PB-6: two fixes can name one fixture, and both stay in that fixture's
+    # list, so the verdict can name both ids.
+    def test_dr_pb_6_load_fixes_keeps_every_fix_of_one_fixture(self):
+        self.write_fixes(
+            {"id": '"a"', "fixture": '"case"'},
+            {"id": '"b"', "fixture": '"case"'},
+            {"id": '"c"', "fixture": '"other"'},
+        )
+        by_case = run.load_fixes()
+        self.assertEqual(sorted(by_case), ["case", "other"])
+        self.assertEqual([fix["id"] for fix in by_case["case"]], ["a", "b"])
+
+    # DR-PB-6: a fix without an id or a fixture cannot be named or placed, so it
+    # stops the runner.
+    def test_dr_pb_6_load_fixes_rejects_a_fix_without_an_id_or_a_fixture(self):
+        for missing in ("id", "fixture"):
+            fields = {"id": '"a"', "fixture": '"case"'}
+            del fields[missing]
+            self.write_fixes(fields)
+            with self.assertRaises(SystemExit) as caught:
+                run.load_fixes()
+            self.assertIn(f"fix missing {missing}", str(caught.exception))
+
+    # DR-PB-6: a checkout with no fixes.toml reads as no fix, so every case is a
+    # plain comparison.
+    def test_dr_pb_6_load_fixes_reads_a_missing_table_as_no_fix(self):
+        (self.base / "fixes.toml").write_text("# no entries\n", encoding="utf-8")
+        self.assertEqual(run.load_fixes(), {})
+
+
+# AC-1: the runner needs the built port to compare it with the original. A path
+# on the command line wins, else the release binary, else the debug one, and a
+# missing binary stops the run with the path that it looked for.
+class PortBinary(TempParity):
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.object(run, "CRATE", self.base)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def build(self, profile):
+        binary = self.base / "target" / profile / "dryer"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("#!/bin/sh\n", encoding="utf-8")
+        return binary
+
+    # AC-1: a path given on the command line is the binary, and it must exist.
+    def test_ac_1_port_binary_takes_the_path_that_the_caller_gives(self):
+        binary = self.base / "my-dryer"
+        binary.write_text("#!/bin/sh\n", encoding="utf-8")
+        self.assertEqual(run.port_binary(str(binary)), binary)
+        with self.assertRaises(SystemExit) as caught:
+            run.port_binary(str(self.base / "gone"))
+        self.assertIn("port binary not found", str(caught.exception))
+
+    # AC-1: without a path, the release build wins over the debug build, and the
+    # debug build is the fallback when there is no release build.
+    def test_ac_1_port_binary_prefers_the_release_build(self):
+        debug = self.build("debug")
+        self.assertEqual(run.port_binary(None), debug)
+        release = self.build("release")
+        self.assertEqual(run.port_binary(None), release)
+
+    # AC-1: with no build at all, the error names the release path that the
+    # runner would use, so the caller knows to build the crate first.
+    def test_ac_1_port_binary_names_the_release_path_when_nothing_is_built(self):
+        with self.assertRaises(SystemExit) as caught:
+            run.port_binary(None)
+        message = str(caught.exception)
+        self.assertIn("build the crate first", message)
+        self.assertIn(str(self.base / "target" / "release" / "dryer"), message)
+
+
+# AC-1: a case compares the original with the port "after both are parsed as
+# EDN", so the snapshot reader must read every form that the port writes, and
+# it must reject text that is not one EDN form. These tests read text, the way
+# the runner reads parity/expected/<case>/dry.edn.
+class Snapshots(unittest.TestCase):
+    # AC-1: the atoms of a snapshot read as their values: keyword, nil, the two
+    # booleans, a whole number, a fraction, a symbol, and a string.
+    def test_ac_1_snapshot_atoms_read_as_their_values(self):
+        read = run.parse_edn
+        self.assertEqual(read(':score'), ("kw", "score"))
+        self.assertIsNone(read("nil"))
+        self.assertIs(read("true"), True)
+        self.assertIs(read("false"), False)
+        self.assertEqual(read("-12"), -12)
+        self.assertEqual(read("1.5"), 1.5)
+        self.assertEqual(read("-1.5e3"), -1500.0)
+        self.assertEqual(read("bare"), ("sym", "bare"))
+        self.assertEqual(read('"a b"'), "a b")
+
+    # AC-1: the port writes a map of lists of maps, and the reader keeps that
+    # shape, so a recorded snapshot compares equal to a fresh one.
+    def test_ac_1_snapshot_collections_read_as_lists_and_maps(self):
+        text = '{:candidates [ {:score 1.0 :left {:file "a.py"}} ]}'
+        self.assertEqual(
+            run.parse_edn(text),
+            {("kw", "candidates"): [{("kw", "score"): 1.0,
+                                     ("kw", "left"): {("kw", "file"): "a.py"}}]},
+        )
+        self.assertEqual(run.parse_edn("[]"), [])
+        self.assertEqual(run.parse_edn("{}"), {})
+
+    # AC-1: text that is not one EDN form is an error, and the message says
+    # which rule it broke. A snapshot that the reader cannot read must never
+    # compare equal to another snapshot.
+    def test_ac_1_a_snapshot_that_is_not_one_edn_form_is_an_error(self):
+        cases = {
+            "{:a 1": "unterminated EDN collection",
+            "{:a}": "EDN map has an odd number of forms",
+            "}": "unexpected EDN delimiter }",
+            "1 2": "trailing EDN forms",
+            "a[": "trailing EDN forms",
+            '"a': "bad EDN at offset 0",
+        }
+        for text, expected in cases.items():
+            with self.assertRaises(ValueError) as caught:
+                run.parse_edn(text)
+            self.assertEqual(str(caught.exception), expected)
+
+
+# AC-1: a case compares the two snapshots, so edn_diffs must tell a missing
+# snapshot from a different one, and it must say that a snapshot it cannot read
+# is not equal to the other. A quiet pass here would pass a changed snapshot.
+class EdnDiffs(unittest.TestCase):
+    # AC-1: the same values give no diff, even when the two files differ in
+    # whitespace, because the runner compares the parsed forms.
+    def test_ac_1_edn_diffs_is_empty_for_equal_values(self):
+        self.assertEqual(run.edn_diffs(b"{:a 1}", b"{\n :a 1\n}"), [])
+
+    # AC-1: a snapshot that only one side wrote is a diff that names the side,
+    # and two missing snapshots are not a diff.
+    def test_ac_1_edn_diffs_names_the_side_that_wrote_the_snapshot(self):
+        self.assertEqual(run.edn_diffs(None, None), [])
+        self.assertEqual(run.edn_diffs(None, b"{:a 1}"),
+                         ["snapshot presence: original=False port=True"])
+        self.assertEqual(run.edn_diffs(b"{:a 1}", None),
+                         ["snapshot presence: original=True port=False"])
+
+    # AC-1: two snapshots with different values are a diff that shows both
+    # values, so the report names what changed.
+    def test_ac_1_edn_diffs_shows_both_values_when_they_differ(self):
+        diffs = run.edn_diffs(b"{:score 1.0}", b"{:score 0.9}")
+        self.assertEqual(diffs[0], "dry.edn values differ")
+        self.assertIn("1.0", diffs[1])
+        self.assertIn("0.9", diffs[2])
+
+    # AC-1: a snapshot that is not EDN is reported as unreadable, not as equal.
+    def test_ac_1_a_snapshot_that_does_not_parse_is_not_equal(self):
+        self.assertEqual(run.edn_diffs(b"{:a", b"{:a"),
+                         ["dry.edn does not parse: unterminated EDN collection"])
+        self.assertEqual(run.edn_diffs(b"\xff", b"{:a 1}"),
+                         ["dry.edn does not parse: 'utf-8' codec can't decode byte 0xff in "
+                          "position 0: invalid start byte"])
+
+
+# AC-1: the setup that a case needs before it runs. A temp path with a walker
+# directory is refused, the --changed setup stages and commits known files, and
+# the original must sit at the pinned commit. Each test reads the result the way
+# the runner does: the files on disk and the error text.
+class Setup(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="setup-test-")
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name)
+
+    def write_source(self, name, text="def f():\n    return 1\n"):
+        path = self.base / "src" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    # AC-1: a temp path below test, tests, or spec would be skipped by the
+    # walker, so the runner refuses it and names the parts.
+    def test_ac_1_check_path_refuses_a_walker_directory(self):
+        run.check_path(self.base / "proj")
+        with self.assertRaises(SystemExit) as caught:
+            run.check_path(self.base / "tests" / "proj")
+        self.assertIn("has components ['tests']", str(caught.exception))
+
+    # AC-1: the --changed setup commits the fixture, then leaves one file
+    # modified, one file staged, and a new untracked copy, so --changed has a
+    # known selection. The suffix picks the comment marker of the language.
+    def test_ac_1_apply_git_setup_changed_leaves_a_modified_a_staged_and_a_new_file(self):
+        one = self.write_source("a.py")
+        two = self.write_source("b.py")
+        run.apply_git_setup(self.base, "changed")
+        self.assertIn("# dryer parity change\n", one.read_text(encoding="utf-8"))
+        self.assertIn("# dryer parity change\n", two.read_text(encoding="utf-8"))
+        self.assertTrue((self.base / "src" / "changed_new.py").is_file())
+        status = run.subprocess.run(["git", "-C", str(self.base), "status", "--porcelain"],
+                                    capture_output=True, text=True, check=True).stdout
+        self.assertIn(" M src/a.py", status)
+        self.assertIn("M  src/b.py", status)
+        self.assertIn("?? src/changed_new.py", status)
+
+    # AC-1: a setup that the runner does not know, and a fixture with fewer than
+    # two source files, stop the case with an error, because --changed would
+    # select nothing.
+    def test_ac_1_apply_git_setup_refuses_an_unknown_mode_and_a_thin_fixture(self):
+        with self.assertRaises(SystemExit) as caught:
+            run.apply_git_setup(self.base, "renamed")
+        self.assertEqual(str(caught.exception), "unknown git_setup 'renamed'")
+        self.write_source("a.py")
+        with self.assertRaises(SystemExit) as caught:
+            run.apply_git_setup(self.base, "changed")
+        self.assertIn("needs at least two source files", str(caught.exception))
+
+    # AC-1: a fixture that does not exist stops the case, and a fixture that
+    # exists is copied to a fresh directory with its setup applied.
+    def test_ac_1_make_copy_copies_the_fixture_and_refuses_a_missing_one(self):
+        fixture = self.base / "fixtures" / "python"
+        (fixture / "src").mkdir(parents=True)
+        (fixture / "src" / "a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+        with mock.patch.object(run, "FIXTURES", self.base / "fixtures"):
+            proj = run.make_copy("python", None, self.base / "copy")
+            self.assertEqual((proj / "src" / "a.py").read_text(encoding="utf-8"),
+                             "def f():\n    return 1\n")
+            with self.assertRaises(SystemExit) as caught:
+                run.make_copy("java", None, self.base / "other")
+        self.assertIn("fixture not found", str(caught.exception))
+
+    # AC-1: the original must be at the pinned commit. One that is elsewhere
+    # stops the run with both commits, so a parity result cannot come from
+    # another commit (DR-PB-1).
+    def test_ac_1_ensure_original_refuses_another_commit(self):
+        root = self.base / "original"
+        (root / "src").mkdir(parents=True)
+        (root / "src" / "a.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+        run.run_git(root, "init", "-q")
+        run.run_git(root, "add", "-A")
+        run.run_git(root, "commit", "-q", "-m", "base")
+        head = run.subprocess.run(["git", "-C", str(root), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(run.ensure_original(str(root), {"commit": head}), root.resolve())
+        with self.assertRaises(SystemExit) as caught:
+            run.ensure_original(str(root), {"commit": "0" * 40})
+        self.assertEqual(str(caught.exception),
+                         f"original at {root.resolve()} is {head}; pinned commit is " + "0" * 40)
+
+    # AC-1: without a checkout on the command line, the runner clones into its
+    # cache and checks out the pinned commit. A cache that already holds the
+    # clone gets only the checkout, so a rerun does not clone again.
+    def test_ac_1_ensure_original_clones_into_the_cache_once(self):
+        cache = self.base / "cache"
+        calls = []
+        head = "a" * 40
+
+        def fake_run(argv, **_kwargs):
+            calls.append(argv)
+            if "clone" in argv:
+                (Path(argv[-1]) / ".git").mkdir(parents=True)
+            return run.subprocess.CompletedProcess(argv, 0, stdout=head, stderr="")
+
+        with mock.patch.object(run, "CACHE", cache), \
+             mock.patch.object(run.subprocess, "run", side_effect=fake_run):
+            root = run.ensure_original(None, {"repository": "https://example.invalid/dryer",
+                                              "commit": head})
+            self.assertEqual(root, cache / "dryer-original")
+            self.assertTrue(any("clone" in call for call in calls))
+            calls.clear()
+            run.ensure_original(None, {"commit": head})
+        self.assertFalse(any("clone" in call for call in calls))
+        self.assertIn(["git", "-C", str(cache / "dryer-original"), "checkout", "-q", head],
+                      calls)
+
+
+# AC-1: `load_toml` is the reader of both parity tables, and it must read the
+# plain table and refuse a value that it cannot read. A silent skip would hide a
+# key, and a table that reads as the wrong shape would hide a case.
+class Toml(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(prefix="toml-test-")
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name)
+
+    def write(self, text):
+        path = self.base / "table.toml"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    # AC-1: a plain `[table]` and a repeated `[[table]]` both read, and a
+    # comment and a blank line change nothing. An array may span lines.
+    def test_ac_1_load_toml_reads_a_table_and_a_repeated_table(self):
+        path = self.write(
+            "# a comment\n"
+            "[meta]\n"
+            "name = \"dryer\"  # trailing\n"
+            "\n"
+            "[[case]]\n"
+            "name = \"one\"\n"
+            "args = [\n"
+            "  \"--threshold\",\n"
+            "  \"0.8\",\n"
+            "]\n"
+            "[[case]]\n"
+            "name = \"two\"\n"
+        )
+        self.assertEqual(
+            run.load_toml(path),
+            {
+                "meta": {"name": "dryer"},
+                "case": [{"name": "one", "args": ["--threshold", "0.8"]},
+                         {"name": "two"}],
+            },
+        )
+
+    # AC-1: a line that is not a key and a value that is not a string or a list
+    # stop the reader with the file and the text, so a broken table cannot pass
+    # as an empty one.
+    def test_ac_1_load_toml_refuses_a_bad_line_and_a_bad_value(self):
+        path = self.write("name = \"ok\"\nthis line has no equals sign\n")
+        with self.assertRaises(ValueError) as caught:
+            run.load_toml(path)
+        self.assertEqual(str(caught.exception),
+                         f"{path}: bad line: this line has no equals sign")
+        path = self.write("flag = true\n")
+        with self.assertRaises(ValueError) as caught:
+            run.load_toml(path)
+        self.assertEqual(str(caught.exception), "unsupported TOML value: true")

@@ -103,7 +103,7 @@ The runner runs each side five times and prints the median wall-clock time of ea
 
 `--check-timing` checks AC-10. A case fails when the median of the port is not lower than the median of the original, and an equal median fails. `--timing-runs N` sets the count of runs per side. The default is 5, the count that DR-NFR-2 names. Run `--check-timing` on the named CI runner, which is Linux x86_64 on Ubuntu 22.04. A timing on another host does not prove AC-10.
 
-`parity/test_run_parity.py` tests `run_side`, `record`, and `check` with fake programs and stubs (DR-NFR-2, AC-10). It covers the result of run 1, the median of 5 samples, the cleanup of `.metrics`, a side without a snapshot, a side that always exits 1, a timing run that crashes, the error text of that crash, the `--record` delete, a faster port that passes `--check-timing`, a slower port that fails it, and the default and set count of runs. Run it from `tools/dryer/`:
+`parity/test_run_parity.py` tests the runner with fake programs, stubs, and temp tables (DR-NFR-2, AC-10, AC-1, DR-PB-6). It covers the result of run 1, the median of 5 samples, the cleanup of `.metrics`, a side without a snapshot, a side that always exits 1, a timing run that crashes, the error text of that crash, the `--record` delete, a faster port that passes `--check-timing`, a slower port that fails it, and the default and set count of runs. It also reads `coverage.toml` and `fixes.toml` for real: the case order, a case that lacks a key, a duplicate name, a selected name that no case has, a fix without an id or a fixture, and a fix table with no entry. It reads snapshots, the snapshot diff, the port binary lookup, and the `--changed` setup. Run it from `tools/dryer/`:
 
 ```sh
 python3 -m unittest discover -s .
