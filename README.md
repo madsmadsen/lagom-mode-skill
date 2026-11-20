@@ -103,6 +103,7 @@ Each tool works on Clojure, Java, Go, TypeScript, JavaScript, Rust, and Python. 
 | `tools/crapper/` | Rust port of crapper. See [its README](tools/crapper/README.md). |
 | `tools/dryer/` | Rust port of dryer. See [its README](tools/dryer/README.md). |
 | `tools/mutator/` | Rust port of mutator. See [its README](tools/mutator/README.md). |
+| `samples/rust-todo/` | A small command-line to-do list. The sample features of the skills PRD run on it. |
 | `docs/prd/` | The requirements: one document for each tool, and one for the skills. |
 | `ci/linux-vm/` | Scripts that build and test the ports in Ubuntu guests with qemu. |
 
