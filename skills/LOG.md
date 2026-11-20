@@ -82,3 +82,9 @@
 - Mads Madsen approved all entries of the three `fixes.toml` files (crapper 9, dryer 6, mutator 8). `docs/PRD.md` section 5.1 item 2 no longer calls the `lines-option` entry unapproved. This closes the open lines above about the approvals. Still open: the stale `tools/crapper/parity/last-run.toml` until a full crapper parity run records a new result, and the claim that the repository is public.
 
 - Ran the three parity runners for real after the approval (scratch copies, logged in each crate LOG). crapper: 58 runs, 49 pass, 9 diffs (the approved entries), RESULT pass, and `last-run.toml` is now written by the runner (commit c3276b4). dryer: 34 cases, 0 failed, 4 accepted. mutator: 36 PASS, 2 DIFF-ALLOWED, 0 FAIL. This closes the stale `last-run.toml` item. Not done: the AC-10 timing run, and the yarn and bun fixtures.
+
+## 2026-11-20: open items round 3 (AC-27, AC-10)
+
+- crapper: fixtures vitest-yarn, vitest-bun and vitest-package-manager-field and a CLI test close AC-27 for the install command and the restore (commit 3e0838e). The three fixtures have no parity run, because the runner exempts by fixture name and the approved `vitest-package-manager` entry names only `vitest-pnpm`. To add them, Mads Madsen can add the three fixture names to that entry. No real yarn or bun ran. The full parity run was not repeated after the `vitest-pnpm` stub change.
+- dryer: `parity/run_parity.py --check-timing` ran on this macOS arm64 host: 34 cases, port lower in all 34. AC-10 stays without proof, because DR-NFR-2 names Linux x86_64 on Ubuntu 22.04 and no guest image exists on this host. Whole-file crapper on `run_parity.py` now passes.
+- Not done: the macOS and Linux CI matrix of AC-18 (no `.github` exists and a workflow cannot run here), real agent runs of the sample features, and a proof that the repository is public.
