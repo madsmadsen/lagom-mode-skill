@@ -26,3 +26,11 @@ func Full(n, limit int) bool {
 func hidden(ok bool) bool {
 	return ok == true || 0 > 1
 }
+
+// notAndNegative has a negation and a unary minus, which the original also mutates.
+func notAndNegative(n int, ok bool) int {
+	if !ok {
+		return -n
+	}
+	return n
+}

@@ -3,8 +3,12 @@
 # SPDX-License-Identifier: MIT
 """Write tests/golden/<lang>/ from the ORIGINAL mutator on each parity fixture (AC-11).
 
-Run: /tmp/mu/venv/bin/python tools/mutator/parity/golden.py
-Each golden folder holds: scan.out, run.out, run.exit, and snapshots/<path>.edn (tested-at removed).
+Run, with the venv of the original (see parity/README.md):
+
+    ORIGINAL_PYTHON=<venv>/bin/python <venv>/bin/python parity/golden.py
+
+`ORIGINAL_PYTHON` is required and has no default. Each golden folder holds: scan.out,
+run.out, run.exit, and snapshots/<path>.edn (tested-at removed).
 The Rust test tests/fixtures_langs.rs replays the port on the same fixtures and compares.
 """
 
@@ -12,15 +16,25 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
 PARITY = Path(__file__).resolve().parent
 FIXTURES = PARITY / "fixtures"
 GOLDEN = PARITY.parent / "tests" / "golden"
-ORIGINAL = [os.environ.get("ORIGINAL_PYTHON", "/tmp/mu/venv/bin/python"), "-m", "mutator"]
+ORIGINAL: list[str] = ["", "-m", "mutator"]
 GIT_INIT = "git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init"
 TESTED_AT = re.compile(r':tested-at "[^"]*" ?')
+
+
+def original_cmd() -> list[str]:
+    """The command of the original, from the `original_python` check of run.py, so that the
+    two scripts ask for `ORIGINAL_PYTHON` in the same words."""
+    sys.path.insert(0, str(PARITY.parent))
+    from parity.run import original_cmd as command
+
+    return command()
 
 
 def run(args, cwd):
@@ -30,6 +44,7 @@ def run(args, cwd):
 
 
 def main():
+    ORIGINAL[:] = original_cmd()
     for fixture in sorted(p for p in FIXTURES.iterdir() if p.is_dir()):
         out = GOLDEN / fixture.name
         shutil.rmtree(out, ignore_errors=True)

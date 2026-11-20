@@ -16,13 +16,27 @@ SURVIVED  src/counter.ts:23 ?? -> ||
 KILLED    src/counter.ts:27 ?. -> .
 SURVIVED  src/counter.ts:27 ?? -> ||
 SURVIVED  src/counter.ts:31 * -> /
-SURVIVED  src/counter.ts:34 delete ?.
-SURVIVED  src/counter.ts:35 delete !
-SURVIVED  src/counter.ts:35 0 -> 1
-SURVIVED  src/counter.ts:35 || -> &&
-SURVIVED  src/counter.ts:35 true -> false
+SURVIVED  src/counter.ts:34 < -> <=
+SURVIVED  src/counter.ts:34 || -> &&
+SURVIVED  src/counter.ts:34 <= -> <
+SURVIVED  src/counter.ts:34 || -> &&
+SURVIVED  src/counter.ts:34 > -> >=
+SURVIVED  src/counter.ts:34 || -> &&
+SURVIVED  src/counter.ts:34 >= -> >
+SURVIVED  src/counter.ts:34 || -> &&
+SURVIVED  src/counter.ts:34 == -> !=
+SURVIVED  src/counter.ts:34 || -> &&
+SURVIVED  src/counter.ts:34 != -> ==
+SURVIVED  src/counter.ts:35 delete -
+SURVIVED  src/counter.ts:37 0 -> 1
+SURVIVED  src/counter.ts:41 delete ?.
+SURVIVED  src/counter.ts:42 delete !
+SURVIVED  src/counter.ts:42 0 -> 1
+SURVIVED  src/counter.ts:42 || -> &&
+SURVIVED  src/counter.ts:42 true -> false
 Function Namespace        Killed  Survived  Uncovered  Sites   Score
 --------------------------------------------------------------------
+compare  counter               0        13          0     13   0.0%
 run      counter               0         5          0      5   0.0%
 bump     counter.Counter       0         3          0      3   0.0%
 first    counter.Counter       0         3          0      3   0.0%
@@ -31,4 +45,4 @@ step     counter.Counter       1         4          0      5  20.0%
 full     counter.Counter       1         3          0      4  25.0%
 label    counter.Counter       1         1          0      2  50.0%
 --------------------------------------------------------------------
-Total                          3        20          0     23   13.0%
+Total                          3        33          0     36    8.3%

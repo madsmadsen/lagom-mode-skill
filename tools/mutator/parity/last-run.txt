@@ -1,0 +1,51 @@
+# Parity run of the mutator port against the original
+# date -u: 2026-11-20T23:48:42Z
+# uname -m: arm64
+# venv: /tmp/mutator-orig (python3.12 -m venv), original installed with
+#   /tmp/mutator-orig/bin/pip install "git+https://github.com/unclebob/mutator@a5a0cb803b66e0cdb8bf471b3b08af701d424a41"
+# crapper: git clone https://github.com/unclebob/crapper /tmp/crapper-orig, then
+#   git -C /tmp/crapper-orig checkout 6fd92c4c9bcc56efb64a2f8743d5a2993bcfd42d
+#   ln -s /tmp/crapper-orig /tmp/mutator-orig/lib/crapper
+#   (the original's crapper_link.py looks for <venv>/lib/../crapper/src)
+# commands, from tools/mutator of /tmp/lagom-fix11:
+#   cargo build --release
+#   ORIGINAL_PYTHON=/tmp/mutator-orig/bin/python MUTATOR_BIN=/tmp/lagom-fix11/tools/mutator/target/release/mutator /tmp/mutator-orig/bin/python parity/run.py
+# exit code: 0
+DIFF-ALLOWED flag-help-short                      exit original=0 port=0  metrics=0  info: stdout-diff=22 stderr-diff=0  | stdout differs in 22 lines
+DIFF-ALLOWED flag-help-long                       exit original=0 port=0  metrics=0  info: stdout-diff=22 stderr-diff=0  | stdout differs in 22 lines
+PASS         flag-root                            exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-source-root-short               exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-source-root-long                exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-changed                         exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-scan                            exit original=0 port=0  metrics=0  info: stdout-diff=0 stderr-diff=0
+PASS         flag-mutate-all                      exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-since-last-run                  exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-lines                           exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-lines-nothing-to-run            exit original=0 port=0  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-use-existing-coverage           exit original=0 port=0  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-reuse-coverage                  exit original=0 port=0  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-coverage-command                exit original=0 port=0  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-timeout-factor                  exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-mutation-warning                exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-max-workers                     exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         flag-verbose                         exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=58
+PASS         usage-mutate-all-since-last-run      exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-no-coverage-coverage-command   exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-scan-mutate-all                exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-scan-max-workers               exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-unknown-flag                   exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-missing-value                  exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-timeout-factor-not-number      exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-timeout-factor-zero            exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-max-workers-zero               exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-lines-zero                     exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         usage-lines-not-int                  exit original=1 port=1  metrics=0  info: stdout-diff=0 stderr-diff=22
+PASS         exit-2-baseline-fails                exit original=2 port=2  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         exit-3-survivor-changed-backup       exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         differential-default                 exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         fixture-clojure                      exit original=3 port=3  metrics=1  info: stdout-diff=0 stderr-diff=0
+PASS         fixture-java                         exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         fixture-go                           exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         fixture-typescript                   exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         fixture-rust                         exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0
+PASS         fixture-python                       exit original=3 port=3  metrics=2  info: stdout-diff=0 stderr-diff=0

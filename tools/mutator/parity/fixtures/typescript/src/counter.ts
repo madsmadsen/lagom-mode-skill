@@ -30,6 +30,13 @@ export class Counter {
 
 export const twice = (n: number): number => n * 2;
 
+export function compare(a: number, b: number): number {
+  if (a < b || a <= b || a > b || a >= b || a == b || a != b) {
+    return -a;
+  }
+  return 0;
+}
+
 export function run(callback?: () => void): boolean {
   callback?.();
   return !twice(0) || true;

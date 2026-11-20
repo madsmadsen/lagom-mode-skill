@@ -27,3 +27,7 @@ impl Counter {
         self.count == 0 && !false
     }
 }
+
+pub fn below(a: i32, b: i32) -> bool {
+    a < b || a <= b || a > b || a >= b
+}

@@ -52,26 +52,32 @@ directories such as `dist`, `build`, and `out`. MU-6 gives the whole list.
 
 The port also drops any source file whose full path has a part named `test`, `tests`, `spec`,
 `specs`, or `__tests__`. That rule reads the whole absolute path, not only the part below the
-project root. So a directory that you name is walked, but the port drops every file in it. A
-project whose own path holds one of these names selects no file: the run prints
-`No source files to mutate.` and exits `0`. Work around it by moving or copying the project to a
-path with no such part. A file that you name as the source root, with `--source-root <file>`, is
-always taken, even when it is a test file.
+project root. So a directory that you name selects no source file when its own name is one of
+those test names. A project whose own path holds one of these names selects no file: the run
+prints `No source files to mutate.` and exits `0`. Work around it by moving or copying the
+project to a path with no such part. A file that you name as the source root, with
+`--source-root <file>`, is always taken, even when it is a test file.
 
 ## Mutation rules
 
-The port mutates the same tokens as the original (MU-12). These are the rule rows that it
-applies to each language:
+The port mutates the same tokens as the original (MU-12). This list is the full set of rule
+rows that the port applies to each language. A row copies the table "What each language mutates"
+of the README of the original, word for word. Where the code of the original applies a rule that
+its table leaves out, the row adds that rule and names it after the words of the table:
+`min/max` in Clojure, and `delete !` and `delete unary -` in Go. The mutants of the differences
+in the next section are not rows of this list, and that section names them.
 
-- `clojure`: `arithmetic heads`, `comparison heads`, `=/not=`, `if/if-not`, `when/when-not`, `and/or`, `seq pairs`, `predicate pairs`, `coercion pairs`, `true/false`, `0/1`
+- `clojure`: `+/-`, `* to /`, `inc/dec`, `comparisons`, `=/not=`, `if/if-not`, `when/when-not`, `and/or`, `seq pairs`, `predicate pairs`, `coercion pairs`, `min/max`, `true/false`, `0/1`
 - `java`: `true/false`, `==/!=`, `</<=`, `>/>=`, `+/-`, `*/`, `&&/||`, `delete !`, `delete unary -`, `0/1`
-- `go`: `+/-`, `* -> /`, `comparisons`, `==/!=`, `true/false`, `&&/||`, `0/1`
-- `typescript`: `+/-`, `*/`, `>/>=`, `&&/||`, `===/!==`, `??->||`, `?.->.`, `call drops ?.`, `index drops ?.`, `delete !`, `true/false`, `0/1`
-- `rust`: `&&/||`, `delete !`, `delete unary -`, `0/1`
-- `python`: `and/or`, `not`, `True/False`, `==/!=`, `comparisons`, `+/-`, `* -> /`, `0/1`, `unary -`
+- `go`: `+/-`, `* to /`, `comparisons`, `==/!=`, `true/false`, `&&/||`, `0/1`, `delete !`, `delete unary -`
+- `typescript`: `true/false`, `==/!=`, `</<=`, `>/>=`, `+/-`, `*/`, `&&/||`, `delete !`, `delete unary -`, `0/1`, `===/!==`, `?? to ||`, `?. to .`, `call drops ?.`, `index drops ?.`
+- `rust`: `true/false`, `==/!=`, `</<=`, `>/>=`, `+/-`, `*/`, `&&/||`, `delete !`, `delete unary -`, `0/1`
+- `python`: `True/False`, `==/!=`, `</<=`, `>/>=`, `+/-`, `*/`, `and/or`, `not`, `delete unary -`, `0/1`
 
-Each row has at least one parity run in `parity/coverage.toml`, and each `covers` value of
-that file names a row of this list. `tests/parity_map.rs` checks both directions.
+Each row has at least one parity run in `parity/coverage.toml`. Every `covers` value of the form
+`<language>: <rule>` in that file names a rule of this list, and it sits on a run whose fixture
+uses that language. `tests/parity_map.rs` checks both directions. `covers` also holds flags,
+exit codes, and requirement ids. Those values name no rule of this list.
 
 ## Differences from the original
 

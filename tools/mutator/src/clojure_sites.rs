@@ -10,7 +10,6 @@ const CLOJURE_HEAD: &[(&str, &str, &str)] = &[
     ("+", "-", "arithmetic"),
     ("-", "+", "arithmetic"),
     ("*", "/", "arithmetic"),
-    ("/", "*", "arithmetic"),
     ("inc", "dec", "arithmetic"),
     ("dec", "inc", "arithmetic"),
     (">", ">=", "comparison"),
@@ -199,6 +198,14 @@ mod tests {
     #[test]
     fn mu_12_inc_is_mutated_to_dec() {
         assert_eq!(described("(inc x)"), ["inc->dec"]);
+    }
+
+    // MU-12: the original leaves the division head alone, so `*` goes to `/` but `/`
+    // stays as it is.
+    #[test]
+    fn mu_12_division_head_is_not_mutated() {
+        assert_eq!(described("(/ a b)"), [] as [String; 0]);
+        assert_eq!(described("(* a b)"), ["*->/"]);
     }
 
     // MU-12: categories come from the head table and the literal rules

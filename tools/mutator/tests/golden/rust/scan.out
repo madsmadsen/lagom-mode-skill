@@ -1,4 +1,4 @@
-Scan: 14 mutation sites in src/lib.rs
+Scan: 21 mutation sites in src/lib.rs
   src/lib.rs:5 && -> ||  [defn/gate]
   src/lib.rs:5 || -> &&  [defn/gate]
   src/lib.rs:5 delete !  [defn/gate]
@@ -13,3 +13,10 @@ Scan: 14 mutation sites in src/lib.rs
   src/lib.rs:27 && -> ||  [defn-/reset]
   src/lib.rs:27 delete !  [defn-/reset]
   src/lib.rs:27 false -> true  [defn-/reset]
+  src/lib.rs:32 < -> <=  [defn/below]
+  src/lib.rs:32 || -> &&  [defn/below]
+  src/lib.rs:32 <= -> <  [defn/below]
+  src/lib.rs:32 || -> &&  [defn/below]
+  src/lib.rs:32 > -> >=  [defn/below]
+  src/lib.rs:32 || -> &&  [defn/below]
+  src/lib.rs:32 >= -> >  [defn/below]

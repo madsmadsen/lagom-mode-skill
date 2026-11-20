@@ -75,20 +75,48 @@ fn mu_7_ac8_changed_selects_file_with_space_and_non_ascii_name() {
 }
 
 // MU-7 / MU-20: --changed outside a Git repository exits with the code of Git, which is 128,
-// and prints Git's message.
+// and prints Git's message. `GIT_CEILING_DIRECTORIES` stops git from finding a work tree above
+// the temp dir, so the test does not depend on where TMPDIR lies.
 #[test]
 fn mu_7_mu_20_changed_outside_git_repo_exits_with_git_code_128() {
     let dir = tempfile::tempdir().expect("tempdir");
     write(dir.path(), "src/a.py", SRC);
+    let ceiling = dir.path().to_string_lossy().into_owned();
     let out = run_env(
         dir.path(),
         &["--changed", "--scan", "--no-coverage"],
-        &[("LC_ALL", "C")],
+        &[("LC_ALL", "C"), ("GIT_CEILING_DIRECTORIES", &ceiling)],
     );
     assert_eq!(out.code, 128, "{}", out.stdout);
     assert!(
         out.stderr.contains("not a git repository"),
         "{}",
         out.stderr
+    );
+}
+
+// MU-20: when Git cannot start at all, for example when `git` is not on PATH, the port exits
+// 1, which is not a code of Git, and prints the error of the system on stderr.
+#[test]
+fn mu_20_a_git_that_cannot_start_exits_one_and_prints_the_system_error() {
+    let dir = project();
+    write(dir.path(), "src/a.py", SRC);
+    let out = run_env(
+        dir.path(),
+        &["--changed", "--scan", "--no-coverage"],
+        &[("PATH", "/nonexistent-mutator-bin")],
+    );
+    assert_eq!(out.code, 1, "stderr: {}", out.stderr);
+    assert!(
+        out.stderr.contains("No such file or directory")
+            || out.stderr.contains("not found")
+            || out.stderr.contains("os error 2"),
+        "stderr names no system error: {}",
+        out.stderr
+    );
+    assert!(
+        out.stdout.is_empty(),
+        "a failing Git still printed a selection: {}",
+        out.stdout
     );
 }

@@ -10,8 +10,9 @@
 #                difference this run shows. The run prints DIFF-ALLOWED for a
 #                FAIL only when Mads Madsen approved every id, and only for a
 #                stdout or snapshot difference (AC-1, MU-PB-6).
-#   covers       the flags, rule rows of README.md, PRD ids (MU-*, AC-*), and exit
-#                codes this run exercises
+#   covers       the flags, the rule rows of README.md as `<language>: <rule>`, PRD ids
+#                (MU-*, AC-*), and exit codes this run exercises. Only the values of the
+#                form `<language>: <rule>` name a rule row.
 #
 # Mutating runs get `--max-workers 2` unless args has -h/--help/--scan/--max-workers,
 # or expect_exit is 1 (usage errors).
@@ -265,10 +266,11 @@ args = ["--no-coverage", "--test-command", "sh check.sh"]
 expect_exit = 3
 covers = [
   "MU-5", "MU-8", "MU-13", "exit 3",
-  "clojure: arithmetic heads", "clojure: comparison heads", "clojure: =/not=",
-  "clojure: if/if-not", "clojure: when/when-not", "clojure: and/or",
-  "clojure: seq pairs", "clojure: predicate pairs", "clojure: coercion pairs",
-  "clojure: true/false", "clojure: 0/1",
+  "clojure: +/-", "clojure: * to /", "clojure: inc/dec", "clojure: comparisons",
+  "clojure: =/not=", "clojure: if/if-not", "clojure: when/when-not",
+  "clojure: and/or", "clojure: seq pairs", "clojure: predicate pairs",
+  "clojure: coercion pairs", "clojure: true/false", "clojure: 0/1",
+  "clojure: min/max",
 ]
 
 [[run]]
@@ -289,8 +291,8 @@ args = ["--no-coverage", "--test-command", "sh check.sh"]
 expect_exit = 3
 covers = [
   "MU-5", "MU-8", "MU-13", "exit 3",
-  "go: +/-", "go: * -> /", "go: comparisons", "go: ==/!=", "go: true/false",
-  "go: &&/||", "go: 0/1",
+  "go: +/-", "go: * to /", "go: comparisons", "go: ==/!=", "go: true/false",
+  "go: &&/||", "go: 0/1", "go: delete !", "go: delete unary -",
 ]
 
 [[run]]
@@ -300,10 +302,11 @@ args = ["--no-coverage", "--test-command", "sh check.sh"]
 expect_exit = 3
 covers = [
   "MU-5", "MU-8", "MU-13", "exit 3",
-  "typescript: +/-", "typescript: */", "typescript: >/>=", "typescript: &&/||",
-  "typescript: ===/!==", "typescript: ??->||", "typescript: ?.->.",
+  "typescript: true/false", "typescript: ==/!=", "typescript: </<=",
+  "typescript: >/>=", "typescript: +/-", "typescript: */", "typescript: &&/||",
+  "typescript: delete !", "typescript: delete unary -", "typescript: 0/1",
+  "typescript: ===/!==", "typescript: ?? to ||", "typescript: ?. to .",
   "typescript: call drops ?.", "typescript: index drops ?.",
-  "typescript: delete !", "typescript: true/false", "typescript: 0/1",
 ]
 
 [[run]]
@@ -313,7 +316,9 @@ args = ["--no-coverage", "--test-command", "sh check.sh"]
 expect_exit = 3
 covers = [
   "MU-5", "MU-8", "MU-13", "exit 3",
-  "rust: &&/||", "rust: delete !", "rust: delete unary -", "rust: 0/1",
+  "rust: true/false", "rust: ==/!=", "rust: </<=", "rust: >/>=", "rust: +/-",
+  "rust: */", "rust: &&/||", "rust: delete !", "rust: delete unary -",
+  "rust: 0/1",
 ]
 
 [[run]]
@@ -323,7 +328,7 @@ args = ["--no-coverage", "--test-command", "sh check.sh"]
 expect_exit = 3
 covers = [
   "MU-5", "MU-8", "MU-13", "exit 3",
-  "python: and/or", "python: not", "python: True/False", "python: ==/!=",
-  "python: comparisons", "python: +/-", "python: * -> /", "python: 0/1",
-  "python: unary -",
+  "python: True/False", "python: ==/!=", "python: </<=", "python: >/>=",
+  "python: +/-", "python: */", "python: and/or", "python: not",
+  "python: delete unary -", "python: 0/1",
 ]

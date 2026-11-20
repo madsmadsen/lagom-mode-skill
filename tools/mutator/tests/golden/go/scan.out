@@ -1,4 +1,4 @@
-Scan: 16 mutation sites in demo.go
+Scan: 18 mutation sites in demo.go
   demo.go:14 < -> <=  [defn/Bump]
   demo.go:14 0 -> 1  [defn/Bump]
   demo.go:15 * -> /  [defn/Bump]
@@ -15,3 +15,5 @@ Scan: 16 mutation sites in demo.go
   demo.go:27 0 -> 1  [defn-/hidden]
   demo.go:27 > -> >=  [defn-/hidden]
   demo.go:27 1 -> 0  [defn-/hidden]
+  demo.go:32 delete !  [defn-/notAndNegative]
+  demo.go:33 delete -  [defn-/notAndNegative]

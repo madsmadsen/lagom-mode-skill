@@ -107,14 +107,26 @@ fn mu_pb_3_every_fix_block_has_the_required_keys() {
 }
 
 /// The path of a test file that a fix `fixture` value names in place of a parity fixture:
-/// the part before the ` (note)`. `None` when the value names a parity fixture directory.
+/// the part before the ` (note)`. `None` when the value does not name a test file.
 fn test_file_of(value: &str) -> Option<&str> {
     let path = value.split_once(" (").map_or(value, |(before, _)| before);
     path.starts_with("tests/").then_some(path)
 }
 
-/// The fixture problems of a fixes.toml text: a test file that a `fixture` value names must
-/// exist below `root`, and it must hold the fn of the `test` value. One message per problem.
+/// Whether the fn `name` is declared in `source` as `fn name(`, on a line that is not a
+/// comment. A comment or a helper that a test calls does not count as the test.
+fn declares_fn(source: &str, name: &str) -> bool {
+    let wanted = format!("fn {name}(");
+    source.lines().any(|line| {
+        let code = line.split("//").next().unwrap_or_default();
+        code.contains(&wanted)
+    })
+}
+
+/// The fixture problems of a fixes.toml text. A `fixture` value is a parity fixture
+/// directory below `parity/` or a test file below `tests/`, and it must exist. A test file
+/// must hold the fn that the `test` value names, and that value must name the same file. A
+/// `test` value without `::` is a problem. One message per problem (MU-PB-3).
 fn fixture_problems(text: &str, root: &Path) -> Vec<String> {
     let mut problems: Vec<String> = Vec::new();
     for block in fix_blocks(text) {
@@ -122,27 +134,43 @@ fn fixture_problems(text: &str, root: &Path) -> Vec<String> {
             problems.push(format!("[[fix]] {:?} has no fixture", block.keys));
             continue;
         };
-        let Some(path) = test_file_of(value) else {
+        let file = value.split_once(" (").map_or(value, |(before, _)| before);
+        let Some(test) = block.test.as_deref() else {
+            problems.push(format!("[[fix]] {:?} has no test", block.keys));
             continue;
         };
-        let Ok(source) = fs::read_to_string(root.join(path)) else {
-            problems.push(format!("fixture {path} of {:?} does not exist", block.keys));
+        let Some((test_file, name)) = test.split_once("::") else {
+            problems.push(format!("test {test} of {:?} is not FILE::FN", block.keys));
             continue;
         };
-        let name = block.test.as_deref().and_then(|test| test.split_once("::"));
-        if let Some((_, name)) = name
-            && !source.contains(&format!("fn {name}("))
-        {
-            problems.push(format!("fixture {path} has no fn {name}("));
+        if let Some(path) = test_file_of(value) {
+            if test_file != path {
+                problems.push(format!(
+                    "fixture {path} of {:?} is not the file of test {test}",
+                    block.keys
+                ));
+            }
+            let Ok(source) = fs::read_to_string(root.join(path)) else {
+                problems.push(format!("fixture {path} of {:?} does not exist", block.keys));
+                continue;
+            };
+            if !declares_fn(&source, name) {
+                problems.push(format!("fixture {path} has no fn {name}("));
+            }
+        } else if !root.join("parity").join(file).is_dir() {
+            problems.push(format!(
+                "fixture {file} of {:?} is neither a parity fixture directory nor a test file",
+                block.keys
+            ));
         }
     }
     problems
 }
 
-/// MU-PB-3, MU-PB-4: a fix that names a test file in place of a parity fixture names a file
-/// that exists and that holds the fn of its `test` value. The same check on a bad text fails.
+/// MU-PB-3, MU-PB-4: a fix names a parity fixture directory, or a test file that exists and
+/// that holds the fn of its `test` value. The same check on a bad text fails.
 #[test]
-fn mu_pb_3_a_fixture_that_names_a_test_file_exists() {
+fn mu_pb_3_a_fixture_names_an_existing_fixture_or_test_file() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let text = parity_file("fixes.toml");
     assert_eq!(fixture_problems(&text, &root), Vec::<String>::new());
@@ -153,19 +181,54 @@ fn mu_pb_3_a_fixture_that_names_a_test_file_exists() {
         .count();
     assert!(named > 0, "no fix names a test file as its fixture");
 
-    // The check is not vacuous: a missing file, and a file without the named fn, each fail.
-    let missing = "[[fix]]\nid = \"x\"\nfixture = \"tests/gone.rs (inline)\"\n\
-                   test = \"tests/memory_limit.rs::mu_25_ac17_a_bad_value_exits_one\"\n";
+    // The check is not vacuous: a missing file, a file without the named fn, a fixture that
+    // is neither, a test value without `::`, and a fixture of another file all fail.
+    let cases = [
+        (
+            "[[fix]]\nid = \"x\"\nfixture = \"tests/gone.rs (inline)\"\n\
+             test = \"tests/gone.rs::mu_25_ac17_a_bad_value_exits_one\"\n",
+            "fixture tests/gone.rs of [\"id\", \"fixture\", \"test\"] does not exist",
+        ),
+        (
+            "[[fix]]\nid = \"x\"\nfixture = \"tests/memory_limit.rs (inline)\"\n\
+             test = \"tests/memory_limit.rs::mu_25_no_such_fn\"\n",
+            "fixture tests/memory_limit.rs has no fn mu_25_no_such_fn(",
+        ),
+        (
+            "[[fix]]\nid = \"x\"\nfixture = \"fixtures/nope\"\n\
+             test = \"tests/memory_limit.rs::mu_25_ac17_a_bad_value_exits_one\"\n",
+            "fixture fixtures/nope of [\"id\", \"fixture\", \"test\"] is neither a parity \
+             fixture directory nor a test file",
+        ),
+        (
+            "[[fix]]\nid = \"x\"\nfixture = \"tests/memory_limit.rs (inline)\"\n\
+             test = \"mu_25_ac17_a_bad_value_exits_one\"\n",
+            "test mu_25_ac17_a_bad_value_exits_one of [\"id\", \"fixture\", \"test\"] is not \
+             FILE::FN",
+        ),
+        (
+            "[[fix]]\nid = \"x\"\nfixture = \"tests/memory_limit.rs (inline)\"\n\
+             test = \"tests/mu21_second_run.rs::mu_25_ac17_a_bad_value_exits_one\"\n",
+            "fixture tests/memory_limit.rs of [\"id\", \"fixture\", \"test\"] is not the file \
+             of test tests/mu21_second_run.rs::mu_25_ac17_a_bad_value_exits_one",
+        ),
+    ];
+    for (bad, want) in cases {
+        assert_eq!(fixture_problems(bad, &root), [want.to_string()], "{bad}");
+    }
+
+    // A `fn name(` inside a comment is not the test.
+    let commented = "[[fix]]\nid = \"x\"\nfixture = \"tests/memory_limit.rs (inline)\"\n\
+                     test = \"tests/memory_limit.rs::mu_25_commented\"\n";
     assert_eq!(
-        fixture_problems(missing, &root),
-        ["fixture tests/gone.rs of [\"id\", \"fixture\", \"test\"] does not exist".to_string()]
+        fixture_problems(commented, &root),
+        ["fixture tests/memory_limit.rs has no fn mu_25_commented(".to_string()]
     );
-    let no_fn = "[[fix]]\nid = \"x\"\nfixture = \"tests/memory_limit.rs (inline)\"\n\
-                 test = \"tests/memory_limit.rs::mu_25_no_such_fn\"\n";
-    assert_eq!(
-        fixture_problems(no_fn, &root),
-        ["fixture tests/memory_limit.rs has no fn mu_25_no_such_fn(".to_string()]
-    );
+    assert!(!declares_fn(
+        "// fn mu_25_commented() is not here\nfn other() {}\n",
+        "mu_25_commented"
+    ));
+    assert!(declares_fn("fn real() {}\n", "real"));
 }
 
 /// MU-PB-1: upstream.toml pins a full 40-character hex commit for the original and for crapper.

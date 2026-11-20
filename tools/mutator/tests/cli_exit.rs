@@ -291,10 +291,10 @@ fn mu_6_project_below_a_tests_directory_selects_no_source_file() {
     );
 }
 
-/// MU-6: a directory named `tests` that the user names as the root is walked, and each file
-/// in it is dropped as a test file, with the same message and exit 0.
+/// MU-6: a directory named `tests` that the user names as the root selects no source file,
+/// prints the message, and exits 0. The name alone is what the port observes.
 #[test]
-fn mu_6_named_tests_directory_is_walked_and_each_file_is_dropped() {
+fn mu_6_a_named_tests_directory_selects_no_source_file() {
     let dir = tempfile::tempdir().expect("temp dir");
     write(
         &dir.path().join("tests"),

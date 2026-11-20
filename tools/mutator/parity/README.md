@@ -5,10 +5,14 @@ every entry in `coverage.toml` on both, then compares the results.
 
 ## Run
 
-From the repository root, with the original's venv (it provides the original
-mutator and its EDN reader):
+From the crate directory (`tools/mutator`), with a venv that installs the
+original at the pinned commit. The variable `ORIGINAL_PYTHON` is required, and
+there is no default path. Run `run.py` with that same interpreter, because the
+EDN reader of the original comes from the interpreter that runs the file:
 
-    /tmp/mu/venv/bin/python tools/mutator/parity/run.py
+    ORIGINAL_PYTHON=/tmp/mutator-orig/bin/python \
+    MUTATOR_BIN=target/release/mutator \
+    /tmp/mutator-orig/bin/python parity/run.py
 
 Options:
 
@@ -18,21 +22,35 @@ Options:
 
 Environment:
 
-- `ORIGINAL_PYTHON`: interpreter for the original (default `/tmp/mu/venv/bin/python`).
+- `ORIGINAL_PYTHON`: interpreter for the original. Required, with no default.
 - `MUTATOR_BIN`: the port binary (default `tools/mutator/target/debug/mutator`).
 
-## Pinned sources
+## The venv of the original
 
 `upstream.toml` pins the original mutator (`a5a0cb8`) and crapper (`6fd92c4`).
-The venv in `/tmp/mu/venv` is built from those checkouts. The runner clones
-nothing.
+The original imports crapper from the directory next to its own project, so the
+venv needs that layout. These commands build it, without a checkout in this
+repository:
 
-Before the first run, the runner checks that the original in the venv is at the
-commit of `upstream.toml` (MU-PB-1, MU-PB-2). It asks the venv where its
-`mutator` package lives and runs `git rev-parse HEAD` in that directory. When
-the package is a copy in `site-packages` with no checkout, it reads the commit
-that pip records in `direct_url.json` instead. A commit that it cannot read, and
-a commit other than the pin, stop the runner with a message that names both.
+    python3.12 -m venv /tmp/mutator-orig
+    /tmp/mutator-orig/bin/pip install \
+        "git+https://github.com/unclebob/mutator@a5a0cb803b66e0cdb8bf471b3b08af701d424a41"
+    git clone https://github.com/unclebob/crapper /tmp/crapper-orig
+    git -C /tmp/crapper-orig checkout 6fd92c4c9bcc56efb64a2f8743d5a2993bcfd42d
+    ln -s /tmp/crapper-orig /tmp/mutator-orig/lib/crapper
+
+The original looks for crapper at `<venv>/lib/../crapper/src`, which that link
+provides, and at an installed `crapper` package. The runner clones nothing.
+Remove the venv and the clone when the run is done.
+
+Before the first run, the runner checks the two commits (MU-PB-1, MU-PB-2). It
+asks the venv where each package lives, then requires a clean checkout whose
+toplevel holds the package and reads its `HEAD`. When the package is a
+`site-packages` copy with no checkout, it reads the commit that pip records in
+`direct_url.json` instead. A copy elsewhere is not a pip install, so its
+metadata does not count. A dirty checkout, a checkout that does not hold the
+package, a commit that it cannot read, and a commit other than the pin all stop
+the runner before any run, with a message that names the pin.
 
 ## What is compared
 
@@ -66,8 +84,10 @@ fix changes on purpose: a fix that changes the snapshot of a run (for example
 MU-23, MU-24, or MU-26) excuses that snapshot difference too.
 
 The runner compares fix ids, not fixture paths. One approval therefore
-excuses only the runs that name it. `parity/test_status.py` tests this rule
-with fake ids, and it checks that `fixes.toml` has no approved entry.
+excuses only the runs that name it. The metrics excuse is exercised by unit rows
+of `parity/test_status.py` only: no parity run of `coverage.toml` names a fix for
+a snapshot difference today. `parity/test_status.py` tests the rule with fake
+ids, and it pins the eight ids that Mads Madsen approved on 2026-11-20.
 When Mads Madsen approves an entry on purpose, change that test to name the
 approved id. Do not delete it. `parity/test_pin.py` tests the pin check with stub
 processes and no network. Both files need Python 3.11 or later, and no original.

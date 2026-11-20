@@ -3,9 +3,15 @@
 # SPDX-License-Identifier: MIT
 """Parity runner: the original mutator (Python) against the Rust port.
 
-Run from the repository root:
+Run from the crate directory, with the Python that installs the original at the
+pinned commit:
 
-    /tmp/mu/venv/bin/python tools/mutator/parity/run.py
+    ORIGINAL_PYTHON=<venv>/bin/python MUTATOR_BIN=target/release/mutator \\
+        <venv>/bin/python parity/run.py
+
+`ORIGINAL_PYTHON` is required and has no default. Run run.py with that same
+interpreter, because the EDN reader of the original comes from the interpreter
+that runs this file. `parity/README.md` gives the venv setup.
 
 Each [[run]] in coverage.toml runs twice, in two copies of its fixture: once
 with the original (`python -m mutator` from the venv) and once with the port
@@ -32,12 +38,15 @@ DIFF-ALLOWED and does not set exit 1 (AC-1, MU-PB-6). An approval excuses a
 stdout difference and a snapshot difference (`metrics ...`) of its run, and
 nothing else.
 
-Before the first run, the runner reads the commit of the original that
-upstream.toml pins (MU-PB-1, MU-PB-2). It reads the commit from the checkout
-that the venv installs the package from (`git rev-parse HEAD` in the package
-directory), else from the commit that pip records in the `direct_url.json` of
-the package. When neither gives a commit, or the commit is not the pin, the
-runner stops with a message that names both. Nothing is cloned.
+Before the first run, the runner reads the commits that upstream.toml pins
+(MU-PB-1, MU-PB-2): the original, and the crapper checkout that the original
+imports. It reads each commit from the clean checkout that the venv installs
+the package from (`git rev-parse --show-toplevel`, `git status --porcelain`, and
+`git rev-parse HEAD` in the package directory), else from the commit that pip
+records in the `direct_url.json` of a site-packages install. A dirty checkout,
+a checkout that does not hold the package, and a commit that it cannot read all
+stop the runner before any run with a message that names the pin. Nothing is
+cloned.
 """
 
 from __future__ import annotations
@@ -60,7 +69,6 @@ COVERAGE_TOML = PARITY / "coverage.toml"
 FIXES_TOML = PARITY / "fixes.toml"
 UPSTREAM_TOML = PARITY / "upstream.toml"
 ORIGINAL_PACKAGE = "mutator"
-ORIGINAL_CMD = [os.environ.get("ORIGINAL_PYTHON", "/tmp/mu/venv/bin/python"), "-m", "mutator"]
 PORT_CMD = [os.environ.get("MUTATOR_BIN", str(PARITY.parent / "target" / "debug" / "mutator"))]
 WORKER_CAP = ["--max-workers", "2"]
 # Runs with these flags keep their own worker setting, or print help, or only scan.
@@ -87,12 +95,40 @@ class Outcome:
     status: list[str] = field(default_factory=list)
 
 
-def edn_reader():
+def original_python() -> str:
+    """The interpreter of the venv that installs the original. There is no default, because
+    a path that the host does not have only moves the error to the first run."""
+    path = os.environ.get("ORIGINAL_PYTHON", "")
+    if not path:
+        sys.exit("run.py: set ORIGINAL_PYTHON to the Python of the venv that installs the "
+                 "original at the pinned commit (parity/README.md).")
+    return path
+
+
+def original_cmd() -> list[str]:
+    """The command that runs the original, with the interpreter of ORIGINAL_PYTHON."""
+    return [original_python(), "-m", "mutator"]
+
+
+def same_interpreter(python: str, run=subprocess.run) -> bool:
+    """Whether `python` is the interpreter that runs this file. The EDN reader comes from
+    this interpreter, so the two must be the same Python (MU-PB-1)."""
+    there = quiet([python, "-c", "import sys; print(sys.executable)"], run)
+    return bool(there) and Path(there).resolve() == Path(sys.executable).resolve()
+
+
+def edn_reader(python: str | None = None, run=subprocess.run):
+    """The EDN reader of the original's package. It is imported from the interpreter that
+    runs this file, so `python` must name that same interpreter."""
+    if python and not same_interpreter(python, run):
+        sys.exit(f"run.py: this file runs on {sys.executable}, but ORIGINAL_PYTHON is "
+                 f"{python}. The EDN reader comes from the interpreter that runs this "
+                 "file, so run run.py with the interpreter of the original.")
     try:
         from mutator.edn import loads
     except ImportError as exc:
         sys.exit(f"run.py: cannot import the original's mutator.edn ({exc}); "
-                 "run with /tmp/mu/venv/bin/python")
+                 "run run.py with the ORIGINAL_PYTHON interpreter")
     return loads
 
 
@@ -103,22 +139,26 @@ def approved_fix_ids(path: Path = FIXES_TOML) -> set[str]:
             if fix.get("approved") is True and "id" in fix}
 
 
-def pinned_commit(path: Path = UPSTREAM_TOML) -> str:
-    """The commit of the original in upstream.toml (MU-PB-1). A pin that is not a full
-    commit stops the runner, because it cannot name the original."""
+def pinned_commit(path: Path = UPSTREAM_TOML, section: str = "original") -> str:
+    """The commit that upstream.toml pins for `section` (MU-PB-1). A pin that is not a
+    full commit stops the runner, because it cannot name the source."""
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    commit = data.get("original", {}).get("commit", "")
+    commit = data.get(section, {}).get("commit", "")
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
-        raise RuntimeError(f"run.py: {path.name} pins no full commit for the original: "
+        raise RuntimeError(f"run.py: {path.name} pins no full commit for the {section}: "
                            f"{commit!r}")
     return commit
 
 
-# The venv answers two questions: where its `mutator` package lives, and which commit
-# pip recorded for it in direct_url.json.
+# The venv answers three questions: where its `mutator` package lives, where the crapper
+# package that the original imports lives, and which commit pip recorded for it in
+# direct_url.json.
 PACKAGE_PATH = "import mutator; print(getattr(mutator, '__file__', '') or '')"
+CRAPPER_PATH = ("import mutator.crapper_link as link; "
+                "print(getattr(link.ensure_crapper(), '__file__', '') or '')")
 PIP_COMMIT = ("import importlib.metadata as m; "
-              "print(m.distribution('mutator').read_text('direct_url.json'))")
+              "print(m.distribution('{name}').read_text('direct_url.json'))")
+FULL_COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 def quiet(cmd: list[str], run) -> str:
@@ -131,37 +171,87 @@ def quiet(cmd: list[str], run) -> str:
     return done.stdout.strip() if done.returncode == 0 else ""
 
 
-def original_commit(python: str, run=subprocess.run) -> str:
-    """The commit of the original in the venv: the checkout that it installs from, else
-    the commit that pip records in direct_url.json. "" when neither gives a commit."""
-    package = quiet([python, "-c", PACKAGE_PATH], run)
-    if package:
-        commit = quiet(["git", "-C", str(Path(package).parent), "rev-parse", "HEAD"], run)
-        if re.fullmatch(r"[0-9a-f]{40}", commit):
-            return commit
+def package_location(python: str, package: str, run) -> str:
+    """The `__file__` of an installed package, or "" when the interpreter cannot import it.
+    The crapper question goes through the original's own import, which is the file that the
+    original runs."""
+    expr = PACKAGE_PATH if package == ORIGINAL_PACKAGE else CRAPPER_PATH
+    return quiet([python, "-c", expr], run)
+
+
+def checkout_commit(path: str, run) -> str:
+    """The HEAD of the git checkout that holds the package at `path`. "" when the directory
+    is in no checkout, when the checkout is not clean, when the checkout does not hold the
+    package, or when HEAD is not a full commit. A dirty tree is not the pin, and a checkout
+    that does not hold the package belongs to some other project (MU-PB-1)."""
+    directory = Path(path).parent
+    toplevel = quiet(["git", "-C", str(directory), "rev-parse", "--show-toplevel"], run)
+    if not toplevel or quiet(["git", "-C", toplevel, "status", "--porcelain"], run):
+        return ""
     try:
-        found = str(json.loads(quiet([python, "-c", PIP_COMMIT], run))
+        directory.resolve().relative_to(Path(toplevel).resolve())
+    except ValueError:
+        return ""
+    commit = quiet(["git", "-C", str(directory), "rev-parse", "HEAD"], run)
+    return commit if FULL_COMMIT.fullmatch(commit) else ""
+
+
+def pip_commit(python: str, package: str, path: str, run) -> str:
+    """The commit that pip records in direct_url.json, for an install into site-packages.
+    A copy elsewhere is not a pip install, so its metadata is not trusted (MU-PB-1)."""
+    if "site-packages" not in path:
+        return ""
+    try:
+        found = str(json.loads(quiet([python, "-c", PIP_COMMIT.format(name=package)], run))
                     ["vcs_info"]["commit_id"])
     except (ValueError, KeyError, TypeError):
         return ""
-    return found if re.fullmatch(r"[0-9a-f]{40}", found) else ""
+    return found if FULL_COMMIT.fullmatch(found) else ""
+
+
+def package_commit(python: str, package: str, run=subprocess.run) -> str:
+    """The commit of an installed package: the clean checkout that holds it, else the commit
+    that pip records for a site-packages install. "" when neither gives a commit."""
+    path = package_location(python, package, run)
+    if not path:
+        return ""
+    return checkout_commit(path, run) or pip_commit(python, package, path, run)
+
+
+def original_commit(python: str, run=subprocess.run) -> str:
+    """The commit of the original in the venv: the clean checkout that it installs from,
+    else the commit that pip records in direct_url.json. "" when neither gives a commit."""
+    return package_commit(python, ORIGINAL_PACKAGE, run)
+
+
+def crapper_commit(python: str, run=subprocess.run) -> str:
+    """The commit of the crapper checkout that the original imports."""
+    return package_commit(python, "crapper", run)
+
+
+def pin_problem(commit: str, pin: str, what: str, python: str) -> str:
+    """The stop message for a package that is not at its pin, or "" when it is."""
+    if commit == pin:
+        return ""
+    if not commit:
+        return (f"run.py: cannot read the commit of {what} in {python}. upstream.toml pins "
+                f"{pin}. Point ORIGINAL_PYTHON at a clean checkout, or a site-packages "
+                "install, of the pinned commit.")
+    return (f"run.py: {what} in {python} is at {commit}, but upstream.toml pins {pin}. "
+            "Install the pinned commit, or change the pin on purpose (MU-PB-1, MU-PB-2).")
 
 
 def check_pin(python: str, path: Path = UPSTREAM_TOML, run=subprocess.run) -> str:
-    """MU-PB-2: the original in the venv must be at the commit that upstream.toml pins.
-    A commit that cannot be read, and another commit, stop the runner."""
-    pin = pinned_commit(path)
-    commit = original_commit(python, run)
-    if not commit:
-        raise RuntimeError(
-            f"run.py: cannot read the commit of the original in {python}. "
-            f"upstream.toml pins {pin}. Point ORIGINAL_PYTHON at a venv that installs "
-            "the original at that commit.")
-    if commit != pin:
-        raise RuntimeError(
-            f"run.py: the original in {python} is at {commit}, but upstream.toml pins "
-            f"{pin}. Install the pinned commit, or change the pin on purpose (MU-PB-1, "
-            "MU-PB-2).")
+    """MU-PB-2: the original, and the crapper checkout that it imports, must be the commits
+    that upstream.toml pins. A commit that cannot be read, a dirty checkout, and another
+    commit stop the runner before any run."""
+    pin = pinned_commit(path, "original")
+    for what, package, wanted in (("the original", ORIGINAL_PACKAGE, pin),
+                                  ("the crapper checkout that the original imports",
+                                   "crapper", pinned_commit(path, "crapper"))):
+        problem = pin_problem(package_commit(python, package, run), wanted, what, python)
+        if problem:
+            raise RuntimeError(problem)
     return pin
 
 
@@ -318,7 +408,7 @@ def show_details(sides: dict[str, Outcome]) -> list[str]:
     return rows
 
 
-def run_entry(entry: dict, loads, approved: set[str], original_only: bool,
+def run_entry(entry: dict, cmd: list[str], loads, approved: set[str], original_only: bool,
               show: bool) -> tuple[str, list[str]]:
     name = entry["name"]
     fixture = PARITY / entry["fixture"]
@@ -327,7 +417,7 @@ def run_entry(entry: dict, loads, approved: set[str], original_only: bool,
     try:
         with tempfile.TemporaryDirectory(prefix=f"parity-{name}-") as tmp:
             parent = Path(tmp)
-            sides["original"] = run_side("original", ORIGINAL_CMD, entry, fixture, parent, loads)
+            sides["original"] = run_side("original", cmd, entry, fixture, parent, loads)
             if not original_only:
                 sides["port"] = run_side("port", PORT_CMD, entry, fixture, parent, loads)
             problems = problems_for(entry, sides)
@@ -342,38 +432,57 @@ def run_entry(entry: dict, loads, approved: set[str], original_only: bool,
     return f"{status:<12} {name:<36} {summary}{tail}", details
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Compare the original mutator with the port.")
-    parser.add_argument("--original-only", action="store_true",
-                        help="run only the original side")
-    parser.add_argument("--only", action="append", default=[], metavar="NAME",
-                        help="run only this entry (repeatable)")
-    parser.add_argument("--show", action="store_true",
-                        help="print unified diffs of normalized stdout and stderr where they differ")
-    opts = parser.parse_args(argv)
+def entry_problems(opts, entries: list[dict]) -> str:
+    """The message for an `--only` name that coverage.toml does not hold, or ""."""
+    known = {entry["name"] for entry in entries}
+    missing = sorted(set(opts.only) - known)
+    return f"run.py: no run named {', '.join(missing)} in coverage.toml" if missing else ""
 
-    try:
-        check_pin(ORIGINAL_CMD[0])
-    except RuntimeError as exc:
-        sys.exit(str(exc))
-    loads = edn_reader()
-    approved = approved_fix_ids()
-    entries = tomllib.loads(COVERAGE_TOML.read_text(encoding="utf-8")).get("run", [])
-    if opts.only:
-        known = {entry["name"] for entry in entries}
-        missing = sorted(set(opts.only) - known)
-        if missing:
-            sys.exit(f"run.py: no run named {', '.join(missing)} in coverage.toml")
-        entries = [entry for entry in entries if entry["name"] in opts.only]
 
+def run_all(entries: list[dict], cmd: list[str], loads, approved: set[str],
+            original_only: bool, show: bool) -> int:
+    """Runs each entry and returns 1 when any run FAILs."""
     failed = 0
     for entry in entries:
-        line, details = run_entry(entry, loads, approved, opts.original_only, opts.show)
+        line, details = run_entry(entry, cmd, loads, approved, original_only, show)
         print(line, flush=True)
         for row in details:
             print(row)
         failed += line.startswith("FAIL")
     return 1 if failed else 0
+
+
+def parser() -> argparse.ArgumentParser:
+    found = argparse.ArgumentParser(description="Compare the original mutator with the port.")
+    found.add_argument("--original-only", action="store_true",
+                       help="run only the original side")
+    found.add_argument("--only", action="append", default=[], metavar="NAME",
+                       help="run only this entry (repeatable)")
+    found.add_argument("--show", action="store_true",
+                       help="print unified diffs of normalized stdout and stderr where they differ")
+    return found
+
+
+def main(argv: list[str] | None = None, run=subprocess.run) -> int:
+    """Runs every selected entry after the pin check. The pin check comes first, so a venv
+    that is not the pin stops the runner before any tool runs (MU-PB-1, MU-PB-2)."""
+    opts = parser().parse_args(argv)
+    python = original_python()
+    try:
+        check_pin(python, run=run)
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    loads = edn_reader(python, run)
+    approved = approved_fix_ids()
+    entries = tomllib.loads(COVERAGE_TOML.read_text(encoding="utf-8")).get("run", [])
+    message = entry_problems(opts, entries)
+    if message:
+        print(message, file=sys.stderr)
+        return 1
+    if opts.only:
+        entries = [entry for entry in entries if entry["name"] in opts.only]
+    return run_all(entries, original_cmd(), loads, approved, opts.original_only, opts.show)
 
 
 if __name__ == "__main__":

@@ -249,8 +249,35 @@ fn set_lines(options: &mut Options, value: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Drops the underscores that Python allows between two digits. Python rejects an
+/// underscore at the start, at the end, and next to another underscore, so those keep
+/// the parse failing with the wording of Python.
+fn python_number_text(value: &str) -> Option<String> {
+    if !value.contains('_') {
+        return Some(value.to_string());
+    }
+    let bytes = value.as_bytes();
+    let mut text = String::with_capacity(value.len());
+    for (index, ch) in value.char_indices() {
+        if ch == '_' {
+            let before = index
+                .checked_sub(1)
+                .and_then(|before| bytes.get(before))
+                .is_some_and(u8::is_ascii_digit);
+            if !before || !bytes.get(index + 1).is_some_and(u8::is_ascii_digit) {
+                return None;
+            }
+        } else {
+            text.push(ch);
+        }
+    }
+    Some(text)
+}
+
 fn py_number<T: FromStr>(value: &str, message: fn(&str) -> String) -> Result<T, String> {
-    value.trim().parse::<T>().map_err(|_| message(value))
+    python_number_text(value.trim())
+        .and_then(|text| text.parse::<T>().ok())
+        .ok_or_else(|| message(value))
 }
 
 fn int_error(value: &str) -> String {
@@ -816,6 +843,39 @@ mod tests {
             assert!(options.message.starts_with(reason), "{value:?}");
         }
         assert_eq!(parse_args(&args(&["--max-memory-mb"])).exit_code, 1);
+    }
+
+    /// MU-2: each value that Python `int()` accepts is accepted, so `1_0`, `+5`, and ` 7 ` work.
+    #[test]
+    fn mu_2_number_values_accept_python_int_forms() {
+        let forms = [("1_0", 10), ("+5", 5), (" 7 ", 7), ("1_000", 1000)];
+        for (value, want) in forms {
+            let lines = parse_args(&args(&["--lines", value]));
+            assert_eq!(lines.exit_code, 0, "{value:?}: {}", lines.message);
+            assert_eq!(lines.lines, Some(LineSet::from([want])), "{value:?}");
+            let workers = parse_args(&args(&["--max-workers", value]));
+            assert_eq!(workers.max_workers, Some(want), "{value:?}");
+            let warning = parse_args(&args(&["--mutation-warning", value]));
+            assert_eq!(warning.mutation_warning, want, "{value:?}");
+            let memory = parse_args(&args(&["--max-memory-mb", value]));
+            assert_eq!(
+                memory.max_memory_mb,
+                u64::try_from(want).unwrap(),
+                "{value:?}"
+            );
+        }
+        let factors = [("1_0.5", 10.5), ("+5", 5.0), (" 7 ", 7.0)];
+        for (value, want) in factors {
+            let options = parse_args(&args(&["--timeout-factor", value]));
+            assert_eq!(options.timeout_factor, want, "{value:?}");
+        }
+        // A form that Python rejects is still rejected, with the wording of Python.
+        for value in ["1__0", "_1", "1_", "0x1f"] {
+            let options = parse_args(&args(&["--lines", value]));
+            assert_eq!(options.exit_code, 1, "{value:?}");
+            let expected = format!("invalid literal for int() with base 10: '{value}'");
+            assert!(options.message.starts_with(&expected), "{value:?}");
+        }
     }
 
     /// MU-2: the lines option parses positive numbers and drops duplicates.
