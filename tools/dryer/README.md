@@ -93,13 +93,17 @@ Options for the runner:
 - `--case NAME`: Run only this case. You can repeat this option.
 - `--original DIR`: Use this checkout of the original.
 - `--port BIN`: Use this `dryer` binary.
+- `--check-timing`: Check AC-10 as well. A case fails when the median of the port is not lower than the median of the original. An equal median fails. Run it on the named CI runner (Linux x86_64, Ubuntu 22.04), because a timing on another host does not prove AC-10.
+- `--timing-runs N`: Set the number of runs per side for the median. Default: 5, the count that DR-NFR-2 names.
 - `--record`: Write results to `parity/expected/<case>/`. Without `--case`, this removes the old results first. A case with a `fix` also records the port's own output in `parity/expected/<case>/port/`.
 
 `--record` rewrites `parity/expected/<case>/port/` from the current binary. A regression in a fix case becomes the expected output. The owner must review each `port/` diff before the commit.
 
 The runner runs each side five times and prints the median wall-clock time of each side (DR-NFR-2, AC-10). Run 1 gives the compared result. Runs 2 to 5 reuse the copy only for timing, and the runner removes `.metrics` before each of them. A timing run that exits unlike run 1 stops the runner, so a crashed run cannot lower the median. The error names the case, the side, and the stderr of the failed run. `--record` runs every case before it deletes `parity/expected/`, so a failed case keeps the old recordings.
 
-`parity/test_run_parity.py` tests `run_side`, `record`, and `check` with fake programs and stubs (DR-NFR-2). It covers the result of run 1, the median of 5 samples, the cleanup of `.metrics`, a side without a snapshot, a side that always exits 1, a timing run that crashes, the error text of that crash, and the `--record` delete. Run it from `tools/dryer/`:
+`--check-timing` checks AC-10. A case fails when the median of the port is not lower than the median of the original, and an equal median fails. `--timing-runs N` sets the count of runs per side. The default is 5, the count that DR-NFR-2 names. Run `--check-timing` on the named CI runner, which is Linux x86_64 on Ubuntu 22.04. A timing on another host does not prove AC-10.
+
+`parity/test_run_parity.py` tests `run_side`, `record`, and `check` with fake programs and stubs (DR-NFR-2, AC-10). It covers the result of run 1, the median of 5 samples, the cleanup of `.metrics`, a side without a snapshot, a side that always exits 1, a timing run that crashes, the error text of that crash, the `--record` delete, a faster port that passes `--check-timing`, a slower port that fails it, and the default and set count of runs. Run it from `tools/dryer/`:
 
 ```sh
 python3 -m unittest discover -s .

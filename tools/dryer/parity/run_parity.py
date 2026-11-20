@@ -9,7 +9,11 @@ Usage:
 
 Default mode runs the original and the port on each case and compares exit
 code, normalized stdout, and .metrics/dry.edn. Each side runs 5 times and the
-runner reports the median wall-clock time (DR-NFR-2, AC-10). --record writes
+runner reports the median wall-clock time (DR-NFR-2, AC-10). --check-timing
+also fails a case whose port median is not lower than its original median, and
+--timing-runs N sets the count of runs per side (default 5, the count that
+DR-NFR-2 names). Run --check-timing on the named CI runner (Linux x86_64,
+Ubuntu 22.04); a timing on any other host does not prove AC-10. --record writes
 parity/expected/<case>/ (exit_code, stdout, dry.edn if written). It runs every
 case before it deletes the old parity/expected/, so a failed case keeps the old
 recordings.
@@ -20,7 +24,7 @@ that case the runner compares the port with parity/expected/<case>/port/, which
 
 Each case copies fixtures/<fixture>/ into a fresh temp directory for each
 program, applies git_setup if set, and runs `<program> --root <copy> ARGS`
-with cwd set to the copy. Run 1 gives the compared result. Runs 2 to 5 reuse
+with cwd set to the copy. Run 1 gives the compared result. Runs 2 to N reuse
 that copy only to measure time, and the runner removes .metrics before each of
 them, so a stale snapshot can never pass a check. A timing run that exits
 unlike run 1 stops the runner (DR-NFR-2), and the error names the case, the
@@ -308,19 +312,32 @@ def median_seconds(samples):
     return statistics.median(samples)
 
 
+def positive_int(text):
+    """Argument type of --timing-runs: a whole number of runs, at least 2, so a median has
+    a middle sample that a single run cannot give."""
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"needs a whole number of at least 2 runs, got {text!r}")
+    if value < 2:
+        raise argparse.ArgumentTypeError(f"needs a whole number of at least 2 runs, got {text!r}")
+    return value
+
+
 # DR-NFR-2, AC-10: wall-clock time of one program on one copy, median of 5 runs.
 TIMED_RUNS = 5
 
 
-def run_side(prefix, root, args, env, label):
-    """Run one side 5 times. Run 1 gives the compared result. Runs 2 to 5 only measure time,
-    each after the old .metrics is gone, so no snapshot of an earlier run can pass a check.
-    A timing run must exit like run 1, and the error names the case, the side, and the
-    stderr of that run. seconds is the median of the 5 runs (DR-NFR-2, AC-10).
+def run_side(prefix, root, args, env, label, runs=TIMED_RUNS):
+    """Run one side `runs` times, 5 by default. Run 1 gives the compared result. Runs 2 to
+    the last only measure time, each after the old .metrics is gone, so no snapshot of an
+    earlier run can pass a check. A timing run must exit like run 1, and the error names
+    the case, the side, and the stderr of that run. seconds is the median of the runs
+    (DR-NFR-2, AC-10).
     """
     samples = []
     res = None
-    for index in range(TIMED_RUNS):
+    for index in range(runs):
         if index:
             shutil.rmtree(root / ".metrics", ignore_errors=True)
         start = time.perf_counter()
@@ -415,40 +432,55 @@ def record(cases, expected, run_one, replace):
     return 0
 
 
-def run_case(case, original_prefix, original_env, port_prefix):
+def run_case(case, original_prefix, original_env, port_prefix, runs=TIMED_RUNS):
     with tempfile.TemporaryDirectory(prefix="dryer-parity-") as tmp:
         tmp = Path(tmp)
         check_path(tmp)
         git_setup = case.get("git_setup")
         orig_proj = make_copy(case["fixture"], git_setup, tmp / "original")
         orig = run_side(original_prefix, orig_proj, case["args"], original_env,
-                        f"{case['name']} original")
+                        f"{case['name']} original", runs)
         if "Traceback" in orig.stderr:
             raise SystemExit(f"original crashed on {case['name']}:\n{orig.stderr}")
         if port_prefix is None:
             return orig, None
         port_proj = make_copy(case["fixture"], git_setup, tmp / "port")
-        port = run_side(port_prefix, port_proj, case["args"], None, f"{case['name']} port")
+        port = run_side(port_prefix, port_proj, case["args"], None,
+                        f"{case['name']} port", runs)
         return orig, port
 
 
-def check_case(name, case_fixes, orig, port):
+def check_timing(orig, port):
+    """AC-10 diff lines: empty when the median of the port is lower than the median of the
+    original, as DR-NFR-2 defines. An equal median fails, because AC-10 asks for lower."""
+    if port.seconds < orig.seconds:
+        return []
+    return [
+        f"timing: port median {port.seconds:.3f}s is not lower than "
+        f"original median {orig.seconds:.3f}s"
+    ]
+
+
+def check_case(name, case_fixes, orig, port, timing=False):
     """Diff lines and status of one case. A fix case compares the port with its recorded
-    output, and it must still differ from the original (DR-PB-3, DR-PB-6)."""
+    output, and it must still differ from the original (DR-PB-3, DR-PB-6). With timing,
+    the case also fails when the median of the port is not lower (AC-10)."""
     if not case_fixes:
         diffs = compare(orig, port)
+        diffs += check_timing(orig, port) if timing else []
         return diffs, judge(diffs, [], bool(diffs))
     expected = load_expected(port_expected(name))
     if expected is None:
         diffs = [f"no recorded parity/expected/{name}/port/"]
     else:
         diffs = compare(expected, port)
+    diffs += check_timing(orig, port) if timing else []
     return diffs, judge(diffs, case_fixes, bool(compare(orig, port)))
 
 
-def report_case(name, case_fixes, orig, port):
+def report_case(name, case_fixes, orig, port, timing=False):
     """Prints the verdict and the diff lines of one case, and returns its status."""
-    diffs, status = check_case(name, case_fixes, orig, port)
+    diffs, status = check_case(name, case_fixes, orig, port, timing)
     print(f"{status:<9}{name}  original={orig.seconds:.2f}s port={port.seconds:.2f}s")
     for line in diffs:
         print(f"    {line}")
@@ -458,13 +490,13 @@ def report_case(name, case_fixes, orig, port):
     return status
 
 
-def check(cases, fixes, run_one):
+def check(cases, fixes, run_one, timing=False):
     """Runs every case as a check, prints one line for each, and returns 1 when one fails."""
     counts = dict.fromkeys(("PASS", "ACCEPTED", "PENDING", "FAIL"), 0)
     for case in cases:
         name = case["name"]
         orig, port = run_one(case)
-        counts[report_case(name, fixes.get(name, []), orig, port)] += 1
+        counts[report_case(name, fixes.get(name, []), orig, port, timing)] += 1
     print(f"{len(cases)} case(s), {counts['FAIL']} failed, {counts['ACCEPTED']} accepted, "
           f"{counts['PENDING']} awaiting approval")
     return 1 if counts["FAIL"] else 0
@@ -479,6 +511,11 @@ def main(argv=None):
     parser.add_argument("--original", metavar="DIR",
                         help="original checkout (default: parity/.cache/dryer-original)")
     parser.add_argument("--port", metavar="BIN", help="port binary (default: target/)")
+    parser.add_argument("--check-timing", action="store_true",
+                        help="fail a case whose port median is not lower than its original median "
+                             "(DR-NFR-2, AC-10); run it on the named CI runner")
+    parser.add_argument("--timing-runs", type=positive_int, default=TIMED_RUNS, metavar="N",
+                        help=f"runs per side for the median (default {TIMED_RUNS}, as DR-NFR-2 says)")
     args = parser.parse_args(argv)
 
     pinned = load_toml(PARITY / "upstream.toml")
@@ -496,11 +533,11 @@ def main(argv=None):
         if wants_port and port_prefix is None:
             port_prefix = [str(port_binary(args.port))]
         return run_case(case, original_prefix, original_env,
-                        port_prefix if wants_port else None)
+                        port_prefix if wants_port else None, args.timing_runs)
 
     if args.record:
         return record(cases, EXPECTED, run_one, replace=not args.cases)
-    return check(cases, fixes, run_one)
+    return check(cases, fixes, run_one, args.check_timing)
 
 
 if __name__ == "__main__":

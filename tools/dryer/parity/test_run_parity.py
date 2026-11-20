@@ -11,12 +11,18 @@ run must also exit like run 1. Its error names the case, the side, and the
 stderr of that run. --record deletes parity/expected/ only after every case ran
 fine, so a failed case keeps the old recordings.
 
+AC-10: --check-timing turns the time into a verdict. A case fails when the
+median of the port is not lower than the median of the original, and an equal
+median fails. --timing-runs sets the count of runs per side. check_timing
+reports the two medians in one line.
+
 The fake program counts its runs, prints the count, and writes the count into
 .metrics/dry.edn. It also records whether a snapshot was already on disk when
-it started. Three tests run it. Two run CRASH, and one each runs QUIET and
-FAILING. The other tests replace run_case, run_side, or make_copy with a stub.
+it started. Several tests run one of these stubs, and the timing tests run
+FAKE against SLOW, which sleeps 0.05 s on each run. The other tests replace
+run_case, run_side, or make_copy with a stub.
 
-Eighteen tests run. Some of them fail on the runner before this change, and
+Twenty-seven tests run. Some of them fail on the runner before this change, and
 some pass there too: the two median tests only check that median_seconds
 reports the middle sample, and that function did not change. Several tests
 pin behavior that an earlier commit added, such as the result of run 1 and the
@@ -31,7 +37,9 @@ runs `python3 -m unittest discover` there, with no `-s`, and finds the same
 tests because parity/ is a package. cargo test runs them with python3.12.
 """
 
+import contextlib
 import importlib.util
+import io
 import os
 import sys
 import tempfile
@@ -126,6 +134,25 @@ done
 """
 )
 
+# A side that sleeps 0.05 s before it reports, like a program that is slower than
+# the port on the same input (DR-NFR-2, AC-10).
+SLOW = (
+    """#!/bin/sh
+root=""
+prev=""
+for arg in "$@"; do
+    if [ "$prev" = "--root" ]; then root="$arg"; fi
+    prev="$arg"
+done
+"""
+    + COUNTER
+    + """sleep 0.05
+mkdir -p "$root/.metrics"
+echo "$count" > "$root/.metrics/dry.edn"
+echo "run $count"
+"""
+)
+
 
 def load_run():
     spec = importlib.util.spec_from_file_location("dryer_parity_run", RUN_PATH)
@@ -167,6 +194,14 @@ class RunSide(unittest.TestCase):
 
     def lines(self, name):
         return (self.root / name).read_text(encoding="utf-8").split()
+
+    def main_with_one_case(self, answers, argv):
+        """Runs main for one case, and returns its exit code. Each answer is a pair of a
+        Result for the original and one for the port, and one answer is used per case run."""
+        calls = iter(answers)
+        with self.stubbed_main([{"name": "case", "fixture": "f", "args": []}],
+                               lambda *_args: next(calls), self.root.parent / "expected"):
+            return run.main(argv)
 
     def stubbed_main(self, cases, run_case, expected, fixes=None):
         """Patches what main reads and starts: the pinned original, the cases, the fixes,
@@ -341,7 +376,7 @@ class RunSide(unittest.TestCase):
                  {"name": "fixed", "fixture": "f", "args": [], "fix": "f1"}]
         answers = {"case": (got, got), "fixed": (got, port)}
 
-        def runner(case, _orig_prefix, _orig_env, port_prefix):
+        def runner(case, _orig_prefix, _orig_env, port_prefix, _runs):
             orig, port = answers[case["name"]]
             return orig, port if port_prefix is not None else None
 
@@ -359,7 +394,7 @@ class RunSide(unittest.TestCase):
         # A check case has no fix, and main still sends it to both sides.
         seen = []
 
-        def checking(case, _orig_prefix, _orig_env, port_prefix):
+        def checking(case, _orig_prefix, _orig_env, port_prefix, _runs):
             seen.append(port_prefix)
             return got, got
 
@@ -371,15 +406,10 @@ class RunSide(unittest.TestCase):
     # DR-NFR-2: a case that differs makes main return 1, and a case that matches
     # makes it return 0.
     def test_dr_nfr_2_main_returns_one_when_a_case_fails(self):
-        base = self.root.parent
-        expected = base / "expected"
-        cases = [{"name": "case", "fixture": "f", "args": []}]
         same = run.Result(0, "same\n", None, 0.0, "")
         other = run.Result(0, "other\n", None, 0.0, "")
-        with self.stubbed_main(cases, lambda *_args: (same, same), expected):
-            self.assertEqual(run.main([]), 0)
-        with self.stubbed_main(cases, lambda *_args: (same, other), expected):
-            self.assertEqual(run.main([]), 1)
+        self.assertEqual(self.main_with_one_case([(same, same)], []), 0)
+        self.assertEqual(self.main_with_one_case([(same, other)], []), 1)
 
     # DR-NFR-2: check counts the verdicts of its cases and prints one summary
     # line. An accepted fix is not a failure.
@@ -433,7 +463,7 @@ class RunSide(unittest.TestCase):
         port = run.Result(0, "port\n", None, 0.0, "")
         seen = []
 
-        def fake_run_side(prefix, root, args, env, label):
+        def fake_run_side(prefix, root, args, env, label, _runs):
             seen.append((prefix, str(root), args, env, label))
             return orig if label.endswith("original") else port
 
@@ -485,3 +515,139 @@ class RunSide(unittest.TestCase):
         self.assertEqual(res.stdout, "run 1\n")
         self.assertIsNone(res.edn)
         self.assertEqual(self.lines("count"), ["5"])
+
+    # AC-10: one stub side in its own project, timed by run_side. The two sides
+    # of a case never share a copy, just as the runner gives each its own.
+    def timed_side(self, name, text):
+        base = self.root.parent
+        prefix = [str(self.write_program(base, name, text))]
+        root = base / f"root-{name}"
+        root.mkdir()
+        return run.run_side(prefix, root, [], {"PATH": "/usr/bin:/bin"}, name)
+
+    # AC-10, DR-NFR-2: a port that is faster than the original passes the timing
+    # check. The original sleeps 0.05 s on each run, and the port does not, so
+    # the median of the port is lower.
+    def test_ac_10_a_port_that_is_faster_passes_the_timing_check(self):
+        original = self.timed_side("slow_dryer", SLOW)
+        port = self.timed_side("fake_dryer", FAKE)
+        self.assertLess(port.seconds, original.seconds)
+        self.assertEqual(run.check_timing(original, port), [])
+
+    # AC-10, DR-NFR-2: a port that is slower than the original fails the case,
+    # and the diff line names both medians. The two stub sides write the same
+    # stdout and snapshot, so the timing line is the only difference.
+    def test_ac_10_a_port_that_is_not_faster_fails_the_case(self):
+        original = self.timed_side("fake_dryer", FAKE)
+        port = self.timed_side("slow_dryer", SLOW)
+        diffs, status = run.check_case("case", [], original, port, timing=True)
+        self.assertEqual(status, "FAIL")
+        self.assertEqual(len(diffs), 1)
+        self.assertTrue(diffs[0].startswith("timing: port median "), diffs[0])
+
+    # AC-10: AC-10 asks for a median that is lower, so an equal median fails.
+    def test_ac_10_a_port_that_is_as_fast_as_the_original_fails(self):
+        same = run.Result(0, "", None, 0.5, "")
+        self.assertEqual(
+            run.check_timing(same, same),
+            ["timing: port median 0.500s is not lower than original median 0.500s"],
+        )
+
+    # AC-10, DR-NFR-2: DR-NFR-2 names 5 runs, so the default is 5, and a caller
+    # can set the count. A median of 3 runs is the middle of 3 samples.
+    def test_ac_10_the_timing_check_runs_five_times_by_default_and_n_when_set(self):
+        self.assertEqual(run.TIMED_RUNS, 5)
+        self.run_side()
+        self.assertEqual(self.lines("count"), ["5"])
+        root = self.root.parent / "three"
+        root.mkdir()
+        res = run.run_side(self.prefix, root, [], {"PATH": "/usr/bin:/bin"},
+                           "case port", runs=3)
+        self.assertEqual(res.stdout, "run 1\n")
+        self.assertEqual((root / "count").read_text(encoding="utf-8").split(), ["3"])
+
+    # AC-10: main turns the timing into a check only with --check-timing. A
+    # slower port fails the run with the flag and passes without it, because
+    # the outputs of the two sides match.
+    def test_ac_10_main_checks_the_time_only_when_the_flag_is_set(self):
+        fast = run.Result(0, "same\n", None, 0.1, "")
+        slow = run.Result(0, "same\n", None, 9.0, "")
+        self.assertEqual(self.main_with_one_case([(slow, fast)], []), 0)
+        self.assertEqual(self.main_with_one_case([(fast, slow)], []), 0)
+        self.assertEqual(self.main_with_one_case([(fast, slow)], ["--check-timing"]), 1)
+
+    # AC-10: --timing-runs rejects a count that cannot give a median, and it reads
+    # a whole number as that number.
+    def test_ac_10_timing_runs_takes_a_whole_number_of_at_least_two(self):
+        self.assertEqual(run.positive_int("7"), 7)
+        for bad in ("1", "0", "-3", "two", "2.5"):
+            with self.assertRaises(run.argparse.ArgumentTypeError) as caught:
+                run.positive_int(bad)
+            self.assertIn("runs", str(caught.exception))
+
+    # AC-10, DR-PB-6: report_case prints the verdict, the diff lines, and the
+    # approval line, and it counts the time only when the caller asks for it.
+    # The approved fix prints "accepted", and a PASS prints no approval line.
+    def test_ac_10_report_case_prints_the_verdict_and_the_approval_line(self):
+        base = self.root.parent
+        expected = base / "expected"
+        approved = [{"id": "f1", "fixture": "fixed", "approved_by": "Mads Madsen"}]
+        pending = [{"id": "f2", "fixture": "fixed"}]
+        (expected / "fixed" / "port").mkdir(parents=True)
+        (expected / "fixed" / "port" / "exit_code").write_text("0\n", encoding="utf-8")
+        (expected / "fixed" / "port" / "stdout").write_text("port\n", encoding="utf-8")
+        recorded = run.Result(0, "port\n", None, 0.0, "")
+        orig = run.Result(0, "orig\n", None, 1.0, "")
+        slow = run.Result(0, "orig\n", None, 9.0, "")
+
+        def speak(*args, **kwargs):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                status = run.report_case(*args, **kwargs)
+            return status, out.getvalue()
+
+        with mock.patch.object(run, "EXPECTED", expected):
+            status, text = speak("fixed", approved, orig, recorded)
+            self.assertEqual(status, "ACCEPTED")
+            self.assertIn("accepted by: f1", text)
+            status, text = speak("fixed", pending, orig, recorded)
+            self.assertEqual(status, "PENDING")
+            self.assertIn("awaiting approval by: f2", text)
+            status, text = speak("case", [], orig, orig)
+            self.assertEqual(status, "PASS")
+            self.assertIn("original=1.00s port=1.00s", text)
+            self.assertNotIn(" by: ", text)
+            # The default is no timing check, so a slower port still passes.
+            status, _ = speak("case", [], orig, slow)
+            self.assertEqual(status, "PASS")
+            status, text = speak("case", [], orig, slow, True)
+            self.assertEqual(status, "FAIL")
+            self.assertIn("timing: port median 9.000s", text)
+
+    # AC-10: check counts each case once, so the summary line reports the number
+    # of cases that failed. It prints one line for each case.
+    def test_ac_10_check_counts_one_failure_as_one(self):
+        good = run.Result(0, "same\n", None, 0.1, "")
+        bad = run.Result(0, "other\n", None, 0.1, "")
+        answers = {"ok": (good, good), "no": (good, bad)}
+
+        def run_one(case):
+            return answers[case["name"]]
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(run.check([{"name": "ok"}, {"name": "no"}], {}, run_one), 1)
+        text = out.getvalue()
+        self.assertIn("2 case(s), 1 failed", text)
+        self.assertIn("PASS     ok", text)
+        self.assertIn("FAIL     no", text)
+
+    # AC-10: --timing-runs sets the count of runs per side that main asks for.
+    def test_ac_10_main_passes_the_run_count_to_the_case(self):
+        base = self.root.parent
+        expected = base / "expected"
+        cases = [{"name": "case", "fixture": "f", "args": []}]
+        same = run.Result(0, "same\n", None, 0.1, "")
+        with self.stubbed_main(cases, lambda *_args: (same, same), expected):
+            self.assertEqual(run.main(["--timing-runs", "2"]), 0)
+        self.assertEqual(self.mocks["run_case"].call_args.args[-1], 2)
