@@ -1,5 +1,8 @@
 # MU-PB-3: every difference from the original. MU-PB-6: Mads Madsen approves each entry.
 # Each entry names a test (MU-PB-4, AC-12) in `tools/mutator/tests/`.
+# A difference that no parity run can show names that test file as its `fixture`, with a
+# note in brackets when the test builds its project inline. `tests/fixes_toml.rs` checks
+# that the file exists and holds the named fn.
 
 [[fix]]
 id = "second-run-near-timeout"

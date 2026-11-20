@@ -62,9 +62,13 @@ class StatusFor(unittest.TestCase):
             ("FAIL", PROBLEM, {"name": "fixture-python", "fixture": "fixtures/python"}),
             ("FAIL", PROBLEM, {"name": "flag-help-short", "fix": []}),
             ("FAIL", ["exit 0 (original) vs 1 (port)"], HELP),
-            ("FAIL", ["metrics .metrics/mutate/demo.edn differs"], HELP),
+            ("DIFF-ALLOWED", ["metrics .metrics/mutate/demo.edn differs"], HELP),
+            ("DIFF-ALLOWED", ["metrics files differ (original ['a'], port ['b'])"], HELP),
+            ("DIFF-ALLOWED", [*PROBLEM, "metrics a differs"], HELP),
+            ("FAIL", ["git status differs (original [], port ['M src/x.py'])"], HELP),
             ("FAIL", ["error: setup step failed (1): sh check.sh"], HELP),
             ("FAIL", ["exit 0 (original) vs 1 (port)", *PROBLEM], HELP),
+            ("FAIL", ["exit 0 (original) vs 1 (port)", "metrics a differs"], HELP),
         ]
         for expected, problems, entry in cases:
             with self.subTest(expected=expected, problems=problems, entry=entry):

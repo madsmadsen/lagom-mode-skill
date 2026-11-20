@@ -24,7 +24,15 @@ Environment:
 ## Pinned sources
 
 `upstream.toml` pins the original mutator (`a5a0cb8`) and crapper (`6fd92c4`).
-The venv in `/tmp/mu/venv` is built from those checkouts.
+The venv in `/tmp/mu/venv` is built from those checkouts. The runner clones
+nothing.
+
+Before the first run, the runner checks that the original in the venv is at the
+commit of `upstream.toml` (MU-PB-1, MU-PB-2). It asks the venv where its
+`mutator` package lives and runs `git rev-parse HEAD` in that directory. When
+the package is a copy in `site-packages` with no checkout, it reads the commit
+that pip records in `direct_url.json` instead. A commit that it cannot read, and
+a commit other than the pin, stop the runner with a message that names both.
 
 ## What is compared
 
@@ -51,15 +59,19 @@ explains it. When every named id has `approved = true` in `fixes.toml`, a
 `DIFF-ALLOWED` replaces `FAIL`. Mads Madsen approves each entry (MU-PB-6). A run
 that names no fix, or an id that is not approved, prints `FAIL`.
 
-An approval excuses the stdout difference of its run, and only that. A
-mismatch of the exit code, a metrics difference, a git status difference, and an
-error stay a `FAIL`, approved or not.
+An approval excuses the stdout difference and the snapshot difference of its
+run, and only those. A mismatch of the exit code, a git status difference, and an
+error stay a `FAIL`, approved or not. An approval is for a difference that the
+fix changes on purpose: a fix that changes the snapshot of a run (for example
+MU-23, MU-24, or MU-26) excuses that snapshot difference too.
 
 The runner compares fix ids, not fixture paths. One approval therefore
 excuses only the runs that name it. `parity/test_status.py` tests this rule
-with fake ids, and it checks that `fixes.toml` has no approved entry. When Mads
-Madsen approves an entry on purpose, change that test to name the approved id.
-Do not delete it. It needs Python 3.11 or later, and no original. Run one of:
+with fake ids, and it checks that `fixes.toml` has no approved entry.
+When Mads Madsen approves an entry on purpose, change that test to name the
+approved id. Do not delete it. `parity/test_pin.py` tests the pin check with stub
+processes and no network. Both files need Python 3.11 or later, and no original.
+Run one of:
 
     python3.12 -m unittest parity/test_status.py
     python3.12 -m unittest discover -s .   # from tools/mutator, as crapper does
@@ -70,7 +82,9 @@ and no `python3` with `tomllib`, and it kills the run after 120 s. The Linux
 guests of `ci/linux-vm/` install `python3.12`.
 
 `parity/__init__.py` marks `parity/` as a package, so discovery finds the tests
-and crapper can measure their coverage.
+and crapper can measure their coverage. The suite covers `test_status.py` (the
+approval rule, AC-1, MU-PB-6) and `test_pin.py` (the pin check, MU-PB-1,
+MU-PB-2).
 
 ## Fixtures
 

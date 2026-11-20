@@ -103,18 +103,18 @@ Each requirement in this section comes from an open issue of the original, and d
 
 ## 7. Parity and bug fixes
 
-The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original and the crapper checkout that the original needs by a clone at the pinned commits, and runs the original with Python. The port fixes known bugs of the original and does not copy them.
+The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner runs the original with the Python of a venv that a developer builds from a checkout, or from an install, of the pinned commit. The path of that Python comes from the `ORIGINAL_PYTHON` environment variable. The runner clones nothing. Before the first run it reads the commit of the original that the venv provides. It reads the commit from the checkout that the package is installed from, else from the commit that pip records in the metadata of the package. When it cannot read a commit, or reads a commit other than the pin, it stops with a message that names both. The port fixes known bugs of the original and does not copy them.
 
 - MU-PB-1: `tools/mutator/parity/upstream.toml` records the pinned commit of the original and of the crapper checkout that the original needs.
 - MU-PB-2: A change of a pinned commit needs a new parity run.
-- MU-PB-3: Each bug fix has an entry in `tools/mutator/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference.
+- MU-PB-3: Each bug fix has an entry in `tools/mutator/parity/fixes.toml`. The entry gives the upstream issue or a description, the changed behavior, and the parity fixture that shows the difference. A difference that no parity run can show names a test instead. Its `fixture` value is the path of that test file, with a note in brackets when the test builds its project inline. A check in `tools/mutator/tests/fixes_toml.rs` verifies that the named file exists and holds the fn of the `test` value.
 - MU-PB-4: Each bug fix has a test that fails on the behavior of the original and passes on the port.
 - MU-PB-5: A bug that comes from Python only needs no entry if the port cannot have it. An example is `bugs/python-tests-run-with-mutators-virtualenv.md` in the original.
 - MU-PB-6: Mads Madsen approves each entry in `tools/mutator/parity/fixes.toml`.
 
 ## 8. Acceptance criteria
 
-1. AC-1 (MU-2, MU-3, MU-4): `tools/mutator/parity/coverage.toml` maps every flag of the original and every row of the README table (MU-12) to at least one fixture run. For each entry, the original and the port give the same exit code and the same snapshots after both are parsed as EDN. A difference that `fixes.toml` lists does not count as a failure.
+1. AC-1 (MU-2, MU-3, MU-4): `tools/mutator/parity/coverage.toml` maps every flag of the original and every rule row of the rule list of `tools/mutator/README.md` (MU-12) to at least one fixture run. For each entry, the original and the port give the same exit code and the same snapshots after both are parsed as EDN. A difference that `fixes.toml` lists does not count as a failure. A run names that difference with `fix = "<id>"`. The runner prints DIFF-ALLOWED for the run, and does not fail it, when every id of the run is approved in `fixes.toml` and every problem of the run is a stdout difference or a snapshot difference. An exit code difference, a crash, and a git status difference always fail. Every rule row of that list has a run that covers it, and every `covers` value of `coverage.toml` names a row of that list.
 2. AC-2 (MU-5, MU-8): A parity fixture exists for each of the six languages.
 3. AC-3 (MU-14): On a fixture with a failing test, the port exits `2`, and each snapshot file keeps its previous bytes.
 4. AC-4 (MU-15): On a fixture with a mutant that times out and a mutant that does not compile, the port counts both as killed. With a baseline shorter than 0.2 seconds and `--timeout-factor 10`, the timeout is 2 seconds.
@@ -151,7 +151,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 1. Rust stable toolchain and Cargo on the build host.
 2. Git 2.30 or later on each host that runs `--changed`.
 3. For each language that a user analyzes: the test tools in the README of the original.
-4. For parity runs only: Python, the original, and the crapper checkout that it needs, at the pinned commits.
+4. For parity runs only: Python, and a venv that provides the original at the pinned commit and the crapper checkout that the original needs.
 
 ## 11. Open questions
 

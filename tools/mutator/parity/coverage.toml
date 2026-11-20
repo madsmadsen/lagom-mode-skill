@@ -8,8 +8,10 @@
 #   expect_exit  optional; both sides must exit with this code
 #   fix          optional. A fixes.toml id, or a list of ids, that explains the
 #                difference this run shows. The run prints DIFF-ALLOWED for a
-#                FAIL only when Mads Madsen approved every id (AC-1, MU-PB-6).
-#   covers       the flags, README rows, PRD ids (MU-*, AC-*), and exit codes this run exercises
+#                FAIL only when Mads Madsen approved every id, and only for a
+#                stdout or snapshot difference (AC-1, MU-PB-6).
+#   covers       the flags, rule rows of README.md, PRD ids (MU-*, AC-*), and exit
+#                codes this run exercises
 #
 # Mutating runs get `--max-workers 2` unless args has -h/--help/--scan/--max-workers,
 # or expect_exit is 1 (usage errors).

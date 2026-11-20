@@ -18,6 +18,15 @@ pub fn bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_mutator"))
 }
 
+/// The text of a parity registry file: `coverage.toml` holds the runs, and `fixes.toml`
+/// names every difference from the original (MU-PB-3).
+pub fn parity_file(name: &str) -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("parity")
+        .join(name);
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
+}
+
 pub fn run(dir: &Path, args: &[&str]) -> Out {
     run_env(dir, args, &[])
 }

@@ -3,6 +3,9 @@
 //! Checks `parity/coverage.toml` against the CLI help (AC-1) and the README table
 //! rows, one per language (MU-12).
 
+mod common;
+
+use common::parity_file;
 use std::fs;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
@@ -14,17 +17,8 @@ use std::time::{Duration, Instant};
 /// otherwise block `cargo test` for ever.
 const PARITY_TIMEOUT_SECS: u64 = 120;
 
-/// The six languages named in the README table.
+/// The six languages of the README rule list.
 const LANGUAGES: [&str; 6] = ["clojure", "java", "go", "typescript", "rust", "python"];
-
-/// The text of a parity registry file: `coverage.toml` holds the runs, and `fixes.toml`
-/// names every difference from the original (MU-PB-3).
-fn parity_file(name: &str) -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("parity")
-        .join(name);
-    fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
-}
 
 /// Names of the `[[run]]` blocks in a coverage.toml text that set
 /// `allow_stdout_diff = true`. A run must not skip the stdout check (MU-PB-6).
@@ -244,11 +238,129 @@ fn mu_ac_1_coverage_toml_covers_every_flag_and_table_row() {
             "parity/coverage.toml does not cover {flag}"
         );
     }
-    for language in LANGUAGES {
-        let prefix = format!("\"{language}:");
-        assert!(
-            coverage.contains(&prefix),
-            "parity/coverage.toml has no covers string for {language}"
-        );
+}
+
+/// The rule rows of the README list: each `- \`<language>\`: \`<rule>\`, ...` line, with
+/// the rule names that it gives (MU-12).
+fn readme_rows(readme: &str) -> Vec<(String, Vec<String>)> {
+    let mut rows: Vec<(String, Vec<String>)> = Vec::new();
+    for line in readme.lines().map(str::trim) {
+        let Some(rest) = line.strip_prefix("- `") else {
+            continue;
+        };
+        let Some((language, rules)) = rest.split_once("`: ") else {
+            continue;
+        };
+        let rules: Vec<String> = rules
+            .split(',')
+            .map(|rule| rule.trim().trim_matches('`').to_string())
+            .filter(|rule| !rule.is_empty())
+            .collect();
+        rows.push((language.to_string(), rules));
     }
+    rows
+}
+
+/// The `covers` strings of a coverage.toml text that name a README row, such as
+/// `clojure: arithmetic heads`. Comment lines are skipped.
+fn row_covers(coverage: &str) -> Vec<String> {
+    let mut found: Vec<String> = Vec::new();
+    for line in coverage
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+    {
+        for quoted in line.split('"').skip(1).step_by(2) {
+            let is_row = quoted.split_once(": ").is_some_and(|(language, _)| {
+                !language.is_empty()
+                    && language
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b == b'-')
+            });
+            if is_row {
+                found.push(quoted.to_string());
+            }
+        }
+    }
+    found
+}
+
+/// AC-1, MU-12: every rule row of the README list has a run that covers it, and every row
+/// cover of coverage.toml names a rule row of that list. Returns one message per problem.
+fn row_problems(readme: &str, coverage: &str) -> Vec<String> {
+    let rows = readme_rows(readme);
+    let covers = row_covers(coverage);
+    let mut problems: Vec<String> = LANGUAGES
+        .iter()
+        .filter(|language| !rows.iter().any(|(name, _)| name == *language))
+        .map(|language| format!("the README list has no row for {language}"))
+        .collect();
+    for (language, rules) in &rows {
+        if rules.is_empty() {
+            problems.push(format!("the README row for {language} names no rule"));
+        }
+        for rule in rules {
+            let wanted = format!("{language}: {rule}");
+            if !covers.iter().any(|cover| cover == &wanted) {
+                problems.push(format!("no run covers \"{wanted}\""));
+            }
+        }
+    }
+    for cover in &covers {
+        let (language, rule) = cover.split_once(": ").expect("row cover has a colon");
+        match rows.iter().find(|(name, _)| name == language) {
+            None => problems.push(format!("\"{cover}\" names no README language row")),
+            Some((_, rules)) if !rules.iter().any(|named| named == rule) => {
+                problems.push(format!(
+                    "\"{cover}\" names no rule of the README {language} row"
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+    problems
+}
+
+fn readme() -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("README.md");
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
+}
+
+/// AC-1, MU-12: the rule list of the README and the row covers of coverage.toml agree.
+/// Every row has a run, and every row cover names a real row. Broken copies must fail.
+#[test]
+fn mu_ac_1_every_readme_row_is_covered_and_every_cover_names_a_row() {
+    let readme = readme();
+    let coverage = parity_file("coverage.toml");
+    let problems = row_problems(&readme, &coverage);
+    assert!(
+        problems.is_empty(),
+        "the README rule list and coverage.toml differ:\n  {}",
+        problems.join("\n  ")
+    );
+
+    // A rule that no run covers fails, which is the check that a missing run breaks.
+    let extra_rule = format!("{readme}- `rust`: `min/max`\n");
+    assert_eq!(
+        row_problems(&extra_rule, &coverage),
+        ["no run covers \"rust: min/max\"".to_string()]
+    );
+
+    // A covers value that names no rule of its row fails.
+    let extra_cover = format!("{coverage}covers = [\"rust: min/max\"]\n");
+    assert_eq!(
+        row_problems(&readme, &extra_cover),
+        ["\"rust: min/max\" names no rule of the README rust row".to_string()]
+    );
+
+    // A language without a row fails, also when coverage.toml covers its rules.
+    let no_rust: String = readme
+        .lines()
+        .filter(|line| !line.starts_with("- `rust`: "))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert!(
+        row_problems(&no_rust, &coverage)
+            .contains(&"the README list has no row for rust".to_string()),
+        "a missing language row is not reported"
+    );
 }

@@ -58,6 +58,21 @@ project whose own path holds one of these names selects no file: the run prints
 path with no such part. A file that you name as the source root, with `--source-root <file>`, is
 always taken, even when it is a test file.
 
+## Mutation rules
+
+The port mutates the same tokens as the original (MU-12). These are the rule rows that it
+applies to each language:
+
+- `clojure`: `arithmetic heads`, `comparison heads`, `=/not=`, `if/if-not`, `when/when-not`, `and/or`, `seq pairs`, `predicate pairs`, `coercion pairs`, `true/false`, `0/1`
+- `java`: `true/false`, `==/!=`, `</<=`, `>/>=`, `+/-`, `*/`, `&&/||`, `delete !`, `delete unary -`, `0/1`
+- `go`: `+/-`, `* -> /`, `comparisons`, `==/!=`, `true/false`, `&&/||`, `0/1`
+- `typescript`: `+/-`, `*/`, `>/>=`, `&&/||`, `===/!==`, `??->||`, `?.->.`, `call drops ?.`, `index drops ?.`, `delete !`, `true/false`, `0/1`
+- `rust`: `&&/||`, `delete !`, `delete unary -`, `0/1`
+- `python`: `and/or`, `not`, `True/False`, `==/!=`, `comparisons`, `+/-`, `* -> /`, `0/1`, `unary -`
+
+Each row has at least one parity run in `parity/coverage.toml`, and each `covers` value of
+that file names a row of this list. `tests/parity_map.rs` checks both directions.
+
 ## Differences from the original
 
 The only differences are the entries of `parity/fixes.toml`. Each entry names its requirement
@@ -126,9 +141,10 @@ cargo fmt
 ```
 
 `cargo test` also runs `python3.12 -m unittest discover -s . -p 'test_*.py'` for
-the parity runner through `tests/parity_map.rs`. That test skips with a note when
-the host has no `python3.12` and no `python3` with `tomllib`. It kills the run
-after 120 s, and it writes no bytecode into the crate. The Linux guests of
+the parity runner through `tests/parity_map.rs`. Those tests are
+`parity/test_status.py` (the approval rule) and `parity/test_pin.py` (the pin check).
+That test skips with a note when the host has no `python3.12` and no `python3` with
+`tomllib`. It kills the run after 120 s, and it writes no bytecode into the crate. The Linux guests of
 `ci/linux-vm/` install `python3.12`, so the parity tests run there. The results
 line of `guest-test.sh` names the interpreter path that was found.
 

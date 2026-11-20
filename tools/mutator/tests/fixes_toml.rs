@@ -4,21 +4,18 @@
 //! `parity/upstream.toml` (MU-PB-1). The crate has no TOML dependency, so the files
 //! are read with plain string matching.
 
-use std::fs;
-use std::path::PathBuf;
+mod common;
 
-/// One `[[fix]]` block: the keys it sets, and its `test` value if it has one.
+use common::parity_file;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+/// One `[[fix]]` block: the keys it sets, and its `fixture` and `test` values.
 #[derive(Default)]
 struct FixBlock {
     keys: Vec<String>,
+    fixture: Option<String>,
     test: Option<String>,
-}
-
-fn parity_file(name: &str) -> String {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("parity")
-        .join(name);
-    fs::read_to_string(&path).unwrap_or_else(|e| panic!("reading {}: {e}", path.display()))
 }
 
 /// The value of `key = "value"` on one line, without the quotes.
@@ -36,8 +33,10 @@ fn record_key(block: &mut FixBlock, line: &str) {
         return;
     }
     block.keys.push(key.to_string());
-    if key == "test" {
-        block.test = quoted_value(line, "test").map(str::to_string);
+    match key {
+        "fixture" => block.fixture = quoted_value(line, "fixture").map(str::to_string),
+        "test" => block.test = quoted_value(line, "test").map(str::to_string),
+        _ => {}
     }
 }
 
@@ -105,6 +104,68 @@ fn mu_pb_3_every_fix_block_has_the_required_keys() {
             );
         }
     }
+}
+
+/// The path of a test file that a fix `fixture` value names in place of a parity fixture:
+/// the part before the ` (note)`. `None` when the value names a parity fixture directory.
+fn test_file_of(value: &str) -> Option<&str> {
+    let path = value.split_once(" (").map_or(value, |(before, _)| before);
+    path.starts_with("tests/").then_some(path)
+}
+
+/// The fixture problems of a fixes.toml text: a test file that a `fixture` value names must
+/// exist below `root`, and it must hold the fn of the `test` value. One message per problem.
+fn fixture_problems(text: &str, root: &Path) -> Vec<String> {
+    let mut problems: Vec<String> = Vec::new();
+    for block in fix_blocks(text) {
+        let Some(value) = block.fixture.as_deref() else {
+            problems.push(format!("[[fix]] {:?} has no fixture", block.keys));
+            continue;
+        };
+        let Some(path) = test_file_of(value) else {
+            continue;
+        };
+        let Ok(source) = fs::read_to_string(root.join(path)) else {
+            problems.push(format!("fixture {path} of {:?} does not exist", block.keys));
+            continue;
+        };
+        let name = block.test.as_deref().and_then(|test| test.split_once("::"));
+        if let Some((_, name)) = name
+            && !source.contains(&format!("fn {name}("))
+        {
+            problems.push(format!("fixture {path} has no fn {name}("));
+        }
+    }
+    problems
+}
+
+/// MU-PB-3, MU-PB-4: a fix that names a test file in place of a parity fixture names a file
+/// that exists and that holds the fn of its `test` value. The same check on a bad text fails.
+#[test]
+fn mu_pb_3_a_fixture_that_names_a_test_file_exists() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let text = parity_file("fixes.toml");
+    assert_eq!(fixture_problems(&text, &root), Vec::<String>::new());
+    let named = fix_blocks(&text)
+        .iter()
+        .filter_map(|block| block.fixture.as_deref())
+        .filter_map(test_file_of)
+        .count();
+    assert!(named > 0, "no fix names a test file as its fixture");
+
+    // The check is not vacuous: a missing file, and a file without the named fn, each fail.
+    let missing = "[[fix]]\nid = \"x\"\nfixture = \"tests/gone.rs (inline)\"\n\
+                   test = \"tests/memory_limit.rs::mu_25_ac17_a_bad_value_exits_one\"\n";
+    assert_eq!(
+        fixture_problems(missing, &root),
+        ["fixture tests/gone.rs of [\"id\", \"fixture\", \"test\"] does not exist".to_string()]
+    );
+    let no_fn = "[[fix]]\nid = \"x\"\nfixture = \"tests/memory_limit.rs (inline)\"\n\
+                 test = \"tests/memory_limit.rs::mu_25_no_such_fn\"\n";
+    assert_eq!(
+        fixture_problems(no_fn, &root),
+        ["fixture tests/memory_limit.rs has no fn mu_25_no_such_fn(".to_string()]
+    );
 }
 
 /// MU-PB-1: upstream.toml pins a full 40-character hex commit for the original and for crapper.

@@ -28,13 +28,23 @@ Options:
 
 Exit 1 when any run FAILs. A FAIL whose run names, with `fix = "<id>"` or a
 list of ids, only entries of fixes.toml that Mads Madsen approved prints
-DIFF-ALLOWED and does not set exit 1 (AC-1, MU-PB-6).
+DIFF-ALLOWED and does not set exit 1 (AC-1, MU-PB-6). An approval excuses a
+stdout difference and a snapshot difference (`metrics ...`) of its run, and
+nothing else.
+
+Before the first run, the runner reads the commit of the original that
+upstream.toml pins (MU-PB-1, MU-PB-2). It reads the commit from the checkout
+that the venv installs the package from (`git rev-parse HEAD` in the package
+directory), else from the commit that pip records in the `direct_url.json` of
+the package. When neither gives a commit, or the commit is not the pin, the
+runner stops with a message that names both. Nothing is cloned.
 """
 
 from __future__ import annotations
 
 import argparse
 import difflib
+import json
 import os
 import re
 import shutil
@@ -48,6 +58,8 @@ from pathlib import Path
 PARITY = Path(__file__).resolve().parent
 COVERAGE_TOML = PARITY / "coverage.toml"
 FIXES_TOML = PARITY / "fixes.toml"
+UPSTREAM_TOML = PARITY / "upstream.toml"
+ORIGINAL_PACKAGE = "mutator"
 ORIGINAL_CMD = [os.environ.get("ORIGINAL_PYTHON", "/tmp/mu/venv/bin/python"), "-m", "mutator"]
 PORT_CMD = [os.environ.get("MUTATOR_BIN", str(PARITY.parent / "target" / "debug" / "mutator"))]
 WORKER_CAP = ["--max-workers", "2"]
@@ -55,8 +67,13 @@ WORKER_CAP = ["--max-workers", "2"]
 CAP_EXEMPT = {"-h", "--help", "--scan", "--max-workers"}
 GIT_INIT = "git init -q && git add -A && git -c user.name=t -c user.email=t@t commit -qm init"
 WROTE_LINE = re.compile(r"^Wrote .*$", re.MULTILINE)
-# The only problem an approved fix excuses (MU-PB-6). `status_for` matches on it.
+# The problems an approved fix excuses: a stdout difference, and a snapshot
+# difference that the fix changes on purpose (AC-1, MU-PB-6). `status_for`
+# matches on these two prefixes only. An exit code difference, a crash, and a
+# git status difference stay a FAIL.
 STDOUT_PREFIX = "stdout differs in "
+METRICS_PREFIX = "metrics "
+EXCUSED_PREFIXES = (STDOUT_PREFIX, METRICS_PREFIX)
 TIMEOUT = 900
 
 
@@ -86,6 +103,68 @@ def approved_fix_ids(path: Path = FIXES_TOML) -> set[str]:
             if fix.get("approved") is True and "id" in fix}
 
 
+def pinned_commit(path: Path = UPSTREAM_TOML) -> str:
+    """The commit of the original in upstream.toml (MU-PB-1). A pin that is not a full
+    commit stops the runner, because it cannot name the original."""
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    commit = data.get("original", {}).get("commit", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise RuntimeError(f"run.py: {path.name} pins no full commit for the original: "
+                           f"{commit!r}")
+    return commit
+
+
+# The venv answers two questions: where its `mutator` package lives, and which commit
+# pip recorded for it in direct_url.json.
+PACKAGE_PATH = "import mutator; print(getattr(mutator, '__file__', '') or '')"
+PIP_COMMIT = ("import importlib.metadata as m; "
+              "print(m.distribution('mutator').read_text('direct_url.json'))")
+
+
+def quiet(cmd: list[str], run) -> str:
+    """The stripped stdout of `cmd`, or "" when it fails to start or exits nonzero."""
+    try:
+        done = run(cmd, capture_output=True, text=True, encoding="utf-8",
+                   errors="replace", timeout=TIMEOUT, check=False)
+    except OSError:
+        return ""
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def original_commit(python: str, run=subprocess.run) -> str:
+    """The commit of the original in the venv: the checkout that it installs from, else
+    the commit that pip records in direct_url.json. "" when neither gives a commit."""
+    package = quiet([python, "-c", PACKAGE_PATH], run)
+    if package:
+        commit = quiet(["git", "-C", str(Path(package).parent), "rev-parse", "HEAD"], run)
+        if re.fullmatch(r"[0-9a-f]{40}", commit):
+            return commit
+    try:
+        found = str(json.loads(quiet([python, "-c", PIP_COMMIT], run))
+                    ["vcs_info"]["commit_id"])
+    except (ValueError, KeyError, TypeError):
+        return ""
+    return found if re.fullmatch(r"[0-9a-f]{40}", found) else ""
+
+
+def check_pin(python: str, path: Path = UPSTREAM_TOML, run=subprocess.run) -> str:
+    """MU-PB-2: the original in the venv must be at the commit that upstream.toml pins.
+    A commit that cannot be read, and another commit, stop the runner."""
+    pin = pinned_commit(path)
+    commit = original_commit(python, run)
+    if not commit:
+        raise RuntimeError(
+            f"run.py: cannot read the commit of the original in {python}. "
+            f"upstream.toml pins {pin}. Point ORIGINAL_PYTHON at a venv that installs "
+            "the original at that commit.")
+    if commit != pin:
+        raise RuntimeError(
+            f"run.py: the original in {python} is at {commit}, but upstream.toml pins "
+            f"{pin}. Install the pinned commit, or change the pin on purpose (MU-PB-1, "
+            "MU-PB-2).")
+    return pin
+
+
 def named_fixes(entry: dict) -> list[str]:
     """The fix ids that a run names: `fix = "<id>"` or `fix = ["<id>", ...]`."""
     listed = entry.get("fix", [])
@@ -93,15 +172,15 @@ def named_fixes(entry: dict) -> list[str]:
 
 
 def status_for(problems: list[str], entry: dict, approved: set[str]) -> str:
-    """AC-1, MU-PB-6: an approved fix excuses the stdout difference of its run, and
-    only that. An exit code mismatch, a metrics difference, a git status difference,
-    and an error stay a FAIL."""
+    """AC-1, MU-PB-6: an approved fix excuses the stdout difference and the snapshot
+    difference of its run, and only those. An exit code mismatch, a git status
+    difference, and an error stay a FAIL."""
     if not problems:
         return "PASS"
     fixes = named_fixes(entry)
     if not fixes or any(fix not in approved for fix in fixes):
         return "FAIL"
-    if all(problem.startswith(STDOUT_PREFIX) for problem in problems):
+    if all(problem.startswith(EXCUSED_PREFIXES) for problem in problems):
         return "DIFF-ALLOWED"
     return "FAIL"
 
@@ -273,6 +352,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="print unified diffs of normalized stdout and stderr where they differ")
     opts = parser.parse_args(argv)
 
+    try:
+        check_pin(ORIGINAL_CMD[0])
+    except RuntimeError as exc:
+        sys.exit(str(exc))
     loads = edn_reader()
     approved = approved_fix_ids()
     entries = tomllib.loads(COVERAGE_TOML.read_text(encoding="utf-8")).get("run", [])
