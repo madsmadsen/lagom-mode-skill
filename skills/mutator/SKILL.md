@@ -48,15 +48,15 @@ Before each run on a file, delete each snapshot under `.metrics/mutate/` that ho
 
 The snapshot path follows the namespace: `.metrics/mutate/<namespace>.edn`, and the parts of the namespace become the directories (MU-4). `::` becomes `/`. A form of `<crate-name>::foo::Bar` is in `.metrics/mutate/<crate-name>/foo/Bar.edn`, and a Go form of `example.com/demo.Widget` is in `.metrics/mutate/example.com/demo.Widget.edn`.
 
-A snapshot holds the forms of one namespace, and those forms can come from more than one file. Read each `.edn` file under `.metrics/mutate/` and look at its `:forms`. Each form has `:file`, the path of its source file relative to the project root. Delete each snapshot in which a form has `:file` equal to the path of your file. A form without `:file` in an old snapshot takes the `:source` of that snapshot, so delete a snapshot whose `:source` is that path too. A run also prints the path of each snapshot that it writes in a `Wrote <path>` line on stderr, so an earlier run shows you the file to delete.
+A snapshot holds the forms of one namespace, and those forms can come from more than one file. Read each `.edn` file under `.metrics/mutate/` and look at its `:forms`. Each form has `:file`, the path of its source file relative to the project root. Delete each snapshot in which a form has `:file` equal to the path of your file. A form without `:file` in an old snapshot takes the `:source` of that snapshot, so delete a snapshot whose `:source` is that path too.
 
-mutator writes the snapshot again on the next run. The delete is safe: mutator reads the snapshots when it starts and creates the directory when it writes, so a missing file only means that it starts with no earlier outcome for that file. A run that exits `2` writes no snapshot, so a deleted one stays absent until a later run. That later run treats each site in `--lines` as changed and runs it again instead of trusting an old outcome. The run takes longer and is still correct.
+mutator writes the snapshot again on the next run. The delete is safe: mutator reads the snapshots when it starts and creates the directory when it writes, so a missing file only means that it starts with no earlier outcome for that file. A run that exits `2` does not change the snapshots, so a deleted one stays absent until a later run. That later run treats each site in `--lines` as changed and runs it again instead of trusting an old outcome. The run takes longer and is still correct.
 
 Two checked files can share one snapshot. Delete it once, then give each file that shares it its run after the delete, and read the gate result of each file right after its own run. A retry of one of those files repeats the delete, so it repeats the run of every checked file that shares the snapshot. The first run writes its own forms, and the second run keeps them and adds its own.
 
 With a fresh snapshot, a survivor comes only from a changed line.
 
-To list the sites without a test run, use `mutator --scan <path>`. A scan does not run mutants and needs no delete. It reads the snapshots that it finds, and it does not write one.
+To list the sites without a test run, use `mutator --scan <path>`. A scan does not run mutants, so it needs no delete.
 
 ## Read the output
 
@@ -77,9 +77,9 @@ A checked form is a form whose `:file` is that changed file and whose `:line` to
 | 1 | Usage error. | Fix the command. |
 | 2 | The baseline tests failed. | Fix the failing tests first. mutator cannot judge the tests until they pass. |
 | 3 | At least one mutant survived. | Find the survivors in `:outcomes` and kill them, as below. You deleted the snapshot of the file before the run, so each survivor comes from a changed line. |
-| other code | `--coverage-command` failed and returned its own exit code. | Read the message on stderr. It names the exit code and the last lines of the output. Fix the coverage command. |
+| other code | `--coverage-command` failed and returned its own exit code. | Read the message on stderr. It names the exit code. Fix the coverage command. |
 
-A failed `--coverage-command` can also exit with 1, 2, or 3, because its code is not a mutator code. Code 1 looks like a usage error. Check stderr for `Coverage command exited` before you read those rows.
+A failed `--coverage-command` can also exit with 1, 2, or 3, because its code is not a mutator code. Code 1 looks like a usage error. Read stderr before you read those rows: the message names the exit code of the failed command.
 
 ## Act on an outcome
 

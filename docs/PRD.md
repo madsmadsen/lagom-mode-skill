@@ -2,7 +2,7 @@
 
 Status: Draft 4. Owner and approver: Mads Madsen. Date: 2026-11-07.
 
-This document states the overall goal of the `lagom-mode-skill` repository and the preferences for its development. Four PRDs state the requirements of the parts. Each statement that comes from a guess and not from a source carries the label `[ASSUMPTION]`.
+This document states the overall goal of the `lagom-mode-skill` repository and the preferences for its development. Four PRDs state the requirements of the parts. This document and the four part PRDs have no open assumptions. A question that no source answers goes to the owner, Mads Madsen, or its statement is deleted (AGENTS.md, requirement 3).
 
 ## 1. Goal
 
@@ -25,7 +25,7 @@ The parts are independent:
 
 1. A tool does not know about another tool. Each tool is one Cargo package with no dependency on another package in this repository.
 2. The skills do not know how a tool is built. They use `crapper`, `dryer`, and `mutator` as commands on the `PATH`, with the interface in section 5 of the skills PRD.
-3. A change to one part needs no change to another part, if the command interface of the tools stays the same. The command interface is the set of commands, positional file arguments, flags, exit codes, and outputs that a skill reads. Skills PRD section 5 lists all of them. A change to a tool outside this set needs no change to the skills.
+3. A change to one part needs no change to another part, if the command interface of the tools stays the same. The command interface is the set of commands, positional file arguments, flags, exit codes, and outputs of `crapper`, `dryer`, and `mutator` that a skill reads. Skills PRD section 5 lists all of them. A change to a tool outside this set needs no change to the skills.
 
 ## 3. Users
 
@@ -48,7 +48,7 @@ The parts are independent:
 
 1. Skills work and port work can overlap. The skills use the Rust port of each tool, because the gates need `crapper --lines` and `mutator --lines` (skills SK-8), and the Python crapper rejects `--lines` (CR-26). The skills PRD states this interface in section 5.
 2. A port replaces its original only after it passes its parity criteria and Mads Madsen approves. The skills use the Rust ports before that approval. The gates need the `--lines` option of crapper, and that option waits as the unapproved `lines-option` entry in `tools/crapper/parity/fixes.toml`.
-3. The ports can come in any order, because no port depends on another. `[ASSUMPTION]` crapper comes first, because the skills need it in every gate.
+3. All three ports exist, and no port depends on another. So the ports can come in any order.
 4. The development of this repository uses `lagom-mode` with the tools that are installed at that time.
 
 ### 5.2 Ports
@@ -66,26 +66,26 @@ The parts are independent:
 1. Each requirement has an ID. The ID prefix names its part: `SK` for skills, `CR` for crapper, `DR` for dryer, and `MU` for mutator.
 2. Tests, specifications, and commits refer to these IDs.
 3. Documents use plain English: short sentences, active voice, and the modals "must", "can", and "will".
-4. Each statement that comes from a guess carries the label `[ASSUMPTION]` until the owner accepts or replaces it.
+4. This document and the four part PRDs have no open assumptions. A question that no source answers goes to the owner, Mads Madsen, or its statement is deleted.
 
 ## 6. Success
 
 The repository reaches its goal when all of these are true:
 
-1. Each of the 3 sample features (skills PRD, section 9) ends with a Finish (skills SK-14, SK-16, SK-18) and all four SK-7 conditions true, with no human edit to code during the loop. This holds in both agent harnesses named in the skills PRD, with no change to the skills (skills PRD, AC-14), so all 6 of 6 runs pass. A stop report counts as a failure for this criterion.
+1. Each of the 5 sample features (skills PRD, section 9) runs in each of two agent harnesses, Claude Code and omp, with no change to the skills between the two runs. Each run ends with a Finish (skills SK-14, SK-16, SK-18) and all four SK-7 conditions true, with no human edit to code during the loop. A stop report counts as a failure for this criterion. So all 10 of 10 runs pass.
 2. All three ports have replaced their originals (section 5.1).
 3. crapper, dryer, and mutator run on a host with no Python installed on the Clojure, Java, Go, TypeScript, and Rust fixtures (crapper PRD AC-11, dryer PRD AC-8, mutator PRD AC-11).
-4. For each sample feature, Mads Madsen reviews only the loop log and the loop commits, with one commit per unit and each message stating why, what and how it was proved (SK-11), and records that he did not need to read the full diff.
+4. For each of the 10 runs, Mads Madsen reviews only the loop log and the loop commits, with one commit per unit and each message stating why, what and how it was proved (SK-11), and records that he did not need to read the full diff.
 
 ## 7. Open questions
 
-Each `[ASSUMPTION]` label in this document and in the four part PRDs is an open question for the owner.
+None. This document and the four part PRDs have no open assumptions. A question that no source answers goes to the owner, Mads Madsen, or its statement is deleted.
 
 ## 8. Acceptance criteria
 
 1. AC-1 (section 2, item 1): For each of `tools/crapper/`, `tools/dryer/`, and `tools/mutator/`, `cargo metadata` lists no path dependency and no git dependency on another package in this repository.
 2. AC-2 (section 2, item 2): No file under `skills/` mentions `cargo` or this repository. A search under `skills/` for `cargo` and for `lagom-mode-skill` finds no match.
-3. AC-3 (section 2, item 3): Each command, positional file argument, flag, exit code, and output that a skill under `skills/` names, including `lagom-mode`, appears in section 5 of the skills PRD.
+3. AC-3 (section 2, item 3): Each command of `crapper`, `dryer`, or `mutator`, each positional file argument, flag, exit code, and output that a skill under `skills/` names, including `lagom-mode`, appears in section 5 of the skills PRD. A Git command is not part of the tool interface, because Git is a dependency (skills PRD, section 11).
 4. AC-4 (section 1, determinism): crapper PRD AC-10, dryer PRD AC-7, and mutator PRD AC-13 pass. On each port's fixtures, after any tool install, two runs of each SK-8 gate command give the same exit code and byte-identical snapshots.
 5. AC-5 (section 3, uml-viewer user): Each `fixes.toml` entry that changes snapshot keys or shape has the fields `uml_viewer_commit` and `uml_viewer_checked_on`, and the fixture snapshot of that entry renders with no error in uml-viewer at that commit.
 
