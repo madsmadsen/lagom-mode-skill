@@ -14,7 +14,7 @@ changed_behavior = "A mutant that times out once, or runs within 10% of its time
 fixture = "tests/mu21_second_run.rs (project built inline)"
 test = "tests/mu21_second_run.rs::mu_21_second_run_decides_the_outcome"
 changes_snapshot_keys_or_shape = false
-approved = false
+approved = true
 
 [[fix]]
 id = "idempotent-tested-at"
@@ -26,7 +26,7 @@ changed_behavior = "`:tested-at` changes only when another value in the snapshot
 fixture = "tests/mu21_second_run.rs (project built inline)"
 test = "tests/mu21_second_run.rs::mu_nfr_1_five_runs_give_identical_snapshots"
 changes_snapshot_keys_or_shape = false
-approved = false
+approved = true
 
 [[fix]]
 id = "worker-cap-half-the-cores"
@@ -41,7 +41,7 @@ changed_behavior = "The worker count is the smaller of the sites, half the cores
 fixture = "tests/worker_cap.rs (no fixture project; the test calls workers::worker_count and runs --help)"
 test = "tests/worker_cap.rs::mu_17_default_worker_count_is_half_the_cores_at_least_one"
 changes_snapshot_keys_or_shape = false
-approved = false
+approved = true
 
 [[fix]]
 id = "ts-dot-imports-are-relative"
@@ -55,7 +55,7 @@ changed_behavior = "A TypeScript or JavaScript test that imports its module from
 fixture = "tests/upstream_fixes.rs (project built inline: src/calc/index.ts and src/calc/index.test.ts)"
 test = "tests/upstream_fixes.rs::mu_22_ac14_a_test_that_imports_dot_is_copied_so_the_mutant_is_killed"
 changes_snapshot_keys_or_shape = false
-approved = false
+approved = true
 
 [[fix]]
 id = "python-more-operators"
@@ -68,7 +68,7 @@ changed_behavior = "A Python file with these operators has more sites, so snapsh
 fixture = "tests/upstream_fixes.rs (project built inline: src/demo/ops2.py and src/demo/ops3.py)"
 test = "tests/upstream_fixes.rs::mu_23_ac15_scan_lists_a_site_for_each_operator_of_issue_10"
 changes_snapshot_keys_or_shape = false
-approved = false
+approved = true
 
 [[fix]]
 id = "python-clause-coverage-line"
@@ -81,7 +81,7 @@ changed_behavior = "A Python site in an uncovered `elif`, `except`, or `case` cl
 fixture = "tests/upstream_fixes.rs (project built inline: src/demo/branches.py and src/demo/clauses.py)"
 test = "tests/upstream_fixes.rs::mu_24_ac16_elif_sites_on_an_uncovered_line_are_uncovered"
 changes_snapshot_keys_or_shape = false
-approved = false
+approved = true
 
 [[fix]]
 id = "max-memory-limit"
@@ -95,7 +95,7 @@ changed_behavior = "A mutant test run over the memory limit is killed, and the f
 fixture = "tests/memory_limit.rs (project built inline: src/m.py and an allocating test command)"
 test = "tests/memory_limit.rs::mu_25_ac17_a_mutant_over_the_memory_limit_is_killed_once_and_fast"
 changes_snapshot_keys_or_shape = false
-approved = false
+approved = true
 
 [[fix]]
 id = "rust-test-code-by-attribute"
@@ -109,7 +109,7 @@ changed_behavior = "A Rust function in a #[cfg(test)] module, or with #[test] or
 fixture = "tests/rust_test_code.rs (project built inline: src/lib.rs with a production fn, a #[cfg(test)] mod unit_tests, a #[test] fn, and a #[cfg(test)] fn)"
 test = "tests/rust_test_code.rs::mu_26_ac18_scan_lists_sites_for_production_rust_only"
 changes_snapshot_keys_or_shape = false
-approved = false
+approved = true
 
 # Not listed on purpose (MU-PB-5): `bugs/python-tests-run-with-mutators-virtualenv.md` comes from
 # Python only. The port has no interpreter of its own and uses the project's `.venv` or `venv`

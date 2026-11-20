@@ -7,58 +7,67 @@
 #   fixture               the parity fixture under parity/fixtures/ that shows it
 #   approved_by           "Mads Madsen" (set only after Mads Madsen approves)
 #
-# No differences are approved yet. Only Mads Madsen adds `approved_by`.
+# Mads Madsen approved every difference. Only Mads Madsen adds `approved_by`.
 
 [[fix]]
 id = "vitest-package-manager"
 issue = "https://github.com/unclebob/crapper/issues/25 and https://github.com/unclebob/crapper/pull/34 (CR-18)"
 behavior = "The port installs @vitest/coverage-v8 with pnpm, yarn, or bun when the project uses it (lockfile, node_modules/.pnpm, or the packageManager field of package.json), and restores package.json and all seven lockfiles afterward. The original always runs npm."
 fixture = "vitest-pnpm"
+approved_by = "Mads Madsen"
 
 [[fix]]
 id = "vitest-npm-lockfile"
 issue = "https://github.com/unclebob/crapper/issues/16 (CR-19)"
 behavior = "The npm install command has no --no-package-lock, so npm keeps every locked dependency at its locked version."
 fixture = "vitest-npm-locked"
+approved_by = "Mads Madsen"
 
 [[fix]]
 id = "vitest-untrusted-install"
 issue = "https://github.com/unclebob/crapper/pull/27 and https://github.com/unclebob/crapper/issues/26 (CR-23)"
 behavior = "The port pins @vitest/coverage-v8 only to a valid SemVer version of the installed vitest, and every install command has --ignore-scripts."
 fixture = "vitest-untrusted"
+approved_by = "Mads Madsen"
 
 [[fix]]
 id = "git-env"
 issue = "https://github.com/unclebob/crapper/pull/34 (CR-20)"
 behavior = "The port removes every GIT_ variable from the environment of each git command, so a run inside a Git hook reads the repository of the project."
 fixture = "changed-git-env"
+approved_by = "Mads Madsen"
 
 [[fix]]
 id = "ts-shapes"
 issue = "https://github.com/unclebob/crapper/issues/20 (CR-21)"
 behavior = "In TypeScript and JavaScript, a var function, a method of a top-level object literal, a class field with a function, and an unnamed export default function are entries."
 fixture = "ts-shapes"
+approved_by = "Mads Madsen"
 
 [[fix]]
 id = "python-routes"
 issue = "https://github.com/unclebob/crapper/pull/30 (CR-22)"
 behavior = "In Python, a function nested in a factory and decorated by a route call is its own entry (GET /users, with #2 suffixes), and its decision points leave the factory."
 fixture = "python-routes"
+approved_by = "Mads Madsen"
 
 [[fix]]
 id = "jacoco-doctype-subset"
 issue = "https://github.com/unclebob/crapper/pull/27 (CR-24)"
 behavior = "The port deletes a DOCTYPE declaration with an internal subset before it parses JaCoCo XML. The original left junk behind and stopped with exit code 1."
 fixture = "jacoco-subset"
+approved_by = "Mads Madsen"
 
 [[fix]]
 id = "rust-test-code"
 description = "Difference from the original, not from an upstream issue (CR-25). In Rust, a function is test code when an enclosing mod is named tests, an enclosing mod has #[cfg(test)], or the function itself has #[test] or #[cfg(test)]. The original skips only a mod named tests."
 behavior = "The port leaves out each function in a #[cfg(test)] module and each function with #[test] or #[cfg(test)], whatever the module is named. The original reports them as production code. #[cfg(not(test))] code stays production code."
 fixture = "rust-test-code"
+approved_by = "Mads Madsen"
 
 [[fix]]
 id = "lines-option"
 description = "Difference from the original, not from an upstream issue (CR-26). The port has the option --lines <n,n,...>. It scores only the functions that contain one of the listed source lines. The original does not have this option."
 behavior = "With --lines, the report, the snapshot, and the --threshold exit status see only the functions that contain a listed line. The original rejects --lines as an unknown option and exits with code 1."
 fixture = "lines-option"
+approved_by = "Mads Madsen"

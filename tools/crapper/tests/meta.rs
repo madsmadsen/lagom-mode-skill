@@ -191,11 +191,9 @@ fn ac_23_fixes_entries_complete() {
     }
 }
 
-// AC-24: every entry is approved by Mads Madsen. The new upstream-fix entries wait for his approval, so
-// `cargo test` skips this check. Run it with `cargo test --test meta -- --ignored`, or with
-// `python3.12 parity/run.py --check-meta`, which fails until he approves them.
+// AC-24: every entry is approved by Mads Madsen. Mads Madsen approved all entries.
+// `python3.12 parity/run.py --check-meta` runs the same check.
 #[test]
-#[ignore = "entries wait for the approval of Mads Madsen (CR-PB-6)"]
 fn ac_24_fixes_entries_approved() {
     let fixes = load_toml("parity/fixes.toml");
     for fix in tables(&fixes, "fix") {

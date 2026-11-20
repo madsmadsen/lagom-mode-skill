@@ -47,7 +47,7 @@ The parts are independent:
 ### 5.1 Order of delivery
 
 1. Skills work and port work can overlap. The skills use the Rust port of each tool, because the gates need `crapper --lines` and `mutator --lines` (skills SK-8), and the Python crapper rejects `--lines` (CR-26). The skills PRD states this interface in section 5.
-2. A port replaces its original only after it passes its parity criteria and Mads Madsen approves. The skills use the Rust ports before that approval. The gates need the `--lines` option of crapper, and that option waits as the unapproved `lines-option` entry in `tools/crapper/parity/fixes.toml`.
+2. A port replaces its original only after it passes its parity criteria and Mads Madsen approves. The skills use the Rust ports before that approval. The gates need the `--lines` option of crapper. Mads Madsen approved that option as the `lines-option` entry in `tools/crapper/parity/fixes.toml`.
 3. All three ports exist, and no port depends on another. So the ports can come in any order.
 4. The development of this repository uses `lagom-mode` with the tools that are installed at that time.
 
