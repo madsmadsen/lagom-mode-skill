@@ -353,3 +353,7 @@ Loop log (lagom-mode). Worktree `/tmp/lagom-wt/dryer`. Loop branch `lagom-mode/r
 - Result: the port median is lower than the original median on all 34 cases. No case is equal or higher. The largest gap is `default-go`, 0.53 s against 0.02 s. The smallest gap is `changed`, 0.50 s against 0.04 s. The runner's own `--check-timing` found no case, so its exit code is 0.
 - Limit of this result: the guest is emulated. Both programs run on the same emulated CPU, so the relation between the two medians is a real measurement of the two programs, but both sides are slowed by TCG, and the absolute numbers say nothing about a real CI runner. The relation of AC-10 was measured here on an emulated Ubuntu 22.04 x86_64 guest, the same way `tools/crapper/LOG.md` L4 measured AC-17. A run on real x86_64 hardware is still the check that DR-NFR-2 describes.
 - Cleanup: `ci/linux-vm/vm.sh stop x86_64`, then `ci/linux-vm/vm.sh kill`, then `rm -rf /tmp/linux-vm`.
+
+## 2026-11-21: macOS on x86_64 is not a target (dryer)
+
+- Mads Madsen said that macOS on x86_64 is not relevant. The platform requirement of this crate now names macOS 14 or later on arm64 and Linux on x86_64 and arm64, and says that macOS on x86_64 is not a target. Older log lines that say macOS x86_64 was not available stay as written. Proof: `cargo test` for the crate checks that cite the PRD still pass (see the commit message).

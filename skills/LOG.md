@@ -90,3 +90,7 @@
 - Not done: the macOS and Linux CI matrix of AC-18 (no `.github` exists and a workflow cannot run here), real agent runs of the sample features, and a proof that the repository is public.
 
 - Correction to the round 3 entry: AC-10 now has a measured result on an Ubuntu 22.04 x86_64 qemu guest (see `tools/dryer/LOG.md`, 2026-11-21): 34 cases, port median lower in all. The guest is emulated, as in the crapper AC-17 run, so only the relation is proven. A real runner is not used.
+
+## 2026-11-21: macOS on x86_64 is not a target
+
+- Mads Madsen said that macOS on x86_64 is not relevant. `docs/PRD.md` section 5.2 item 5, CR-NFR-3 and AC-18 (now three targets), DR-NFR-3 and AC-14, and MU-NFR-2 drop it. This closes the open AC-18 line about the macOS matrix for that target. The repository still has no CI workflow file, so the three targets are checked by hand and in the qemu guests.

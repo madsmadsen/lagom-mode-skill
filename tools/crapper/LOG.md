@@ -353,3 +353,7 @@ Loop `lagom-mode/crapper-lines` in `/tmp/lagom-wt/crapper-lines`, source branch 
 - Checks after the fixtures existed: `cargo build --release` exited 0. `cargo test` exited 0 with 426 tests passed. This includes the new AC-27 matrix and the existing pnpm test for coverage `100.0%`. `cargo clippy --all-targets` exited 0 with no issues. `cargo fmt` exited 0.
 - Metadata check: `PATH=/tmp/cov-venv/bin:$PATH python3.12 parity/run.py --check-meta` exited 0 and printed `meta ok`. No full parity run ran.
 - Test gates: `PATH=/tmp/cov-venv/bin:$PATH dryer --threshold 0.8 tests/fixes.rs` exited 0 with no duplicate candidates. `PATH=/tmp/cov-venv/bin:$PATH crapper --threshold 10 --lines 170,180,214 tests/fixes.rs` exited 0 and scored `install_manifest_bytes` at CRAP 2.0. Formatting moved `assert_fixture_install` to line 181, so that command did not score it. Main must use lines `170,181,215` for the final gate. No production Rust source changed, so no mutation gate applies.
+
+## 2026-11-21: macOS on x86_64 is not a target (crapper)
+
+- Mads Madsen said that macOS on x86_64 is not relevant. The platform requirement of this crate now names macOS 14 or later on arm64 and Linux on x86_64 and arm64, and says that macOS on x86_64 is not a target. Older log lines that say macOS x86_64 was not available stay as written. Proof: `cargo test` for the crate checks that cite the PRD still pass (see the commit message).
