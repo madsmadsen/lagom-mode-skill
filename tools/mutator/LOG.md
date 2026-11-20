@@ -356,3 +356,7 @@ Tool worker. Worktree `/tmp/lagom-fix8`, branch `lagom-mode/open-items-2`. Files
 ## 2026-11-20: approval of the fixes.toml entries (MU-PB-6)
 
 - Mads Madsen approved every entry of this crate's `parity/fixes.toml` in the chat of 2026-11-20. The agent set the approval key on each entry as he said. `approved = true` is now on all 8 entries, which is the key that `parity/run.py` reads. Proof: `cargo test --test fixes_toml` passes with 4 tests.
+
+## 2026-11-20: full parity run after the approval (MU-PB-2, MU-PB-6, AC-1)
+
+- Ran the mutator parity runner on a scratch copy of 987d9dd. The original: `pip install git+https://github.com/unclebob/mutator@a5a0cb803b66e0cdb8bf471b3b08af701d424a41` in a python3.12 venv (pip records that commit in `direct_url.json`), plus crapper `6fd92c4`. Command: `ORIGINAL_PYTHON=<venv>/bin/python MUTATOR_BIN=target/release/mutator <venv>/bin/python parity/run.py`. Result: 36 PASS, 2 DIFF-ALLOWED (`flag-help-short` and `flag-help-long`, excused by the approved `worker-cap-half-the-cores` and `max-memory-limit`), 0 FAIL, exit 0. Run with plain `python3.12` instead of the venv interpreter, the runner fails at `import mutator.edn`. With `ORIGINAL_PYTHON` set to a venv that has no pinned original (the dryer venv), the pin check stops the runner with exit 1 and its message. Host: arm64, 14 logical CPUs.

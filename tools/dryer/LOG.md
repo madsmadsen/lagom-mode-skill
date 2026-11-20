@@ -271,3 +271,7 @@ Loop log (lagom-mode). Worktree `/tmp/lagom-wt/dryer`. Loop branch `lagom-mode/r
 ## 2026-11-20: approval of the fixes.toml entries (DR-PB-6)
 
 - Mads Madsen approved every entry of this crate's `parity/fixes.toml` in the chat of 2026-11-20. The agent set the approval key on each entry as he said. `approved_by = "Mads Madsen"` is now on all 6 entries. Proof: `cargo test` passes with 236 tests.
+
+## 2026-11-20: full parity run after the approval (DR-PB-3, DR-PB-6)
+
+- Ran the dryer parity runner on a scratch copy of 987d9dd. Original: the checkout at `66ff6d2` in `parity/.cache/dryer-original`, run with a python3.12 venv that has the tree-sitter dependencies. Command: `DRYER_ORIGINAL_PYTHON=<venv>/bin/python python3.12 parity/run_parity.py --original <checkout>`. Result: 34 cases, 0 failed, 4 accepted (`help-long`, `help-short`, `jsx-fix`, `rust-test-code-fix`), 0 awaiting approval, exit 0. Host: arm64, 14 logical CPUs. No timing check ran.

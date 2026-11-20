@@ -80,3 +80,5 @@
 ## 2026-11-20: approval of the fixes.toml entries
 
 - Mads Madsen approved all entries of the three `fixes.toml` files (crapper 9, dryer 6, mutator 8). `docs/PRD.md` section 5.1 item 2 no longer calls the `lines-option` entry unapproved. This closes the open lines above about the approvals. Still open: the stale `tools/crapper/parity/last-run.toml` until a full crapper parity run records a new result, and the claim that the repository is public.
+
+- Ran the three parity runners for real after the approval (scratch copies, logged in each crate LOG). crapper: 58 runs, 49 pass, 9 diffs (the approved entries), RESULT pass, and `last-run.toml` is now written by the runner (commit c3276b4). dryer: 34 cases, 0 failed, 4 accepted. mutator: 36 PASS, 2 DIFF-ALLOWED, 0 FAIL. This closes the stale `last-run.toml` item. Not done: the AC-10 timing run, and the yarn and bun fixtures.
