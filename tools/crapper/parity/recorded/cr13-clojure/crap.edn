@@ -1,0 +1,5 @@
+{:entries [
+  {:name "grade", :namespace "demo.core", :complexity 4, :coverage 0.0, :crap 20.0}
+  {:name "describe-item", :namespace "demo.core", :complexity 3, :coverage 0.0, :crap 12.0}
+  {:name "tag", :namespace "demo.shared", :complexity 1, :coverage 0.0, :crap 2.0}
+]}

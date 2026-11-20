@@ -1,0 +1,4 @@
+{:entries [
+  {:name "place", :namespace "demo.pkg.Board", :complexity 5, :coverage 0.0, :crap 30.0}
+  {:name "name", :namespace "demo.pkg.Board", :complexity 4, :coverage 0.0, :crap 20.0}
+]}
