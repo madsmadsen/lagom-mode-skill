@@ -1,12 +1,11 @@
 //! The to-do list: parse the arguments, and read and write the store.
 
 pub mod store;
-pub mod summary;
 pub mod task;
 
 use std::path::Path;
 
-use task::Task;
+use task::{describe, Task};
 
 /// Run one command and return the text to print. An error message is the text for stderr.
 pub fn run(args: &[String], path: &Path) -> Result<String, String> {
@@ -38,7 +37,7 @@ fn list(path: &Path) -> Result<String, String> {
         text.push_str(&task.format());
         text.push('\n');
     }
-    text.push_str(&summary::describe(&tasks));
+    text.push_str(&describe(&tasks));
     text.push('\n');
     Ok(text)
 }

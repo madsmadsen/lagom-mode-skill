@@ -3,7 +3,7 @@
 A small command-line to-do list. It is the sample project of the skills PRD, section 9. The sample
 features run on this project later.
 
-It has no dependencies. It is its own Cargo project, not a member of a workspace.
+It has no dependencies. It is its own Cargo project.
 
 ## Use
 
@@ -30,9 +30,10 @@ TODO_FILE=/tmp/my-list.txt cargo run -- add walk dog
 | --- | --- |
 | `src/main.rs` | Reads the arguments and the store path, calls the library, sets the exit code. |
 | `src/lib.rs` | The `add` and `list` commands. |
-| `src/task.rs` | One task, and how a line of the store is read and written. |
+| `src/task.rs` | One task, how a line of the store is read and written, and the sentence after the list. |
 | `src/store.rs` | Load, save, and the next id. |
-| `src/summary.rs` | The sentence after the list. |
 
-`src/summary.rs` holds one complex function on purpose, as AC-14 of the skills PRD requires. The
-sample features must not touch that function.
+`src/task.rs` has two kinds of code. The task functions are small and they have tests for each
+branch. The summary function `describe` has many branches and one test, which takes one case. AC-14
+of the skills PRD needs such an old function in a file that a sample feature changes for another
+reason.

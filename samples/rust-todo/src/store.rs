@@ -56,9 +56,9 @@ mod tests {
         std::env::temp_dir().join(format!("rust-todo-store-{pid}-{name}.txt"))
     }
 
-    /// SK-8: `TODO_FILE` sets the store path, and `todo.txt` is the default.
+    /// Skills PRD section 9: `TODO_FILE` sets the store path, and `todo.txt` is the default.
     #[test]
-    fn sk_8_resolve_path_reads_the_variable() {
+    fn sample_resolve_path_reads_the_variable() {
         assert_eq!(
             resolve_path(Some("/tmp/x.txt")),
             PathBuf::from("/tmp/x.txt")
@@ -66,9 +66,9 @@ mod tests {
         assert_eq!(resolve_path(None), PathBuf::from("todo.txt"));
     }
 
-    /// SK-8: a saved list loads back as the same tasks.
+    /// Skills PRD section 9: a saved list loads back as the same tasks.
     #[test]
-    fn sk_8_save_and_load_round_trip() {
+    fn sample_save_and_load_round_trip() {
         let path = temp_path("round-trip");
         let tasks = vec![Task::new(1, "buy milk"), Task::new(2, "walk dog")];
         save(&path, &tasks).expect("save");
@@ -76,17 +76,17 @@ mod tests {
         fs::remove_file(&path).ok();
     }
 
-    /// SK-8: a missing file holds no task.
+    /// Skills PRD section 9: a missing file holds no task.
     #[test]
-    fn sk_8_load_of_a_missing_file_is_empty() {
+    fn sample_load_of_a_missing_file_is_empty() {
         let path = temp_path("missing");
         fs::remove_file(&path).ok();
         assert_eq!(load(&path).expect("load"), Vec::new());
     }
 
-    /// SK-8: ids count from 1, and the next id is one above the highest id in use.
+    /// Skills PRD section 9: ids count from 1, and the next id is one above the highest id in use.
     #[test]
-    fn sk_8_next_id_counts_from_one() {
+    fn sample_next_id_counts_from_one() {
         assert_eq!(next_id(&[]), 1);
         assert_eq!(next_id(&[Task::new(1, "a")]), 2);
         assert_eq!(
