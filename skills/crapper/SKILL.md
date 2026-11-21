@@ -30,7 +30,7 @@ On the feature files (the feature gates), get the lines from `git diff -U0 <base
 
 Get the changed lines from the hunk headers of the diff. A hunk header looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. A hunk with `c` of 0 and `d` of 0 gives no line. Join the lines of all hunks of the file with commas.
 
-Do not run `crapper` on a test file. It gives the test functions 0% coverage, so each test function with a complexity of 3 or more fails the gate. The `lagom-mode` skill lists the test paths.
+Do not run `crapper` on a test file. A function of the file that the coverage report does not mention gets 0% coverage, so each function with a complexity of 3 or more fails the gate. The `lagom-mode` skill lists the test paths.
 
 crapper runs the coverage command of the project. It prints a table on stdout with the worst score first. It also writes `.metrics/crap.edn`. Each run overwrites that file. crapper can install a missing coverage tool from the network (CR-14).
 
@@ -39,6 +39,10 @@ crapper runs the coverage command of the project. It prints a table on stdout wi
 Each row of the table has one function with its complexity, its coverage, and its CRAP score. Read the rows above 10. If every row is at or below 10, all functions pass.
 
 Exit 0 only proves that the scored functions pass. Confirm that each changed function has a row. A run that reports no source file comes from file selection, so check the paths. An empty table alone does not prove that the line list is wrong, because a change outside any function also gives an empty table. Check that the line list holds the changed lines. A missing function means that the line list is wrong.
+
+crapper reads the coverage report `lcov.info` only below `coverage/` and below `target/coverage/` of the project root. It reads each such report in those two trees at any depth. It reads no report at another path. A report at another path gives every function 0% coverage, and crapper prints no warning. A gate that reads the crapper output cannot tell this case from code without tests. Fix the output path of the coverage command.
+
+A custom coverage command does not always create the output directory, so create it before the run. With no coverage command, crapper runs the default command of each language and creates the directory itself. The default Rust run writes its report to `target/coverage/rust/lcov.info`, and crapper reads it. A Rust package below the root writes to `target/coverage/rust/<slug>/lcov.info`, and crapper reads that too.
 
 ## Exit codes
 

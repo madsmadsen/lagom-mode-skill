@@ -43,7 +43,9 @@ dryer prints the pairs that score at or above the threshold. It also writes `.me
 * `:left` and `:right`: the two forms. Each has `:file`, `:start-line`, and `:end-line`.
 * `:score`: the similarity score.
 
-If `:candidates` is empty, the dryer gate passes.
+The dryer gate passes when no pair in `:candidates` has a side whose `:start-line` to `:end-line` holds a changed line of its `:file`. A pair of two old forms does not count.
+
+Get the changed lines of each file from the hunk headers of its diff, as `lagom-mode` says. For a unit gate, run `git diff -U0 HEAD -- <file>`. For a feature gate, run `git diff -U0 <base-commit> HEAD -- <file>`. A new file that git does not track yet has no diff, so all its lines count. You do not pass these lines to dryer. dryer still checks the whole file, and the command stays the same.
 
 dryer reports no source file when it finds none. That message is a pass. dryer writes no snapshot in that run. Do not read an old `.metrics/dry.edn`.
 
@@ -51,7 +53,7 @@ dryer reports no source file when it finds none. That message is a pass. dryer w
 
 | Code | Meaning | What you do |
 | --- | --- | --- |
-| 0 | dryer wrote the report. | Read `:candidates`. The gate passes only if it is empty. |
+| 0 | dryer wrote the report. | Read `:candidates`. The gate passes only if no pair has a side whose `:start-line` to `:end-line` holds a changed line of its `:file`. |
 | 1 | Usage error, or dryer did not write the snapshot. | Fix the command. Do not change the threshold. If the write failed, fix its cause, for example a file in the way of `.metrics`. |
 | 2 | Unknown output format. | Remove the `--format` flag or use `text` or `edn`. |
 | 70 | The worker thread did not start, or it panicked. | Read stderr. It names the reason. |
@@ -61,11 +63,11 @@ Exit code 0 does not mean that the gate passes. dryer exits with 0 even when it 
 
 ## Act on a pair
 
-For each pair, open the two forms at the lines in the report. Then do one of these:
+Act on each pair that counts. A pair does not count when both of its forms lie on old lines, as above. For each counted pair, open the two forms at the lines in the report. Then do one of these:
 
 1. Extract the shared shape into one function. Give the differences to it as arguments. Call it from both places.
 2. If the two forms look alike but mean different things in the domain, change one of them so that its shape differs. Write the reason in the log.
 
-Writing the reason alone does not pass the gate. The pair stays in `:candidates` until its score is below 0.8. If you cannot lower the score within 5 tries, stop and report the pair and your reason (stop condition 1 of lagom-mode).
+Writing the reason alone does not pass the gate. The pair stays in `:candidates` until its score is below 0.8, so the next run reports it again. A counted pair stays counted while one of its forms holds a changed line. If you cannot lower the score of a counted pair within 5 tries, stop and report the pair and your reason (stop condition 1 of lagom-mode).
 
 Run the tests after each change. Pin the behavior before you extract, as in the Refactoring rule of lagom-mode.

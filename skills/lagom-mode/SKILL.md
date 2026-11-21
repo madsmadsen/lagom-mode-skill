@@ -38,7 +38,7 @@ A unit or a feature passes its gates when all of these are true at once:
 
 1. All tests pass.
 2. `crapper` reports no function with a CRAP score higher than 10 in the functions that contain a changed line.
-3. `dryer` reports no candidate pair with a score of 0.8 or more in the checked files.
+3. `dryer` reports no candidate pair with a score of 0.8 or more in the checked files in which the `:start-line` to `:end-line` range of one of the two sides holds a changed line of that side's `:file`. A pair of two old forms does not count.
 4. `mutator` exits `0` for the changed lines, and its snapshots have 0 uncovered sites in the checked functions. Delete the snapshot of the file before each run, as below. Then a survivor can come only from a changed line.
 
 `dryer` checks whole files. `crapper` and `mutator` check only the changed lines of each file. Run them once for each changed file that is not a test file. Leave out a file that no longer exists. Give each run the changed lines of that file in `--lines`. Skip a file that has no changed line. Skip a file that is not source code in a language the tools know, such as the build manifest of a project or a README file. Do not use `--changed` for `crapper` or `mutator`.
@@ -65,7 +65,11 @@ mutator --lines <changed-lines> <file>
 
 Get the changed lines from the hunk headers of the diff. A hunk header looks like `@@ -a,b +c,d @@`. The changed lines are `c` to `c+d-1`. If `,d` is missing, `d` is 1. If `d` is 0, the hunk only deletes lines. Use line `c` for it, unless `c` is 0. A hunk with `c` of 0 and `d` of 0 gives no line. Join the lines of all hunks of the file with commas.
 
-A test file is a file in a directory named `__tests__`, `spec`, `specs`, `test`, or `tests`. It is also a file with a name like `*_test.go`, `*.test.ts`, or `test_*.py`. The tools skip test files by default. `crapper` and `dryer` take a test file when you name it. `mutator` drops a test file that you name, so a named test file gets no mutator run. If you name a test file, `crapper` gives its test functions 0% coverage, because no test runs a test function. Each test function with a complexity of 3 or more then scores above 10, and no repair clears the gate. So do not run `crapper` on a test file. `dryer` gets all the feature files, test files included. `testdata` is not a test directory. It is one of the directories that the walk of each tool skips, so the tools never see a file below it.
+The rule of dryer in condition 3 uses the same changed lines, but you do not pass them to dryer. Take them from `git diff -U0 HEAD -- <file>` for a unit gate, and from `git diff -U0 <base-commit> HEAD -- <file>` for a feature gate. A new file that git does not track yet has no diff, so all its lines count. For each pair in `:candidates`, look at `:file`, `:start-line`, and `:end-line` of each side, and read the changed lines of that file. The pair counts only when one of the two ranges holds a changed line. A pair whose two forms both lie on old lines does not count.
+
+A test file is a file with a directory named `__tests__`, `spec`, `specs`, `test`, `testdata`, or `tests` anywhere in its path. It is also a file with a name like `*_test.go`, `*.test.ts`, or `test_*.py`. In Rust it is also a file named `*_tests.rs`, and a file `tests.rs` with `src` among its directories.
+
+A plain run skips a test file. No tool enters a directory named `test`, `tests`, `spec`, `specs`, `__tests__`, or `testdata`, so a plain run never sees a file below one of them. The walk also skips a file with a test name, such as `*_test.go`, `*.test.ts`, or `test_*.py`, and a file named `conftest.py`. No tool knows the two Rust names, so a file named `*_tests.rs` and a file `tests.rs` below `src` stay in a plain run. `crapper` and `dryer` take a test file that you name. `mutator` drops a test file that you name, so a named test file gets no mutator run. A named test file still goes into the `crapper` table. `crapper` leaves out the Rust functions that it finds to be test code (CR-25). Each function of the file that the coverage report does not mention gets 0% coverage. A function with a complexity of 3 or more then scores above 10, and no repair clears the gate. So never run `crapper` or `mutator` on a test file of this definition. `dryer` gets all the feature files, test files included.
 
 The unit gates see only uncommitted changes. The feature gates see the whole feature. They catch a problem that spans two units, for example duplication between code from unit 1 and code from unit 3.
 
@@ -203,7 +207,7 @@ Make every edit, test run, gate run, and commit inside the loop worktree. Do not
 ## Dryer
 
 * Use the dryer tool. Load the `dryer` skill.
-* Eliminate duplication that ranks 0.8 or above.
+* Eliminate duplication that ranks 0.8 or above in a pair that counts, as condition 3 of the gate rule says.
 
 ## Mutator
 

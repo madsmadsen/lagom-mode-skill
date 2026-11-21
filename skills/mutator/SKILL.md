@@ -79,6 +79,8 @@ A checked form is a form whose `:file` is that changed file and whose `:line` to
 | 3 | At least one mutant survived. | Find the survivors in `:outcomes` and kill them, as below. You deleted the snapshot of the file before the run, so each survivor comes from a changed line. |
 | other code | `--coverage-command` failed and returned its own exit code. | Read the message on stderr. It names the exit code. Fix the coverage command. |
 
+mutator reads the coverage report `lcov.info` in the same two places as crapper: below `coverage/` and below `target/coverage/` of the project root, at any depth. It reads no report at another path. With no report that it reads, mutator finds no coverage data for each file, prints a notice on stderr, counts every site as uncovered, and still exits 0. The row above makes that run a fail. Fix the output path of the coverage command. A custom coverage command does not always create the output directory, so create it before the run. With no coverage command, mutator runs the default command of each language and creates the directory itself. The default Rust run writes its report to `target/coverage/rust/lcov.info`, and mutator reads it.
+
 A failed `--coverage-command` can also exit with 1, 2, or 3, because its code is not a mutator code. Code 1 looks like a usage error. Read stderr before you read those rows: the message names the exit code of the failed command.
 
 ## Act on an outcome
