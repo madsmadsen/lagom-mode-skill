@@ -413,3 +413,38 @@ The root causes were in the fixtures, not in the tools.
 ### Checks
 
 - `cargo build --release` exited 0. `cargo test` exited 0 with 426 passed. `cargo clippy --all-targets` exited 0 with no issues. `cargo fmt --check` exited 0. `PATH=/tmp/cov-venv/bin:$PATH python3.12 parity/run.py --check-meta` exited 0 and printed `meta ok`.
+
+## 2026-11-21: where lcov.info is read (CR-12, AC-16)
+
+The skill says that crapper reads `lcov.info` only below `coverage/` and `target/coverage/`, and that a report at another path gives each function 0% coverage with no warning. The PRD cites a test for that rule. No test named it, so this entry adds one. The test characterizes the current behavior. The source did not change.
+
+### The new test file
+
+- New file `tests/lcov_paths.rs`, with the CR-NFR-5 header (`upstream-path: none`). Two tests:
+  - `cr_12_lcov_is_read_only_below_coverage_and_target_coverage`: a project with one Python function and one LCOV report that says every line ran. (a) the report at `<root>/lcov.info` gives `Cov%` `0.0%` and stderr holds no warning. (b) `<root>/coverage/lcov.info` gives `100.0%`. (c) `<root>/target/coverage/lcov.info` gives `100.0%`. (d) `<root>/target/coverage/rust/src-x/lcov.info` gives `100.0%`.
+  - `cr_12_no_report_at_all_gives_zero_coverage_and_no_warning`: `--use-existing-coverage` with no report gives `0.0%` and no warning.
+- The `Cov%` cell is compared as its own whitespace token, so a `100.0%` value cannot pass an assertion that expects `0.0%` by substring. The stderr check drops only the `Wrote <path>` snapshot line, which every successful run prints (`src/cli.rs:485`). Any other line fails the test.
+
+### Proof that each case bites (scratch copy `/tmp/crapper-bite`, not in the worktree)
+
+Each run was `cargo test --test lcov_paths` in the copy after one temporary source edit, and the copy was reset from the worktree after each one:
+
+- `merge_lcov` changed to `find_named(root, ...)`, so it reads the root: exit 101, `1 passed; 1 failed`. `CR-12 case (a), a report at the project root is not read, so coverage is 0.0% and not the report value`, left `"100.0%"`, right `"0.0%"`.
+- `merge_lcov` changed to read only `target/coverage`: exit 101, `1 passed; 1 failed`. `CR-12 case (b), a report below coverage/ is read, so coverage is 100.0%`, left `"0.0%"`, right `"100.0%"`.
+- `merge_lcov` changed to read only `coverage`: exit 101, `1 passed; 1 failed`. `CR-12 case (c), a report below target/coverage/ is read, so coverage is 100.0%`, left `"0.0%"`, right `"100.0%"`.
+- `collect_named` changed so it does not descend: exit 101, `1 passed; 1 failed`. `CR-12 case (d), a nested report below target/coverage/rust/src-x/ is read, so coverage is 100.0%`, left `"0.0%"`, right `"100.0%"`.
+- A warning added when no LCOV file is found: exit 101, `0 passed; 2 failed`. `CR-12 no report: stderr must hold no warning`, left `["No LCOV coverage report found below coverage/ or target/coverage/."]`, right `[]`, and the same failure for case (a).
+
+### The warning claim, from the source
+
+- With `--use-existing-coverage`, `src/cli.rs` `coverage_bundle` calls `load_bundle` and nothing else. `src/coverage/mod.rs` `merge_lcov` collects files and parses them. No branch prints when none is found, so a missing report gives 0% and no stderr line. The only stderr line of a successful run is `Wrote <root>/.metrics/crap.edn`.
+- Without the flag, the run executes the coverage commands. `src/runners/mod.rs` `run_shell` prints `+ (<cwd>) <command>` before each command, and these warnings exist for a failure: `Coverage command exited N. Reports already on disk will not be read.` (custom command, `custom_exit_warning`), `<Language> coverage exited N in <module>. <Language> coverage will score 0%.` (`exit_warning`), `coverage is missing in <package>. Python coverage will score 0%.`, `Neither cargo-llvm-cov nor cargo-tarpaulin is installed...`, `No Cargo.toml; skipping Rust coverage.`, and the Python test and lcov exit warnings of `python_run_warning`. So a successful command that writes its report at a path crapper does not read gives no warning. A failed command or a missing tool does warn, and that warning names the failure, not the path.
+- Probe with the release binary in a temp project with one Python file and no report: `--use-existing-coverage` printed only the `Wrote ...` line. `--coverage-command false` printed `+ (...) false` and `Coverage command exited 1. Reports already on disk will not be read.` Default coverage (no flag) ran `python3 -c 'import coverage'`, tried the install, and printed `coverage is missing in ... Python coverage will score 0%.` All three exited 0.
+
+### Checks (in `tools/crapper`, one cargo command at a time)
+
+- `cargo build --release` exited 0.
+- `cargo test` exited 0. Suites: `src/lib.rs` 341, `src/main.rs` 0, `tests/cli.rs` 53, `tests/fixes.rs` 10, `tests/lcov_paths.rs` 2, `tests/meta.rs` 10, `tests/recorded.rs` 12, doc-tests 0. Total 428 passed.
+- `cargo clippy --all-targets` exited 0 with no issues. `cargo fmt --check` exited 0.
+- `PATH=/tmp/cov-venv/bin:$PATH crapper --threshold 10 tests/lcov_paths.rs` exited 0. Report: `fully_hit_record` CC 2, CRAP 6.0, and the six helpers `write_text`, `crapper_in`, `stdout`, `warnings`, `coverage_cell` and `project_with_report` at CRAP 2.0. All below 10. The two `#[test]` functions are not scored, because a `#[test]` function is test code (CR-25).
+- `PATH=/tmp/cov-venv/bin:$PATH dryer --threshold 0.8 tests/lcov_paths.rs` exited 0 with `No duplicate candidates found.`
