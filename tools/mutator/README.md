@@ -115,6 +115,12 @@ and its test. Mads Madsen approves each entry (MU-PB-6).
    original links them, so a test command that writes Playwright output shares that output between
    the workers. A project-specific output name is not listed here, so a directory with another name
    is still shared.
+11. `worker-html-copies` (MU-29). A worker holds a real copy of each `.html` file of the project, and
+   the parent directories of such a file are real directories. The other entries of those directories
+   stay links. The original links these files, so a bundler resolves a linked HTML entry file to its
+   real path, which lies outside the worker, and the build fails. The rule does not help a bundler
+   configuration that builds its entry paths from the location of its own configuration file, because
+   that file is still a link.
 
 ## Coverage installs and the network
 

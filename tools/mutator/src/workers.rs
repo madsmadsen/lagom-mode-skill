@@ -292,7 +292,8 @@ fn keep_dir(name: &OsStr) -> bool {
     !in_skip_list(name, &["node_modules"])
 }
 
-fn source_files(root: &Path) -> Vec<PathBuf> {
+/// Files under `root` that `wanted` accepts. A directory is entered only when `keep` accepts it.
+fn files_under(root: &Path, keep: fn(&OsStr) -> bool, wanted: fn(&Path) -> bool) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut pending = vec![root.to_path_buf()];
     while let Some(dir) = pending.pop() {
@@ -305,15 +306,36 @@ fn source_files(root: &Path) -> Vec<PathBuf> {
             };
             let path = entry.path();
             if kind.is_dir() {
-                if keep_dir(&entry.file_name()) {
+                if keep(&entry.file_name()) {
                     pending.push(path);
                 }
-            } else if is_source(&path) {
+            } else if wanted(&path) {
                 found.push(path);
             }
         }
     }
     found
+}
+
+fn source_files(root: &Path) -> Vec<PathBuf> {
+    files_under(root, keep_dir, is_source)
+}
+
+/// The HTML walk skips the output directories of MU-28 too.
+fn keep_html_dir(name: &OsStr) -> bool {
+    keep_dir(name) && !OUTPUT_DIRS.iter().any(|dir| OsStr::new(dir) == name)
+}
+
+fn is_html(path: &Path) -> bool {
+    path.extension().and_then(OsStr::to_str) == Some("html")
+}
+
+/// Relative posix paths of the HTML files of the project (MU-29).
+fn html_files(root: &Path) -> BTreeSet<String> {
+    files_under(root, keep_html_dir, is_html)
+        .iter()
+        .filter_map(|path| relative_posix(path, root).ok())
+        .collect()
 }
 
 /// Maps every imported file to the set of modules that import it.
@@ -400,16 +422,25 @@ fn build_worker(
     root: &Path,
     relative: &str,
     original: &[u8],
-    importers: &BTreeSet<String>,
+    copies: &BTreeSet<String>,
 ) -> io::Result<()> {
     let first = relative.split('/').next().unwrap_or_default();
     fs::create_dir_all(worker)?;
     copy_configs(worker, root, relative)?;
     link_children(worker, root, &[first])?;
     overlay(worker, root, relative, original)?;
-    importers
+    copies
         .iter()
-        .try_for_each(|importer| copy_importer(worker, root, importer))
+        .try_for_each(|copy| copy_importer(worker, root, copy))
+}
+
+/// The modules that import `relative`, and the HTML files of the project, as posix paths. Each of
+/// them is a real file in a worker (MU-17, MU-29). The file under test is never in the set.
+fn copied_files(root: &Path, relative: &str) -> io::Result<BTreeSet<String>> {
+    let mut copies = importers_of(root, relative)?;
+    copies.extend(html_files(root));
+    copies.remove(relative);
+    Ok(copies)
 }
 
 /// Builds `count` worker overlays under `base`, each holding a private copy of `relative`.
@@ -420,11 +451,11 @@ pub fn create_workers(
     original: &[u8],
     count: usize,
 ) -> io::Result<Vec<PathBuf>> {
-    let importers = importers_of(root, relative)?;
+    let copies = copied_files(root, relative)?;
     (0..count)
         .map(|index| -> io::Result<PathBuf> {
             let worker = base.join(format!("worker-{index}"));
-            build_worker(&worker, root, relative, original, &importers)?;
+            build_worker(&worker, root, relative, original, &copies)?;
             Ok(worker)
         })
         .collect()
@@ -1556,5 +1587,60 @@ mod tests {
             "keep"
         );
         delete_tree(&base).unwrap();
+    }
+
+    // MU-29: each HTML file of the project is a real copy in the worker. Its parent directories are
+    // real directories, and the other entries of those directories stay links.
+    #[test]
+    fn mu_29_html_files_are_real_copies_in_the_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "pages/page.html", "<p>page</p>\n");
+        put(root, "pages/notes.txt", "notes\n");
+        put(root, "index.html", "<html></html>\n");
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+
+        let base = new_run_dir(root).unwrap();
+        let worker = create_workers(&base, root, "src/demo.py", &original, 1).unwrap()[0].clone();
+        for relative in ["index.html", "pages/page.html"] {
+            let copied = worker.join(relative);
+            assert!(copied.is_file() && !copied.is_symlink(), "{relative}");
+            assert_eq!(
+                fs::read(&copied).unwrap(),
+                fs::read(root.join(relative)).unwrap()
+            );
+        }
+        let pages = worker.join("pages");
+        assert!(pages.is_dir() && !pages.is_symlink());
+        assert!(worker.join("pages/notes.txt").is_symlink());
+
+        delete_tree(&base).unwrap();
+        assert_eq!(
+            fs::read_to_string(root.join("index.html")).unwrap(),
+            "<html></html>\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("pages/page.html")).unwrap(),
+            "<p>page</p>\n"
+        );
+    }
+
+    // MU-29: the walk for HTML files skips the directories that the links skip, and the output
+    // directories. An HTML file under them is not copied.
+    #[test]
+    fn mu_29_html_files_skip_dependency_and_output_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "docs/a.html", "a");
+        put(root, "node_modules/b.html", "b");
+        put(root, "dist/c.html", "c");
+        put(root, "playwright-report/d.html", "d");
+        put(root, "test-results/e.html", "e");
+        let expected: BTreeSet<String> = ["docs/a.html"]
+            .iter()
+            .map(|path| path.to_string())
+            .collect();
+        assert_eq!(html_files(root), expected);
     }
 }

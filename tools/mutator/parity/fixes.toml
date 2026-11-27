@@ -135,6 +135,16 @@ test = "tests/mu28_output_dirs.rs::mu_28_ac_22_a_worker_does_not_write_test_resu
 changes_snapshot_keys_or_shape = false
 approved = false
 
+[[fix]]
+id = "worker-html-copies"
+requirement = "MU-29"
+description = """The original links every entry of the project into each worker, including the HTML files. A bundler resolves a linked HTML entry file to its real path, which lies outside the worker, and the build fails. The port copies each `.html` file of the project into each worker, and the parent directories of such a file become real directories in the worker."""
+changed_behavior = "A worker holds a real copy of each .html file of the project. The parent directories of such a file are real directories in the worker, and the other entries of those directories stay links."
+fixture = "tests/mu29_html_copies.rs"
+test = "tests/mu29_html_copies.rs::mu_29_ac_23_a_worker_holds_real_copies_of_html_files"
+changes_snapshot_keys_or_shape = false
+approved = false
+
 # Not listed on purpose (MU-PB-5): `bugs/python-tests-run-with-mutators-virtualenv.md` comes from
 # Python only. The port has no interpreter of its own and uses the project's `.venv` or `venv`
 # Python, else `python3` on the PATH.
