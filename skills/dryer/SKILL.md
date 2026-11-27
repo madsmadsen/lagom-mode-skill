@@ -10,6 +10,8 @@ description: >
 
 dryer compares each function, method, or top-level form with the others in the same language. It gives each pair a similarity score from 0 to 1. The gate limit is 0.8. A pair with a score of 0.8 or more fails.
 
+dryer works on Clojure, Java, Go, TypeScript, JavaScript, Rust, and Python. It reads a `.js`, `.jsx`, `.mjs`, or `.cjs` file as TypeScript, so a JavaScript file takes part in the comparison like a TypeScript file.
+
 ## Install
 
 The install instructions are in `tools/dryer/README.md`. Run `dryer --help` to make sure that the command is on the `PATH`.

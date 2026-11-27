@@ -10,6 +10,8 @@ description: >
 
 crapper gives each function a CRAP score. A high score means the function is complex, has weak tests, or both. The gate limit is 10. A function at 10.0 passes, and a function above 10.0 fails.
 
+crapper works on Clojure, Java, Go, TypeScript, JavaScript, Rust, and Python. It reads a `.js`, `.jsx`, `.mjs`, or `.cjs` file as TypeScript, with the JavaScript grammar. In the table, the `Languages:` line names such a file `javascript`. The snapshot `.metrics/crap.edn` has no language field.
+
 ## Install
 
 The install instructions are in `tools/crapper/README.md`. Run `crapper --help` to make sure that the command is on the `PATH`.

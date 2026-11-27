@@ -11,6 +11,8 @@ description: >
 
 mutator makes one small change (a mutant) to the code, then runs the tests. If a test fails, the mutant is killed. If all tests pass, the mutant survived. A survivor means that no test checks that piece of code.
 
+mutator works on Clojure, Java, Go, TypeScript, JavaScript, Rust, and Python. It reads a `.js`, `.jsx`, `.mjs`, or `.cjs` file as TypeScript. For these files the default test command is `npm test`.
+
 ## Install
 
 The install instructions are in the README of the Rust port of mutator, `tools/mutator/README.md`. Run `mutator --help` to make sure that the command is on the `PATH`.
