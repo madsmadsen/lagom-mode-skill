@@ -1,0 +1,5 @@
+{:entries [
+  {:name "pick", :namespace "a", :complexity 2, :coverage nil, :crap nil}
+  {:name "sign", :namespace "a", :complexity 2, :coverage nil, :crap nil}
+  {:name "twice", :namespace "b", :complexity 2, :coverage nil, :crap nil}
+]}

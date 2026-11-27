@@ -316,3 +316,15 @@ fn fix_lines_option_scores_only_the_functions_that_hold_a_listed_line() {
         out.code == 0 && row_of(out, "ok").is_some() && row_of(out, "choose").is_none()
     });
 }
+
+// fix: javascript-language-label (CR-27, AC-38). The Languages line names javascript for a project of .js and .mjs files.
+#[test]
+fn fix_javascript_language_label_names_javascript_for_js_files() {
+    check("javascript-language-label", |out| {
+        out.code == 0
+            && out
+                .stdout
+                .lines()
+                .any(|line| line == "Languages: javascript")
+    });
+}

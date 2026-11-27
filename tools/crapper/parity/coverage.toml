@@ -579,3 +579,13 @@ setup = ["mv app.py.txt app.py"]
 requires = []
 covers = []
 fix = "lines-option"
+
+# CR-27: the Languages line names javascript for .js, .jsx, .mjs, and .cjs files
+[[run]]
+id = "fix-javascript-language-label"
+fixture = "javascript"
+args = ["--no-coverage"]
+setup = []
+requires = []
+covers = []
+fix = "javascript-language-label"

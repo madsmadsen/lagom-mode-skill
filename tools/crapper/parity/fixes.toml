@@ -71,3 +71,10 @@ description = "Difference from the original, not from an upstream issue (CR-26).
 behavior = "With --lines, the report, the snapshot, and the --threshold exit status see only the functions that contain a listed line. The original rejects --lines as an unknown option and exits with code 1."
 fixture = "lines-option"
 approved_by = "Mads Madsen"
+
+[[fix]]
+id = "javascript-language-label"
+description = "Difference from the original, not from an upstream issue (CR-27). The Languages line of the table names javascript for entries from .js, .jsx, .mjs, and .cjs files. The original names typescript for them."
+behavior = "The Languages line of the table on stdout names javascript for each entry whose file has the extension .js, .jsx, .mjs, or .cjs, and typescript for other TypeScript-grammar entries. The snapshot does not change. The original names typescript for these entries."
+fixture = "javascript"
+approved_by = "Mads Madsen"

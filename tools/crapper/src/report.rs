@@ -5,6 +5,7 @@
 // upstream-path: src/crapper/report.py
 
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use crate::model::Entry;
 
@@ -43,8 +44,22 @@ fn format_row(entry: &Entry, name_width: usize, namespace_width: usize) -> Strin
     )
 }
 
+/// The language that the Languages line names for an entry (CR-27). A TypeScript entry of a
+/// `.js`, `.jsx`, `.mjs`, or `.cjs` file is JavaScript. The snapshot keeps `typescript`.
+fn language_label(entry: &Entry) -> &str {
+    let javascript = Path::new(&entry.path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| matches!(ext, "js" | "jsx" | "mjs" | "cjs"));
+    if entry.language == "typescript" && javascript {
+        "javascript"
+    } else {
+        &entry.language
+    }
+}
+
 fn language_list(entries: &[Entry]) -> String {
-    let languages: BTreeSet<&str> = entries.iter().map(|e| e.language.as_str()).collect();
+    let languages: BTreeSet<&str> = entries.iter().map(language_label).collect();
     languages.into_iter().collect::<Vec<_>>().join(", ")
 }
 
@@ -186,5 +201,41 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[4].chars().count(), 98);
         assert_eq!(lines[5], "-".repeat(98));
+    }
+
+    fn entry_at(path: &str, language: &str) -> Entry {
+        Entry {
+            name: "f".into(),
+            namespace: "demo".into(),
+            complexity: 1,
+            coverage: None,
+            crap: None,
+            path: path.into(),
+            language: language.into(),
+        }
+    }
+
+    // CR-27
+    #[test]
+    fn cr_27_languages_name_javascript_for_js_jsx_mjs_and_cjs_files() {
+        let text = format_report(&[
+            entry_at("src/a.js", "typescript"),
+            entry_at("src/b.jsx", "typescript"),
+            entry_at("src/c.mjs", "typescript"),
+            entry_at("src/d.cjs", "typescript"),
+            entry_at("src/e.ts", "typescript"),
+            entry_at("src/f.py", "python"),
+        ]);
+        assert_eq!(
+            text.lines().nth(2),
+            Some("Languages: javascript, python, typescript")
+        );
+    }
+
+    // CR-27
+    #[test]
+    fn cr_27_only_js_files_give_javascript() {
+        let text = format_report(&[entry_at("src/a.js", "typescript")]);
+        assert_eq!(text.lines().nth(2), Some("Languages: javascript"));
     }
 }

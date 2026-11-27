@@ -101,6 +101,8 @@ This section holds a difference that does not come from an upstream issue or pul
 
 - CR-26: The port has the option `--lines <n,n,...>`. The original does not have it and rejects it as an unknown option. The value is a list of line numbers separated by commas. Each line number is a positive whole number. The port reads each item with the rules of Python `int()` for ASCII digits: an optional `+` sign, an underscore between two digits, and spaces around the item do not change the number, so `--lines 1_0` asks for line 10. An empty item is skipped. A number above `u32::MAX` becomes `u32::MAX`, which no function holds. The port scores only the functions that contain at least one of the listed lines. A function contains a line when the line is the first line of the function, the last line of the function, or between them. The lines of a function inside another function also belong to the outer function. The option applies to every selected file. A function that contains no listed line is not scored. It is not in the report, it is not in the snapshot, and it does not count for `--threshold`. With `--threshold N`, the port exits `2` only when a scored function has a CRAP score higher than `N`. A value with no line number, or with an item that is not a positive whole number, is a bad option value: the port exits `1` and writes a message and the help text on stderr. The option does not change which files are selected or how coverage runs.
 
+- CR-27: The `Languages:` line of the table on stdout names `javascript` for each entry whose source file has the extension `.js`, `.jsx`, `.mjs`, or `.cjs`. The line still names `typescript` for each other entry that uses the TypeScript grammar. The list stays sorted and joined with commas. The snapshot in `.metrics/crap.edn` does not change. The original names `typescript` for these entries too. The difference is listed in `tools/crapper/parity/fixes.toml`.
+
 ## 6. Non-functional requirements
 
 - CR-NFR-1: Determinism. Two runs on the same files with the same coverage report write byte-identical snapshots.
@@ -111,7 +113,7 @@ This section holds a difference that does not come from an upstream issue or pul
 
 ## 7. Parity and bug fixes
 
-The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them. It also has two deliberate differences that are not bug fixes: CR-25 leaves out Rust test code, and CR-26 adds the option `--lines`.
+The port copies the behavior of the original at one pinned commit. A parity runner runs the original and the port on each parity fixture and compares the results. The runner gets the original by a clone at the pinned commit and runs it with Python. The port fixes known bugs of the original and does not copy them. It also has three deliberate differences that are not bug fixes: CR-25 leaves out Rust test code, CR-26 adds the option `--lines`, and CR-27 names `javascript` in the Languages line.
 
 - CR-PB-1: `tools/crapper/parity/upstream.toml` records the pinned commit of the original and the exact versions of `tree-sitter`, `tree-sitter-language-pack`, and each other Python dependency of the original. The parity runner installs these versions.
 - CR-PB-2: A change of the pinned commit needs a passing parity run, as AC-1 defines a pass. The parity runner writes `tools/crapper/parity/last-run.toml` with the commit and the result.
@@ -128,7 +130,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
 5. AC-5 (CR-13): On a fixture, the original and the port give the same exit code and snapshot with `--coverage-command <cmd>` and with `--no-coverage`.
 6. AC-6 (CR-14, CR-15): On a Rust fixture on a host without `cargo-llvm-cov`, the port installs it, prints the install on stderr, and writes a snapshot with coverage values.
 7. AC-7 (CR-14): On a Vitest fixture without `@vitest/coverage-v8`, the port installs it in `node_modules`, and `package.json` is unchanged. On a Python fixture without `coverage` and `pytest`, the port installs them in the interpreter of the project.
-8. AC-8 (CR-16): On each fixture, the table that the port prints on stdout equals the table of the original.
+8. AC-8 (CR-16): On each fixture, the table that the port prints on stdout equals the table of the original, except the Languages line of CR-27 (AC-38).
 9. AC-9 (CR-2): A flag that the original rejects is also rejected by the port, with the same exit code.
 10. AC-10 (CR-NFR-1): Two runs on each fixture with `--use-existing-coverage` write byte-identical snapshots.
 11. AC-11 (Goal 3): The fixtures for Clojure, Java, Go, TypeScript, and Rust pass with the port on a host that has no Python installed. The expected results come from an earlier parity run.
@@ -166,6 +168,7 @@ The port copies the behavior of the original at one pinned commit. A parity runn
     8. `crapper --help` lists `--lines <n,n,...>`.
 36. AC-36 (CR-25): On a Rust file with `#[cfg(test)] impl Board { fn place(&self) {} }` and `#[cfg(test)] mod unit_tests { fn hidden() {} }`, the port scores `place` and does not score `hidden`. The unit test `cr_25_a_cfg_test_impl_block_keeps_its_functions_as_production_code` in `tools/crapper/src/languages/rust.rs` checks this case on the function list of the port.
 37. AC-37 (CR-12, CR-13): A project has a source file and one LCOV report for it. A report below `coverage/`, below `target/coverage/`, and below `target/coverage/rust/` gives coverage for each function, and crapper prints no warning. A report at the project root gives 0.0% coverage for each function, and crapper prints no warning. The test `cr_12_lcov_is_read_only_below_coverage_and_target_coverage` in `tools/crapper/tests/lcov_paths.rs` checks these cases on the coverage of each function and on stderr.
+38. AC-38 (CR-27): A project with `.js`, `.jsx`, `.mjs`, `.cjs`, and `.ts` files gives the line `Languages: javascript, typescript` on stdout, and the snapshot has `typescript` for each TypeScript-grammar entry. The fixture in `tools/crapper/parity/fixtures/javascript` gives `Languages: javascript`. The test `fix_javascript_language_label_names_javascript_for_js_files` in `tools/crapper/tests/fixes.rs` checks the fixture. The unit tests `cr_27_languages_name_javascript_for_js_jsx_mjs_and_cjs_files` and `cr_27_only_js_files_give_javascript` in `tools/crapper/src/report.rs` check the other cases.
 
 ## 9. Risks
 

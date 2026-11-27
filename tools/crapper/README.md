@@ -33,6 +33,8 @@ crapper --root <path> -s <tree>      # project root and source trees
 
 It prints a table on stdout (worst score first) and writes `.metrics/crap.edn`. Exit codes: `0` ok, `1` bad arguments or a file that cannot be read, `2` threshold exceeded. A Git failure under `--changed` returns the exit code of Git.
 
+The `Languages:` line lists the language of each file. Files in `.js`, `.jsx`, `.mjs`, and `.cjs` are listed as `javascript`, and other TypeScript files as `typescript` (CR-27). The snapshot in `.metrics/crap.edn` does not change.
+
 ## Parity with the original
 
 `parity/` holds the pin (`upstream.toml`), the fixtures, the runner (`run.py`), the recorded output of the original, and the list of approved differences (`fixes.toml`).
@@ -41,3 +43,9 @@ It prints a table on stdout (worst score first) and writes `.metrics/crap.edn`. 
 python3.12 parity/run.py             # clone the original at the pinned commit, run both, compare
 python3.12 parity/run.py --check-meta
 ```
+
+The approved differences from the original are listed in `parity/fixes.toml`. Each one has a test:
+
+- CR-25: In Rust, test code is left out. A function in a `#[cfg(test)]` module, or a function with `#[test]` or `#[cfg(test)]`, is not scored.
+- CR-26: The option `--lines <n,n,...>` scores only the functions that hold the listed lines.
+- CR-27: The `Languages:` line names `javascript` for `.js`, `.jsx`, `.mjs`, and `.cjs` files. The original names `typescript` for them. The snapshot does not change.
