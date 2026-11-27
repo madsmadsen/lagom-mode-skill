@@ -48,6 +48,11 @@ const SKIP_LINK: &[&str] = &[
     ".gradle",
 ];
 
+// Playwright writes its results and reports into these directories by default. A worker must not
+// link them, or the workers share the output of the project. A project-specific output name is not
+// listed here.
+const OUTPUT_DIRS: &[&str] = &["test-results", "playwright-report"];
+
 const CONFIGS: &[&str] = &[
     "deps.edn",
     "bb.edn",
@@ -638,9 +643,31 @@ pub fn check_workers(
     })
 }
 
+/// Removes the output links of MU-28 from the worker root and from the directory where the command
+/// runs. Only links are removed, and the target of a link is never touched. The command directory
+/// counts only when it lies inside the worker. A directory outside the worker is the real project.
+fn drop_output_links(worker: &Path, root: &Path, cwd: &Path) -> io::Result<()> {
+    let inside = worker.canonicalize()?;
+    let mapped = mapped_cwd(worker, root, cwd);
+    let mut dirs = vec![worker.to_path_buf()];
+    if mapped != inside && mapped.starts_with(&inside) {
+        dirs.push(mapped);
+    }
+    for dir in &dirs {
+        for name in OUTPUT_DIRS {
+            let link = dir.join(name);
+            if link.is_symlink() {
+                fs::remove_file(link)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Mutates `sites` in parallel overlays of `root`. The source stays put. First the unmutated
 /// command runs once in every worker (MU-27). If one of those runs fails, no mutant runs and the
 /// failure is returned.
+/// Before that, each worker drops its output links (MU-28).
 #[allow(clippy::too_many_arguments)]
 pub fn run_mutants(
     root: &Path,
@@ -667,6 +694,9 @@ pub fn run_mutants(
         create_workers(&run.0, root, &relative, original, count),
         "worker overlays",
     );
+    for directory in &directories {
+        or_fail(drop_output_links(directory, root, cwd), "output links");
+    }
     if let Some(failure) = check_workers(&directories, root, cwd, runner, command, limits) {
         return Some(failure);
     }
@@ -1434,6 +1464,97 @@ mod tests {
         .expect("the only worker fails");
         assert_eq!(failure.worker, 0);
         assert!(!failure.passes_alone);
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-28 / AC-22: a worker does not link `test-results` or `playwright-report` at the project
+    // root. The drop removes both links from the worker and keeps the files of the project.
+    #[test]
+    fn mu_28_ac_22_the_root_output_links_are_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        put(root, "test-results/marker.txt", "keep");
+        put(root, "playwright-report/marker.txt", "keep");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+
+        let base = new_run_dir(root).unwrap();
+        let worker = create_workers(&base, root, "src/demo.py", &original, 1).unwrap()[0].clone();
+        for name in OUTPUT_DIRS {
+            assert!(
+                worker.join(name).is_symlink(),
+                "{name} is linked before the drop"
+            );
+        }
+        drop_output_links(&worker, root, root).unwrap();
+        for name in OUTPUT_DIRS {
+            assert!(
+                fs::symlink_metadata(worker.join(name)).is_err(),
+                "{name} is still in the worker"
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(root.join("test-results/marker.txt")).unwrap(),
+            "keep"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("playwright-report/marker.txt")).unwrap(),
+            "keep"
+        );
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-28 / AC-22: the directory where the command runs is mapped into the worker. Its output
+    // link goes too, and the link of a source directory stays.
+    #[test]
+    fn mu_28_ac_22_the_cwd_output_link_is_dropped_and_source_links_stay() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "packages/app/src/x.ts", "export const x = 1 > 0;\n");
+        put(root, "packages/app/test-results/marker.txt", "keep");
+        put(root, "packages/app/src/test-results/marker.txt", "keep");
+        let original = fs::read(root.join("packages/app/src/x.ts")).unwrap();
+
+        let base = new_run_dir(root).unwrap();
+        let worker =
+            create_workers(&base, root, "packages/app/src/x.ts", &original, 1).unwrap()[0].clone();
+        assert!(worker.join("packages/app/test-results").is_symlink());
+        drop_output_links(&worker, root, &root.join("packages/app")).unwrap();
+        assert!(fs::symlink_metadata(worker.join("packages/app/test-results")).is_err());
+        assert!(worker.join("packages/app/src/test-results").is_symlink());
+        assert_eq!(
+            fs::read_to_string(root.join("packages/app/test-results/marker.txt")).unwrap(),
+            "keep"
+        );
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-28 / AC-22: a command directory outside the overlay resolves to the real project. A link
+    // of the same name there is a link of the project, so it must stay.
+    #[test]
+    fn mu_28_ac_22_a_link_of_the_real_project_is_never_removed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        put(root, "other/keep.txt", "keep");
+        put(root, "elsewhere/keep.txt", "keep");
+        std::os::unix::fs::symlink(root.join("elsewhere"), root.join("other/test-results"))
+            .unwrap();
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+
+        let base = new_run_dir(root).unwrap();
+        let worker = create_workers(&base, root, "src/demo.py", &original, 1).unwrap()[0].clone();
+        drop_output_links(&worker, root, &root.join("other")).unwrap();
+        assert!(
+            fs::symlink_metadata(root.join("other/test-results"))
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("elsewhere/keep.txt")).unwrap(),
+            "keep"
+        );
         delete_tree(&base).unwrap();
     }
 }

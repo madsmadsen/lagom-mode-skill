@@ -110,6 +110,11 @@ and its test. Mads Madsen approves each entry (MU-PB-6).
    names the lowest failing worker. The check finds a failure that happens on every run. It does not
    find a race, and it does not find a command that reuses a server that another worker started. The
    original runs the baseline test command in the project root only.
+10. `worker-output-directories` (MU-28). A worker does not link the directories `test-results` and
+   `playwright-report`, at the project root and in the directory where the test command runs. The
+   original links them, so a test command that writes Playwright output shares that output between
+   the workers. A project-specific output name is not listed here, so a directory with another name
+   is still shared.
 
 ## Coverage installs and the network
 
