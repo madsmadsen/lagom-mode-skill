@@ -105,6 +105,11 @@ and its test. Mads Madsen approves each entry (MU-PB-6).
 8. `rust-test-code-by-attribute` (MU-26). The port leaves out a Rust function in a `#[cfg(test)]`
    module, and a function with `#[test]` or `#[cfg(test)]`. The original leaves out only the
    functions of a `mod` named `tests`.
+9. `worker-baseline` (MU-27). The port runs the unmutated test command once in each worker directory,
+   at the same time, before the mutants of a file. A failure gives exit code 2 and a message that
+   names the lowest failing worker. The check finds a failure that happens on every run. It does not
+   find a race, and it does not find a command that reuses a server that another worker started. The
+   original runs the baseline test command in the project root only.
 
 ## Coverage installs and the network
 

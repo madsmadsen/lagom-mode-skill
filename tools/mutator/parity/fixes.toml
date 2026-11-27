@@ -90,7 +90,7 @@ description = """The original has no memory limit and no `--max-memory-mb` flag.
 the tests allocate without end can use all memory of the host before the timeout ends it. The port
 sums the resident memory of the process group of each mutant test run at least once each second.
 Over the limit (default 4096 MiB, `--max-memory-mb N`, 0 turns it off) it kills the group with
-SIGKILL, and the mutant counts as killed without a MU-21 second run. The baseline has no limit."""
+SIGKILL, and the mutant counts as killed without a MU-21 second run. The baseline run in the project root has no limit."""
 changed_behavior = "A mutant test run over the memory limit is killed, and the flag --max-memory-mb exists (the original exits 1 on it)."
 fixture = "tests/memory_limit.rs (project built inline: src/m.py and an allocating test command)"
 test = "tests/memory_limit.rs::mu_25_ac17_a_mutant_over_the_memory_limit_is_killed_once_and_fast"
@@ -110,6 +110,20 @@ fixture = "tests/rust_test_code.rs (project built inline: src/lib.rs with a prod
 test = "tests/rust_test_code.rs::mu_26_ac18_scan_lists_sites_for_production_rust_only"
 changes_snapshot_keys_or_shape = false
 approved = true
+
+[[fix]]
+id = "worker-baseline"
+requirement = "MU-27"
+description = """The original runs the baseline test command in the project root only. A command that
+fails in every worker then kills every mutant, and the run reports no baseline failure. The port runs
+the unmutated test command once in each worker directory of a file, all workers at the same time,
+before the mutants of that file run. A failure gives exit code 2 and a message that names the lowest
+failing worker, and it writes no snapshot."""
+changed_behavior = "Before the mutants of a file run, a command that fails in a worker directory gives exit code 2 and a baseline failure message, and no snapshot changes."
+fixture = "tests/mu27_worker_baseline.rs"
+test = "tests/mu27_worker_baseline.rs::mu_27_ac_21_a_command_that_fails_only_in_a_worker_gives_exit_2"
+changes_snapshot_keys_or_shape = false
+approved = false
 
 # Not listed on purpose (MU-PB-5): `bugs/python-tests-run-with-mutators-virtualenv.md` comes from
 # Python only. The port has no interpreter of its own and uses the project's `.venv` or `venv`

@@ -44,9 +44,13 @@ fn mu_19_ac7_second_run_reruns_survivors() {
     assert_eq!(first.code, 3, "{}", first.stderr);
     let scan = run(dir.path(), &["--scan", "--no-coverage"]);
     let sites = sites_tagged(&scan.stdout, "src/m.py:");
-    let (second, ran) = counted_run(dir.path(), &calls_file, &[], "true");
+    let (second, ran) = counted_run(dir.path(), &calls_file, &["--max-workers", "1"], "true");
     assert_eq!(second.code, 3, "{}", second.stderr);
-    assert_eq!(ran, 1 + sites, "baseline plus every surviving site");
+    assert_eq!(
+        ran,
+        1 + 1 + sites,
+        "one baseline, one worker baseline, and every surviving site"
+    );
 }
 
 // AC-7 / MU-19: after one function changes, only its sites rerun; --mutate-all reruns every site.
@@ -76,11 +80,24 @@ fn mu_19_ac7_changed_function_reruns_alone_and_mutate_all_reruns_all() {
     );
     assert_eq!(scan.stdout.lines().last(), Some(FOOTER));
 
-    let (second, ran) = counted_run(dir.path(), &calls_file, &[], KILL);
+    let (second, ran) = counted_run(dir.path(), &calls_file, &["--max-workers", "1"], KILL);
     assert_eq!(second.code, 0, "{}", second.stderr);
-    assert_eq!(ran, 1 + g_sites, "baseline plus the sites of g only");
+    assert_eq!(
+        ran,
+        1 + 1 + g_sites,
+        "one baseline, one worker baseline, and the sites of g only"
+    );
 
-    let (third, ran) = counted_run(dir.path(), &calls_file, &["--mutate-all"], KILL);
+    let (third, ran) = counted_run(
+        dir.path(),
+        &calls_file,
+        &["--max-workers", "1", "--mutate-all"],
+        KILL,
+    );
     assert_eq!(third.code, 0, "{}", third.stderr);
-    assert_eq!(ran, 1 + f_sites + g_sites, "baseline plus every site");
+    assert_eq!(
+        ran,
+        1 + 1 + f_sites + g_sites,
+        "one baseline, one worker baseline, and every site"
+    );
 }

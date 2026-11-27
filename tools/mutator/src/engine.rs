@@ -15,7 +15,7 @@ use crate::metrics;
 use crate::model::{FormResult, History, Language, LineSet, RunResult, Site, Status};
 use crate::report;
 use crate::runner::{self, Command, CommandRunner};
-use crate::workers::{self, Limits};
+use crate::workers::{self, Limits, WorkerFailure};
 
 /// Baseline cache: (command key, cwd) -> (passed, seconds, failure tail).
 pub type Baselines = HashMap<(String, String), (bool, f64, String)>;
@@ -307,10 +307,35 @@ fn measure_baseline(runner: &CommandRunner, command: &Command, cwd: &Path) -> (b
 }
 
 fn baseline_failure(file_key: &str, command: &Command, tail: &str) -> RunResult {
-    let mut message = format!(
+    let head = format!(
         "Baseline failed for {file_key}: {}",
         runner::display_command(command)
     );
+    failed_baseline(file_key, &head, tail)
+}
+
+/// The failure of the unmutated command in one worker (MU-27). It names the worker and the
+/// reason, and says so when the command passes alone.
+fn worker_baseline_failure(
+    file_key: &str,
+    command: &Command,
+    failure: &WorkerFailure,
+) -> RunResult {
+    let mut head = format!(
+        "Baseline failed for {file_key} in worker {}: {}\n{}",
+        failure.worker,
+        runner::display_command(command),
+        failure.reason
+    );
+    if failure.passes_alone {
+        head.push_str("\nThe command passes alone. Run with --max-workers 1.");
+    }
+    failed_baseline(file_key, &head, &tail_of(&failure.output))
+}
+
+/// A failed baseline: the head lines, then the tail of the output when the tail is not empty.
+fn failed_baseline(file_key: &str, head: &str, tail: &str) -> RunResult {
+    let mut message = head.to_owned();
     if !tail.is_empty() {
         message.push('\n');
         message.push_str(tail);
@@ -363,8 +388,8 @@ fn apply_selected(
         },
         target.file_key,
         outcomes,
-    );
-    None
+    )
+    .map(|failure| worker_baseline_failure(target.file_key, &command, &failure))
 }
 
 fn group_by_form(sites: &[Site]) -> HashMap<FormKey, Vec<&Site>> {
@@ -524,7 +549,7 @@ mod tests {
             test_command: Some(command),
             timeout_factor: 10.0,
             mutation_warning: 50,
-            max_workers: None,
+            max_workers: Some(1),
             max_memory_mb: 0,
         }
     }
@@ -572,7 +597,8 @@ mod tests {
         assert_eq!(form.id, "defn/add");
         assert_eq!(form.namespace, "demo");
         assert_eq!((form.killed, form.survived, form.sites), (2, 2, 4));
-        assert_eq!(calls(&log), 1 + form.sites);
+        // one baseline, one baseline in the worker, and every site
+        assert_eq!(calls(&log), 1 + 1 + form.sites);
         assert_eq!(fs::read_to_string(&path).expect("read"), SOURCE);
         let snapshot = metrics::snapshot_path(root.path(), "demo").expect("snapshot path");
         assert!(snapshot.is_file());
@@ -587,8 +613,8 @@ mod tests {
         run(&path, root.path(), &options(&command, true));
         let before = calls(&log);
         let second = run(&path, root.path(), &options(&command, false));
-        // one baseline plus the two surviving sites
-        assert_eq!(calls(&log) - before, 1 + 2);
+        // one baseline, one baseline in the worker, and the two surviving sites
+        assert_eq!(calls(&log) - before, 1 + 1 + 2);
         let form = &second.forms[0];
         assert_eq!((form.killed, form.survived), (2, 2));
     }
@@ -604,8 +630,8 @@ mod tests {
         fs::write(&path, &changed).expect("write changed");
         let before = calls(&log);
         run(&path, root.path(), &options(&command, false));
-        // one baseline plus all four sites
-        assert_eq!(calls(&log) - before, 1 + 4);
+        // one baseline, one baseline in the worker, and all four sites
+        assert_eq!(calls(&log) - before, 1 + 1 + 4);
     }
 
     // MU-14: a failing baseline writes no snapshot and leaves the source untouched.

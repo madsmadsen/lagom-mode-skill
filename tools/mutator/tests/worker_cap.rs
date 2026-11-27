@@ -26,6 +26,7 @@ fn mu_17_default_worker_count_is_half_the_cores_at_least_one() {
 /// MU-17, AC-19: a binary run with `--max-workers 10000` makes half the cores of worker
 /// directories, at least one. Each worker is a directory beside the mutated file, so the
 /// test command counts them from the worker that runs it. No unit call is involved.
+/// The first run in each worker is the unmutated run of MU-27. The script counts only the others.
 #[test]
 fn ac_19_a_binary_run_with_max_workers_10000_uses_half_the_cores() {
     const SITES: usize = 12;
@@ -40,19 +41,18 @@ fn ac_19_a_binary_run_with_max_workers_10000_uses_half_the_cores() {
     )
     .expect("write source");
     let counts = dir.path().join("workers.txt");
-    let marker = dir.path().join("baseline.done");
     let script = dir.path().join("count.sh");
     fs::write(
         &script,
         format!(
             "#!/bin/sh\n\
-             if [ -f {marker} ]; then\n\
+             case \"$(basename \"$PWD\")\" in worker-*) ;; *) exit 0;; esac\n\
+             if [ -f .baselined ]; then\n\
              \x20 ls .. | grep -c '^worker-' >> {counts}\n\
              \x20 exit 1\n\
              fi\n\
-             : > {marker}\n\
+             : > .baselined\n\
              exit 0\n",
-            marker = marker.display(),
             counts = counts.display()
         ),
     )

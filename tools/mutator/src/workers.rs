@@ -12,6 +12,7 @@ use std::fs;
 use std::io;
 use std::num::NonZeroUsize;
 use std::os::unix::fs as unix_fs;
+use std::panic::resume_unwind;
 use std::path::{Path, PathBuf};
 use std::str;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -454,19 +455,33 @@ pub fn outcome_of(result: &CommandResult) -> Status {
     }
 }
 
+/// Runs the command in `cwd`. A run near its timeout runs again with twice the timeout (MU-21).
+/// Returns the final result and the timeout that the final run used.
+fn run_checked(
+    runner: &CommandRunner,
+    command: &Command,
+    cwd: &Path,
+    limits: Limits,
+) -> (CommandResult, Duration) {
+    let first = runner.run_limited(command, cwd, Some(limits.timeout), limits.max_memory);
+    if !needs_second_run(&first, limits.timeout) {
+        return (first, limits.timeout);
+    }
+    let timeout = limits.timeout * 2;
+    let second = runner.run_limited(command, cwd, Some(timeout), limits.max_memory);
+    (second, timeout)
+}
+
 /// Writes one mutant into the worker, runs the command, and restores the original text.
-fn run_mutant(
-    directory: &Path,
-    plan: &Plan<'_>,
-    mutated: &str,
-    timeout: Duration,
-) -> io::Result<CommandResult> {
+fn run_mutant(directory: &Path, plan: &Plan<'_>, mutated: &str) -> io::Result<CommandResult> {
     let destination = directory.join(plan.relative);
     fs::write(&destination, mutated)?;
     let cwd = mapped_cwd(directory, plan.root, plan.cwd);
-    let result = plan
-        .runner
-        .run_limited(plan.command, &cwd, Some(timeout), plan.max_memory);
+    let limits = Limits {
+        timeout: plan.timeout,
+        max_memory: plan.max_memory,
+    };
+    let (result, _) = run_checked(plan.runner, plan.command, &cwd, limits);
     fs::write(&destination, plan.text)?;
     Ok(result)
 }
@@ -482,12 +497,7 @@ fn execute(directory: &Path, site: &Site, plan: &Plan<'_>) -> io::Result<Status>
         return Ok(Status::Survived);
     }
     let mutated = apply_site(plan.text, site.start, site.end, &site.mutant);
-    let first = run_mutant(directory, plan, &mutated, plan.timeout)?;
-    let result = if needs_second_run(&first, plan.timeout) {
-        run_mutant(directory, plan, &mutated, plan.timeout * 2)?
-    } else {
-        first
-    };
+    let result = run_mutant(directory, plan, &mutated)?;
     Ok(outcome_of(&result))
 }
 
@@ -529,7 +539,108 @@ pub struct Limits {
     pub max_memory: Option<u64>,
 }
 
-/// Mutates `sites` in parallel overlays of `root`. The source stays put.
+/// The unmutated command failed in a worker (MU-27).
+#[derive(Debug)]
+pub struct WorkerFailure {
+    /// The lowest failing worker index.
+    pub worker: usize,
+    /// `exit code <c>`, `timed out after <s> seconds`, or `memory limit of <m> MiB`.
+    pub reason: String,
+    /// The full output of the failing run.
+    pub output: String,
+    /// True only when more than one worker ran and worker 0 passes when run alone after the failure.
+    pub passes_alone: bool,
+}
+
+/// Whether a run fails the baseline: it timed out, was killed for memory, or exited non-zero.
+fn failed(result: &CommandResult) -> bool {
+    result.timed_out || result.memory_killed || result.code != 0
+}
+
+/// The reason for a failed run. A timeout wins over a memory kill, which wins over the exit code.
+fn reason_of(result: &CommandResult, timeout: Duration, limits: Limits) -> String {
+    if result.timed_out {
+        format!("timed out after {} seconds", timeout.as_secs())
+    } else if result.memory_killed {
+        format!("memory limit of {} MiB", memory_mib(limits.max_memory))
+    } else {
+        format!("exit code {}", result.code)
+    }
+}
+
+fn memory_mib(max_memory: Option<u64>) -> u64 {
+    max_memory.unwrap_or_default() / (1024 * 1024)
+}
+
+/// Runs the unmutated command in every worker at the same time, one thread per worker.
+fn run_all(
+    directories: &[PathBuf],
+    root: &Path,
+    cwd: &Path,
+    runner: &CommandRunner,
+    command: &Command,
+    limits: Limits,
+) -> Vec<(CommandResult, Duration)> {
+    thread::scope(|scope| {
+        let handles: Vec<_> = directories
+            .iter()
+            .map(|directory| {
+                let worker_cwd = mapped_cwd(directory, root, cwd);
+                scope.spawn(move || run_checked(runner, command, &worker_cwd, limits))
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap_or_else(|panic| resume_unwind(panic)))
+            .collect()
+    })
+}
+
+/// Whether worker 0 passes when it runs alone after a failure. False when only one worker ran.
+fn passes_alone(
+    directories: &[PathBuf],
+    root: &Path,
+    cwd: &Path,
+    runner: &CommandRunner,
+    command: &Command,
+    limits: Limits,
+) -> bool {
+    match directories {
+        [first, _, ..] => {
+            let worker_cwd = mapped_cwd(first, root, cwd);
+            let (result, _) = run_checked(runner, command, &worker_cwd, limits);
+            !failed(&result)
+        }
+        _ => false,
+    }
+}
+
+/// Runs the unmutated command in each worker at the same time (MU-27, AC-21). Returns the failure
+/// of the lowest failing worker, or None when every worker passes.
+pub fn check_workers(
+    directories: &[PathBuf],
+    root: &Path,
+    cwd: &Path,
+    runner: &CommandRunner,
+    command: &Command,
+    limits: Limits,
+) -> Option<WorkerFailure> {
+    let runs = run_all(directories, root, cwd, runner, command, limits);
+    let (worker, (result, timeout)) = runs
+        .iter()
+        .enumerate()
+        .find(|(_, (result, _))| failed(result))?;
+    Some(WorkerFailure {
+        worker,
+        reason: reason_of(result, *timeout, limits),
+        output: result.output.clone(),
+        passes_alone: passes_alone(directories, root, cwd, runner, command, limits),
+    })
+}
+
+/// Mutates `sites` in parallel overlays of `root`. The source stays put. First the unmutated
+/// command runs once in every worker (MU-27). If one of those runs fails, no mutant runs and the
+/// failure is returned.
 #[allow(clippy::too_many_arguments)]
 pub fn run_mutants(
     root: &Path,
@@ -543,9 +654,9 @@ pub fn run_mutants(
     limits: Limits,
     file_key: &str,
     outcomes: &mut BTreeMap<String, Status>,
-) {
+) -> Option<WorkerFailure> {
     if sites.is_empty() {
-        return;
+        return None;
     }
     let text =
         str::from_utf8(original).unwrap_or_else(|error| panic!("{file_key} is not UTF-8: {error}"));
@@ -556,6 +667,9 @@ pub fn run_mutants(
         create_workers(&run.0, root, &relative, original, count),
         "worker overlays",
     );
+    if let Some(failure) = check_workers(&directories, root, cwd, runner, command, limits) {
+        return Some(failure);
+    }
     let shared = Shared {
         plan: Plan {
             root,
@@ -583,6 +697,7 @@ pub fn run_mutants(
             .into_inner()
             .unwrap_or_else(PoisonError::into_inner),
     );
+    None
 }
 
 #[cfg(test)]
@@ -877,7 +992,7 @@ mod tests {
         let source = root.join("src/x.txt");
         let original = fs::read(&source).unwrap();
         let sites = [site(2, 3, "zzz", "<", "moved-id")];
-        let command = Command::Shell("exit 1".to_string());
+        let command = Command::Shell(r#"grep -q "a > b" src/x.txt"#.to_string());
         let mut outcomes = BTreeMap::new();
 
         run_mutants(
@@ -955,7 +1070,10 @@ mod tests {
         let original = fs::read(&source).unwrap();
         let log = dir.path().join("runs.log");
         let sites = [site(2, 3, ">", "<", "big-id")];
-        let command = Command::Shell(format!("echo run >> {}; sleep 30", log.display()));
+        let command = Command::Shell(format!(
+            "grep -q 'a > b' src/x.txt || {{ echo run >> {}; sleep 30; }}",
+            log.display()
+        ));
         let mut outcomes = BTreeMap::new();
 
         run_mutants(
@@ -1080,7 +1198,10 @@ mod tests {
         let original = fs::read(&source).unwrap();
         let log = dir.path().join("runs.log");
         let sites = [site(2, 3, ">", "<", "slow-id")];
-        let command = Command::Shell(format!("echo run >> {} && sleep 1.5", log.display()));
+        let command = Command::Shell(format!(
+            "grep -q 'a > b' src/x.txt || {{ echo run >> {} && sleep 1.5; }}",
+            log.display()
+        ));
         let mut outcomes = BTreeMap::new();
 
         run_mutants(
@@ -1114,7 +1235,10 @@ mod tests {
         let original = fs::read(&source).unwrap();
         let log = dir.path().join("runs.log");
         let sites = [site(2, 3, ">", "<", "quick-id")];
-        let command = Command::Shell(format!("echo run >> {}", log.display()));
+        let command = Command::Shell(format!(
+            "grep -q 'a > b' src/x.txt || echo run >> {}",
+            log.display()
+        ));
         let mut outcomes = BTreeMap::new();
 
         run_mutants(
@@ -1136,5 +1260,180 @@ mod tests {
 
         assert_eq!(outcomes.get("quick-id"), Some(&Status::Survived));
         assert_eq!(fs::read_to_string(&log).unwrap().lines().count(), 1);
+    }
+
+    fn limits(seconds: u64) -> Limits {
+        Limits {
+            timeout: Duration::from_secs(seconds),
+            max_memory: None,
+        }
+    }
+
+    // MU-27 / AC-21: a command that fails in one worker is a baseline failure. The lowest
+    // failing worker is named. The command fails alone too, so passes_alone is false.
+    #[test]
+    fn mu_27_ac_21_the_lowest_failing_worker_is_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+        let base = new_run_dir(root).unwrap();
+        let workers = create_workers(&base, root, "src/demo.py", &original, 2).unwrap();
+        let script = r#"case "$(basename "$PWD")" in worker-*) exit 1;; esac"#;
+        let command = Command::Argv(vec!["sh".into(), "-c".into(), script.into()]);
+
+        let failure = check_workers(
+            &workers,
+            root,
+            root,
+            &CommandRunner::default(),
+            &command,
+            limits(20),
+        )
+        .expect("worker 0 fails");
+        assert_eq!(failure.worker, 0);
+        assert_eq!(failure.reason, "exit code 1");
+        assert!(!failure.passes_alone);
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-27 / AC-21: a command that passes alone but fails when two workers run at once is a
+    // baseline failure, and the failure says that the command passes alone.
+    #[test]
+    fn mu_27_ac_21_a_clash_between_workers_passes_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+        let scratch = tempfile::tempdir().unwrap();
+        let lock = scratch.path().join("lock");
+        let base = new_run_dir(root).unwrap();
+        let workers = create_workers(&base, root, "src/demo.py", &original, 2).unwrap();
+        let script = format!(
+            "mkdir '{0}' 2>/dev/null || exit 1; sleep 1; rmdir '{0}'",
+            lock.display()
+        );
+        let command = Command::Argv(vec!["sh".into(), "-c".into(), script]);
+
+        let failure = check_workers(
+            &workers,
+            root,
+            root,
+            &CommandRunner::default(),
+            &command,
+            limits(20),
+        )
+        .expect("one worker loses the lock");
+        assert!(failure.worker < 2);
+        assert!(failure.passes_alone);
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-27 / AC-21: a command that passes in the only worker is no baseline failure.
+    #[test]
+    fn mu_27_ac_21_a_passing_worker_gives_no_failure() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+        let base = new_run_dir(root).unwrap();
+        let workers = create_workers(&base, root, "src/demo.py", &original, 1).unwrap();
+        let command = Command::Argv(vec!["sh".into(), "-c".into(), "exit 0".into()]);
+
+        assert!(
+            check_workers(
+                &workers,
+                root,
+                root,
+                &CommandRunner::default(),
+                &command,
+                limits(20),
+            )
+            .is_none()
+        );
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-27 / AC-21: a run is a failure when it times out, when the memory limit kills it, or
+    // when it exits non-zero. A run that does none of these is not a failure.
+    #[test]
+    fn mu_27_ac_21_a_timeout_a_memory_kill_or_an_exit_code_is_a_failure() {
+        assert!(failed(&result(0, true)));
+        assert!(failed(&CommandResult {
+            code: 0,
+            timed_out: false,
+            memory_killed: true,
+            seconds: 0.0,
+            output: String::new(),
+        }));
+        assert!(!failed(&result(0, false)));
+    }
+
+    // MU-27 / AC-21: the reason names the timeout, the memory limit in MiB, or the exit code.
+    // A timeout wins over a memory kill.
+    #[test]
+    fn mu_27_ac_21_the_reason_names_the_timeout_memory_limit_or_exit_code() {
+        let timeout = Duration::from_secs(7);
+        let no_memory_cap = limits(7);
+        let capped = Limits {
+            timeout,
+            max_memory: Some(300 * 1024 * 1024),
+        };
+        let memory_killed = CommandResult {
+            code: 0,
+            timed_out: false,
+            memory_killed: true,
+            seconds: 0.0,
+            output: String::new(),
+        };
+        let both = CommandResult {
+            code: 0,
+            timed_out: true,
+            memory_killed: true,
+            seconds: 0.0,
+            output: String::new(),
+        };
+        assert_eq!(
+            reason_of(&result(0, true), timeout, no_memory_cap),
+            "timed out after 7 seconds"
+        );
+        assert_eq!(
+            reason_of(&memory_killed, timeout, capped),
+            "memory limit of 300 MiB"
+        );
+        assert_eq!(
+            reason_of(&both, timeout, capped),
+            "timed out after 7 seconds"
+        );
+        assert_eq!(
+            reason_of(&result(3, false), timeout, no_memory_cap),
+            "exit code 3"
+        );
+    }
+
+    // MU-27 / AC-21: with one worker there is no second worker to compare with. A command that
+    // fails in that worker is a baseline failure, and the failure does not pass alone.
+    #[test]
+    fn mu_27_ac_21_a_failing_single_worker_does_not_pass_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+        let base = new_run_dir(root).unwrap();
+        let workers = create_workers(&base, root, "src/demo.py", &original, 1).unwrap();
+        let command = Command::Argv(vec!["sh".into(), "-c".into(), "exit 1".into()]);
+
+        let failure = check_workers(
+            &workers,
+            root,
+            root,
+            &CommandRunner::default(),
+            &command,
+            limits(20),
+        )
+        .expect("the only worker fails");
+        assert_eq!(failure.worker, 0);
+        assert!(!failure.passes_alone);
+        delete_tree(&base).unwrap();
     }
 }
