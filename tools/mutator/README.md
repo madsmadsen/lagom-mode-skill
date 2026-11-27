@@ -118,9 +118,18 @@ and its test. Mads Madsen approves each entry (MU-PB-6).
 11. `worker-html-copies` (MU-29). A worker holds a real copy of each `.html` file of the project, and
    the parent directories of such a file are real directories. The other entries of those directories
    stay links. The original links these files, so a bundler resolves a linked HTML entry file to its
-   real path, which lies outside the worker, and the build fails. The rule does not help a bundler
-   configuration that builds its entry paths from the location of its own configuration file, because
-   that file is still a link.
+   real path, which lies outside the worker, and the build fails. A bundler configuration that builds
+   its entry paths from the location of its own configuration file is not helped by this rule. MU-30
+   covers that case.
+12. `worker-config-module-copies` (MU-30). A worker holds a real copy of each JavaScript and TypeScript
+   file that lies directly in the project root, and of each such file in the directory where the test
+   command runs, when that directory is inside the worker. The rule also holds for each file that these
+   files import through a relative import, directly or through other files. A file that is reached
+   through a package name or an alias is not copied. A link in the project stays a link. The original
+   links these files, so a build tool loads a linked configuration file from its real path. A
+   configuration that builds paths from its own location then points into the project, outside the
+   worker, and the build fails. A helper that the configuration imports can build paths from its own
+   location too. MU-27 reports such a failure.
 
 ## Coverage installs and the network
 

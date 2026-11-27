@@ -145,6 +145,23 @@ test = "tests/mu29_html_copies.rs::mu_29_ac_23_a_worker_holds_real_copies_of_htm
 changes_snapshot_keys_or_shape = false
 approved = false
 
+[[fix]]
+id = "worker-config-module-copies"
+requirement = "MU-30"
+description = """The original links every entry of the project into each worker, including the JavaScript and
+TypeScript files at the project root. A build tool loads a linked configuration file from its real path. A
+configuration that builds its entry paths from its own location then points into the project, and the build
+fails. A helper that the configuration imports can build paths from its own location too. The port copies each
+JavaScript and TypeScript file that lies directly in the project root, and each such file in the directory where
+the test command runs when that directory is inside the worker. It also copies each file that these files import
+through a relative import, directly or through other files. A file that is reached through a package name or an
+alias is not copied."""
+changed_behavior = "A worker holds a real copy of each JavaScript and TypeScript file that lies directly in the project root, and of each such file in the command directory when that directory is inside the worker. It also holds a real copy of each file that these files import through a relative import, directly or through other files. A link in the project stays a link. A file reached through a package name or an alias is not copied."
+fixture = "tests/mu30_config_copies.rs"
+test = "tests/mu30_config_copies.rs::mu_30_ac_24_a_worker_holds_real_copies_of_root_config_modules"
+changes_snapshot_keys_or_shape = false
+approved = false
+
 # Not listed on purpose (MU-PB-5): `bugs/python-tests-run-with-mutators-virtualenv.md` comes from
 # Python only. The port has no interpreter of its own and uses the project's `.venv` or `venv`
 # Python, else `python3` on the PATH.

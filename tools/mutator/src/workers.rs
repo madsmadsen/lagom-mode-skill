@@ -434,13 +434,81 @@ fn build_worker(
         .try_for_each(|copy| copy_importer(worker, root, copy))
 }
 
-/// The modules that import `relative`, and the HTML files of the project, as posix paths. Each of
-/// them is a real file in a worker (MU-17, MU-29). The file under test is never in the set.
+/// The names of the JavaScript and TypeScript files that lie directly in `dir`. A link is not a
+/// file here, so it is never copied (MU-30).
+fn module_names(dir: &Path) -> io::Result<Vec<String>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let is_module = is_source(Path::new(&name)) && entry.file_type()?.is_file();
+        if let Some(text) = name.to_str().filter(|_| is_module) {
+            names.push(text.to_owned());
+        }
+    }
+    Ok(names)
+}
+
+/// Files that `starts` reach through relative imports, transitively, as posix paths under `root`.
+/// The starts are part of the result. A file is visited once, so an import cycle ends (MU-30).
+fn import_closure(root: &Path, starts: &BTreeSet<String>) -> BTreeSet<String> {
+    let Ok(root) = root.canonicalize() else {
+        return starts.clone();
+    };
+    let mut seen: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut pending: Vec<PathBuf> = starts
+        .iter()
+        .filter_map(|relative| root.join(relative).canonicalize().ok())
+        .collect();
+    while let Some(current) = pending.pop() {
+        if seen.insert(current.clone()) {
+            pending.extend(imported_files(&current, &root));
+        }
+    }
+    seen.iter()
+        .filter_map(|path| relative_posix(path, &root).ok())
+        .collect()
+}
+
+/// The modules that import `relative`, the HTML files of the project, and the JavaScript and
+/// TypeScript files that lie directly in its root, with every file that those reach through
+/// relative imports, as posix paths. Each of them is a real file in a worker (MU-17, MU-29, MU-30).
+/// The file under test is never in the set.
 fn copied_files(root: &Path, relative: &str) -> io::Result<BTreeSet<String>> {
     let mut copies = importers_of(root, relative)?;
     copies.extend(html_files(root));
+    let modules: BTreeSet<String> = module_names(root)?.into_iter().collect();
+    copies.extend(import_closure(root, &modules));
     copies.remove(relative);
     Ok(copies)
+}
+
+/// The directory where the command runs, mapped into the worker. None unless that directory lies
+/// inside the worker and is not the worker root. A directory outside the worker is the real
+/// project.
+fn inside_dir(worker: &Path, root: &Path, cwd: &Path) -> io::Result<Option<PathBuf>> {
+    let inside = worker.canonicalize()?;
+    let mapped = mapped_cwd(worker, root, cwd);
+    Ok((mapped != inside && mapped.starts_with(&inside)).then_some(mapped))
+}
+
+/// Copies the JavaScript and TypeScript files that lie directly in the directory where the command
+/// runs, and the files that those reach through relative imports, when that directory lies inside
+/// the worker (MU-30). The file under test is not copied: the overlay has written it, and
+/// `copy_importer` keeps a real file.
+fn copy_command_modules(worker: &Path, root: &Path, cwd: &Path) -> io::Result<()> {
+    if inside_dir(worker, root, cwd)?.is_none() {
+        return Ok(());
+    }
+    let real = cwd.canonicalize()?;
+    let dir = relative_posix(&real, &root.canonicalize()?)?;
+    let modules: BTreeSet<String> = module_names(&real)?
+        .iter()
+        .map(|name| format!("{dir}/{name}"))
+        .collect();
+    import_closure(root, &modules)
+        .iter()
+        .try_for_each(|copy| copy_importer(worker, root, copy))
 }
 
 /// Builds `count` worker overlays under `base`, each holding a private copy of `relative`.
@@ -678,12 +746,8 @@ pub fn check_workers(
 /// runs. Only links are removed, and the target of a link is never touched. The command directory
 /// counts only when it lies inside the worker. A directory outside the worker is the real project.
 fn drop_output_links(worker: &Path, root: &Path, cwd: &Path) -> io::Result<()> {
-    let inside = worker.canonicalize()?;
-    let mapped = mapped_cwd(worker, root, cwd);
     let mut dirs = vec![worker.to_path_buf()];
-    if mapped != inside && mapped.starts_with(&inside) {
-        dirs.push(mapped);
-    }
+    dirs.extend(inside_dir(worker, root, cwd)?);
     for dir in &dirs {
         for name in OUTPUT_DIRS {
             let link = dir.join(name);
@@ -698,7 +762,8 @@ fn drop_output_links(worker: &Path, root: &Path, cwd: &Path) -> io::Result<()> {
 /// Mutates `sites` in parallel overlays of `root`. The source stays put. First the unmutated
 /// command runs once in every worker (MU-27). If one of those runs fails, no mutant runs and the
 /// failure is returned.
-/// Before that, each worker drops its output links (MU-28).
+/// Before that, each worker drops its output links (MU-28) and copies the JavaScript and
+/// TypeScript files of the command directory (MU-30).
 #[allow(clippy::too_many_arguments)]
 pub fn run_mutants(
     root: &Path,
@@ -727,6 +792,10 @@ pub fn run_mutants(
     );
     for directory in &directories {
         or_fail(drop_output_links(directory, root, cwd), "output links");
+        or_fail(
+            copy_command_modules(directory, root, cwd),
+            "command modules",
+        );
     }
     if let Some(failure) = check_workers(&directories, root, cwd, runner, command, limits) {
         return Some(failure);
@@ -769,6 +838,19 @@ mod tests {
         let path = root.join(relative);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, text).unwrap();
+    }
+
+    /// A real copy of `relative` in the worker. Its canonical path lies inside the worker. A link
+    /// of a directory on the way would resolve it to the project, so the check does not stop at the
+    /// last component.
+    fn assert_real_copy(worker: &Path, root: &Path, relative: &str) {
+        let copied = worker.join(relative);
+        let inside = worker.canonicalize().unwrap().join(relative);
+        assert_eq!(copied.canonicalize().unwrap(), inside, "{relative}");
+        assert_eq!(
+            fs::read(&copied).unwrap(),
+            fs::read(root.join(relative)).unwrap()
+        );
     }
 
     fn site(start: usize, end: usize, original: &str, mutant: &str, id: &str) -> Site {
@@ -1642,5 +1724,196 @@ mod tests {
             .map(|path| path.to_string())
             .collect();
         assert_eq!(html_files(root), expected);
+    }
+
+    // MU-30: each JavaScript or TypeScript file that lies directly in the project root is a real
+    // copy in the worker. A link of the project stays a link. The other directories do not change.
+    #[test]
+    fn mu_30_root_modules_are_real_copies_in_the_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "vite.config.ts", "export default {}\n");
+        put(root, "playwright.config.mjs", "export default {}\n");
+        put(root, "notes.txt", "notes\n");
+        put(root, "scripts/helper.ts", "export const h = 1;\n");
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        std::os::unix::fs::symlink(
+            root.join("scripts/helper.ts"),
+            root.join("linked.config.js"),
+        )
+        .unwrap();
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+
+        let base = new_run_dir(root).unwrap();
+        let worker = create_workers(&base, root, "src/demo.py", &original, 1).unwrap()[0].clone();
+        for relative in ["vite.config.ts", "playwright.config.mjs"] {
+            let copied = worker.join(relative);
+            assert!(copied.is_file() && !copied.is_symlink(), "{relative}");
+            assert_eq!(
+                fs::read(&copied).unwrap(),
+                fs::read(root.join(relative)).unwrap()
+            );
+        }
+        for relative in ["notes.txt", "scripts", "linked.config.js"] {
+            assert!(worker.join(relative).is_symlink(), "{relative}");
+        }
+        let config = root.join("vite.config.ts");
+        assert!(config.is_file() && !config.is_symlink());
+        assert!(root.join("linked.config.js").is_symlink());
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-30: the directory where the command runs holds real copies of its JavaScript and
+    // TypeScript files when that directory lies inside the worker. Its other files stay links.
+    #[test]
+    fn mu_30_command_directory_modules_are_real_copies_in_the_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "packages/app/vite.config.ts", "export default {}\n");
+        put(root, "packages/app/notes.txt", "notes\n");
+        put(root, "packages/app/src/x.ts", "export const x = 1 > 0;\n");
+        let original = fs::read(root.join("packages/app/src/x.ts")).unwrap();
+        let cwd = root.join("packages/app");
+
+        let base = new_run_dir(root).unwrap();
+        let worker =
+            create_workers(&base, root, "packages/app/src/x.ts", &original, 1).unwrap()[0].clone();
+        copy_command_modules(&worker, root, &cwd).unwrap();
+        let copied = worker.join("packages/app/vite.config.ts");
+        assert!(copied.is_file() && !copied.is_symlink());
+        assert_eq!(
+            fs::read(&copied).unwrap(),
+            fs::read(root.join("packages/app/vite.config.ts")).unwrap()
+        );
+        assert!(worker.join("packages/app/notes.txt").is_symlink());
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-30: a command directory outside the worker is the real project. Its files are not copied,
+    // and its link in the worker stays a link.
+    #[test]
+    fn mu_30_command_directory_outside_the_worker_is_not_changed() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(root, "other/vite.config.ts", "export default {}\n");
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+        let cwd = root.join("other");
+
+        let base = new_run_dir(root).unwrap();
+        let worker = create_workers(&base, root, "src/demo.py", &original, 1).unwrap()[0].clone();
+        copy_command_modules(&worker, root, &cwd).unwrap();
+        assert!(worker.join("other").is_symlink());
+        let config = root.join("other/vite.config.ts");
+        assert!(config.is_file() && !config.is_symlink());
+        assert_eq!(fs::read_to_string(config).unwrap(), "export default {}\n");
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-30: a file that a root module imports through a relative import is a real copy too, at
+    // any depth. The other files of its directories stay links.
+    #[test]
+    fn mu_30_files_a_root_module_imports_are_real_copies_in_the_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(
+            root,
+            "vite.config.ts",
+            "import { entries } from './scripts/entries.ts'\nexport default {}\n",
+        );
+        put(
+            root,
+            "scripts/entries.ts",
+            "import { base } from '../shared/paths.ts'\nexport const entries = base\n",
+        );
+        put(root, "shared/paths.ts", "export const base = 1\n");
+        put(root, "scripts/unused.ts", "export const unused = 2\n");
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+
+        let base = new_run_dir(root).unwrap();
+        let worker = create_workers(&base, root, "src/demo.py", &original, 1).unwrap()[0].clone();
+        for relative in ["vite.config.ts", "scripts/entries.ts", "shared/paths.ts"] {
+            assert_real_copy(&worker, root, relative);
+        }
+        assert!(worker.join("scripts/unused.ts").is_symlink());
+        let scripts = worker.join("scripts");
+        assert!(scripts.is_dir() && !scripts.is_symlink());
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-30: an import cycle ends, and every file of the cycle is a real copy.
+    #[test]
+    fn mu_30_an_import_cycle_ends_and_copies_every_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(
+            root,
+            "vite.config.ts",
+            "import './lib/a.ts'\nexport default {}\n",
+        );
+        put(root, "lib/a.ts", "import './b.ts'\nexport const a = 1\n");
+        put(root, "lib/b.ts", "import './a.ts'\nexport const b = 2\n");
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+
+        let base = new_run_dir(root).unwrap();
+        let worker = create_workers(&base, root, "src/demo.py", &original, 1).unwrap()[0].clone();
+        for relative in ["vite.config.ts", "lib/a.ts", "lib/b.ts"] {
+            assert_real_copy(&worker, root, relative);
+        }
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-30: an import by package name and an import of a missing file copy nothing extra, and
+    // they do not stop the run.
+    #[test]
+    fn mu_30_package_and_missing_imports_copy_nothing_extra() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(
+            root,
+            "vite.config.ts",
+            "import x from 'left-pad'\nimport y from './missing.ts'\nexport default {}\n",
+        );
+        put(
+            root,
+            "node_modules/left-pad/index.js",
+            "module.exports = 1\n",
+        );
+        put(root, "src/demo.py", "def f(a):\n    return a > 1\n");
+        let original = fs::read(root.join("src/demo.py")).unwrap();
+
+        let base = new_run_dir(root).unwrap();
+        let worker = create_workers(&base, root, "src/demo.py", &original, 1).unwrap()[0].clone();
+        let config = worker.join("vite.config.ts");
+        assert!(config.is_file() && !config.is_symlink());
+        assert!(worker.join("node_modules").is_symlink());
+        assert!(!worker.join("missing.ts").exists());
+        delete_tree(&base).unwrap();
+    }
+
+    // MU-30: a file that the module of the command directory imports is a real copy when that
+    // directory lies inside the worker.
+    #[test]
+    fn mu_30_command_directory_imports_are_real_copies_in_the_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        put(
+            root,
+            "packages/app/vite.config.ts",
+            "import { h } from './helpers/h.ts'\nexport default {}\n",
+        );
+        put(root, "packages/app/helpers/h.ts", "export const h = 1\n");
+        put(root, "packages/app/src/x.ts", "export const x = 1 > 0;\n");
+        let original = fs::read(root.join("packages/app/src/x.ts")).unwrap();
+        let cwd = root.join("packages/app");
+
+        let base = new_run_dir(root).unwrap();
+        let worker =
+            create_workers(&base, root, "packages/app/src/x.ts", &original, 1).unwrap()[0].clone();
+        copy_command_modules(&worker, root, &cwd).unwrap();
+        assert_real_copy(&worker, root, "packages/app/helpers/h.ts");
+        delete_tree(&base).unwrap();
     }
 }
